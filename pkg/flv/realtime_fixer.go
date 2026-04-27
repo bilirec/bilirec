@@ -1,4 +1,4 @@
-﻿package flv
+package flv
 
 import (
 	"bytes"
@@ -10,24 +10,23 @@ import (
 // =====================================================
 
 type RealtimeFixer struct {
-	mu             sync.Mutex
-	tsStore        *TimestampStore
-	buffer         *bytes.Buffer
-	headerWritten  bool
-	pendingTags    []*Tag
-	dedupCache     *DedupCache // 🔥 新增:  去重緩存
-	dupCount       int64       // 🔥 新增: 重複計數
-	lastDedupClean int32       // timestamp of last dedup clean
+	mu                sync.Mutex
+	tsStore           *TimestampStore
+	buffer            *bytes.Buffer
+	sourceHeaderOK    bool
+	isRotationSegment bool        // set by ResetTimestampStore; rotation segments have no FLV file header
+	dedupCache        *DedupCache // 🔥 新增:  去重緩存
+	dupCount          int64       // 🔥 新增: 重複計數
+	lastDedupClean    int32       // timestamp of last dedup clean
 }
 
 func NewRealtimeFixer() *RealtimeFixer {
 	return &RealtimeFixer{
-		tsStore:       &TimestampStore{FirstChunk: true},
-		buffer:        byteBufferPool.Get(), // 🔥 優化: 從 pool 取得
-		headerWritten: false,
-		pendingTags:   make([]*Tag, 0, 32),
-		dedupCache:    NewDedupCache(MaxDedupCacheSize, DedupWindowMs), // 🔥 初始化去重
-		dupCount:      0,
+		tsStore:        &TimestampStore{FirstChunk: true},
+		buffer:         realtimeBufferPool.Get(), // 🔥 優化: 從 pool 取得
+		sourceHeaderOK: false,
+		dedupCache:     NewDedupCache(MaxDedupCacheSize, DedupWindowMs), // 🔥 初始化去重
+		dupCount:       0,
 	}
 }
 
@@ -48,19 +47,26 @@ func (rf *RealtimeFixer) Fix(input []byte) ([]byte, error) {
 	rf.buffer.Write(input)
 
 	// 🔥 優化: 從 pool 取得輸出 buffer
-	output := byteBufferPool.Get()
+	output := realtimeBufferPool.Get()
 	output.Reset()
 
-	// Write FLV header once
-	if !rf.headerWritten && rf.buffer.Len() >= 9 {
-		header := rf.buffer.Next(9)
-		if !bytes.Equal(header[:3], []byte{'F', 'L', 'V'}) {
+	// Consume the FLV file header once.
+	// Rotation segments start at a tag boundary (no file header), so skip straight through.
+	// Segment 0 must begin with FLV magic bytes or the stream is invalid.
+	needsHeaderCheck := !rf.sourceHeaderOK && rf.buffer.Len() >= FlvHeaderSize
+	if needsHeaderCheck {
+		isFlvMagic := bytes.Equal(rf.buffer.Bytes()[:3], []byte{'F', 'L', 'V'})
+		switch {
+		case isFlvMagic:
+			rf.buffer.Next(FlvHeaderSize) // consume 9-byte header; PrevTagSize0 stays for tag loop
+		case rf.isRotationSegment:
+			// carried bytes start at a tag boundary — nothing to consume
+		default:
+			output.Reset()
+			realtimeBufferPool.Put(output)
 			return nil, ErrNotFlvFile
 		}
-		output.Write(header)
-		// Write initial PreviousTagSize0 = 0
-		output.Write([]byte{0, 0, 0, 0})
-		rf.headerWritten = true
+		rf.sourceHeaderOK = true
 	}
 
 	headerBytes := headerBytesPool.GetBytes()
@@ -79,14 +85,14 @@ func (rf *RealtimeFixer) Fix(input []byte) ([]byte, error) {
 		// Peek tag header
 		// Not enough bytes for header yet: rebuild PrevTagSize + remaining bytes safely.
 		if rf.buffer.Len() < TagHeaderSize {
-			tmp := byteBufferPool.Get()
+			tmp := realtimeBufferPool.Get()
 			tmp.Reset()
 			tmp.Write([]byte{0, 0, 0, 0}) // PrevTagSize
 			tmp.Write(rf.buffer.Bytes())
 			rf.buffer.Reset()
 			rf.buffer.Write(tmp.Bytes())
 			tmp.Reset()
-			byteBufferPool.Put(tmp)
+			realtimeBufferPool.Put(tmp)
 			break
 		}
 
@@ -99,7 +105,7 @@ func (rf *RealtimeFixer) Fix(input []byte) ([]byte, error) {
 		// Check if we have complete tag data
 		if rf.buffer.Len() < int(dataSize) {
 			// Need more bytes: reconstruct PrevTagSize + header + current remainder
-			tempBuf := byteBufferPool.Get()
+			tempBuf := realtimeBufferPool.Get()
 			tempBuf.Reset()
 			tempBuf.Write([]byte{0, 0, 0, 0}) // PrevTagSize
 			tempBuf.Write(headerBytes)        // use headerBytes while valid
@@ -109,7 +115,7 @@ func (rf *RealtimeFixer) Fix(input []byte) ([]byte, error) {
 			rf.buffer.Write(tempBuf.Bytes())
 
 			tempBuf.Reset()
-			byteBufferPool.Put(tempBuf)
+			realtimeBufferPool.Put(tempBuf)
 			break
 		}
 
@@ -158,6 +164,8 @@ func (rf *RealtimeFixer) Fix(input []byte) ([]byte, error) {
 
 		// Write fixed tag
 		if err := writeTagOptimized(output, tag); err != nil {
+			output.Reset()
+			realtimeBufferPool.Put(output)
 			return nil, err
 		}
 
@@ -183,19 +191,48 @@ func (rf *RealtimeFixer) Fix(input []byte) ([]byte, error) {
 	copy(result, output.Bytes())
 
 	output.Reset()
-	byteBufferPool.Put(output)
+	realtimeBufferPool.Put(output)
 
 	return result, nil
 }
 
 // 🔥 優化:  釋放資源
+// ResetTimestampStore resets the timestamp offset for a new segment.
+// This should be called when rotating to a new segment file so that
+// the new segment's timestamps start from 0 instead of continuing
+// from the previous segment's time range.
+func (rf *RealtimeFixer) ResetTimestampStore() {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+
+	if rf.tsStore != nil {
+		rf.tsStore.Reset()
+	}
+	// Mark as rotation segment so Fix() skips the FLV file header check.
+	// Rotation segments start with split-detector-injected carried bytes, not a FLV header.
+	rf.isRotationSegment = true
+	rf.sourceHeaderOK = false
+}
+
+// ResetDedupCache clears the deduplication cache, which can be useful when starting a new segment to avoid false positives from old tags.
+// currently not used because the dedup cache automatically expires old entries based on timestamp, but can be called manually if needed (e.g. on segment rotation).
+func (rf *RealtimeFixer) ResetDedupCache() {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+
+	if rf.dedupCache != nil {
+		rf.dedupCache.Reset()
+	}
+
+}
+
 func (rf *RealtimeFixer) Close() {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
 
 	if rf.buffer != nil {
 		rf.buffer.Reset()
-		byteBufferPool.Put(rf.buffer)
+		realtimeBufferPool.Put(rf.buffer)
 		rf.buffer = nil
 	}
 
@@ -207,8 +244,7 @@ func (rf *RealtimeFixer) Close() {
 	if rf.tsStore != nil {
 		rf.tsStore.Reset()
 	}
-	rf.headerWritten = false
-	rf.pendingTags = nil
+	rf.sourceHeaderOK = false
 }
 
 // compactBufferIfNeeded shrinks rf.buffer when capacity is much larger than used length.
@@ -221,7 +257,7 @@ func (rf *RealtimeFixer) compactBufferIfNeeded() {
 
 	// Heuristic: if buffer is very large (>> MaxBufferSize) and largely empty, shrink it.
 	if c > MaxBufferSize && l <= c/4 {
-		newBuf := byteBufferPool.Get()
+		newBuf := realtimeBufferPool.Get()
 		newBuf.Reset()
 		if l > 0 {
 			newBuf.Write(rf.buffer.Bytes())
@@ -229,7 +265,7 @@ func (rf *RealtimeFixer) compactBufferIfNeeded() {
 		old := rf.buffer
 		rf.buffer = newBuf
 		// Return old to pool (Put only keeps buffers <= maxCap; otherwise allow GC)
-		byteBufferPool.Put(old)
+		realtimeBufferPool.Put(old)
 	}
 }
 func (rf *RealtimeFixer) fixTimestamp(tag *Tag) {
@@ -255,6 +291,11 @@ func (rf *RealtimeFixer) fixTimestamp(tag *Tag) {
 
 	// Apply offset
 	tag.Timestamp -= ts.CurrentOffset
+	if tag.Timestamp < 0 {
+		// FLV timestamp is unsigned in file format; negative values would be
+		// serialized as huge wraparound numbers (e.g. 4294967s start time).
+		tag.Timestamp = 0
+	}
 
 	// Calculate next target
 	ts.NextTimestampTarget = CalculateNextTarget(tag)

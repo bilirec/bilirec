@@ -43,6 +43,7 @@ func (w *BufferedStreamWriterProcessor) Open(ctx context.Context, log *logrus.En
 	w.file = file
 	w.writer = bufio.NewWriterSize(file, w.bufferSize)
 	w.logger = log.WithField("file", file.Name())
+
 	w.ctx, w.cancel = context.WithCancel(context.Background())
 	w.wait.Add(2)
 	go w.flushPeriodically(w.ctx)

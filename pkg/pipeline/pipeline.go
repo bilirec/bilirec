@@ -74,6 +74,8 @@ func (p *Pipe[T]) process(ctx context.Context, tp *ProcessorInfo[T], item T) (T,
 		switch tp.errorStrategy {
 		case StopOnError:
 			return item, err
+		case ReturnNextOnError:
+			return next, err
 		case ContinueOnError:
 			tp.logger.Warnf("continuing despite error in processor %s: %v", tp.name, err)
 			return item, nil
