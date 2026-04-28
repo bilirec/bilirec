@@ -7,6 +7,7 @@
 - ✅ 手动触发录制任务，实时录制直播流
 - ✅ **自动录制** - 为直播间配置自动开播录制
 - ✅ **直播通知** - 实时推送开播通知（支持 SSE）
+- ✅ **自动分段轮转** - 当直播过程中发生直播 PK 等分辨率变更时，自动切换到新的 FLV 文件，避免录制文件花屏或损坏
 - ✅ 支持多个直播间同时录制
 - ✅ 自动处理流中断和恢复
 - ✅ RESTful API 管理录制任务
@@ -192,10 +193,11 @@ Content-Type: application/json
     "bytes_written": 1048576,
     "status": "recording",
     "start_time": 1234567890,
-    "recovered_count": 0,
-    "elapsed_seconds": 120
+    "elapsed_seconds": 120,
+    "output_path": "records/tester-123456/live-title-20260428_210000-1.flv"
   }
   ```
+  `output_path` 表示当前正在写入的录制文件路径。如果直播过程中发生直播 PK 等分辨率变更，录制器会自动轮转到新的分段文件，后续分段文件名会追加 `-1`、`-2` 等后缀。
 
 - **列出所有录制任务**
   ```
@@ -447,11 +449,12 @@ Content-Type: application/json
 1. 通过 [`bilibili.Client`](internal/modules/bilibili/bilibili.go) 获取直播流地址
 2. 使用 [`stream.Service`](internal/services/stream/stream.go) 读取流数据
 3. [`recorder.Service`](internal/services/recorder/recorder.go) 管理录制任务（自动重连与恢复）
-4. 数据写入到 FLV 文件，保存在配置的输出目录；如果启用了 `CONVERT_FLV_TO_MP4`，录制完成时会自动将 FLV 文件加入转换队列并由后台任务异步转换为 MP4（转换行为受 `DELETE_FLV_AFTER_CONVERT` 控制，转换任务可通过 `/convert/tasks` 查询）。
+4. 数据写入到 FLV 文件，保存在配置的输出目录；如果流中途发生直播 PK 等分辨率变更，录制器会自动轮转到新的分段文件。首个文件名形如 `标题-时间戳.flv`，后续分段会命名为 `标题-时间戳-1.flv`、`标题-时间戳-2.flv`。如果启用了 `CONVERT_FLV_TO_MP4`，每个录制分段在完成时都会自动加入转换队列，并由后台任务异步转换为 MP4（转换行为受 `DELETE_FLV_AFTER_CONVERT` 控制，转换任务可通过 `/convert/tasks` 查询）。
 
 ### 关键特性
 
 - **自动恢复**: 当流中断时自动重连，详见 [`recorder.Service`](internal/services/recorder/recorder.go)
+- **自动分段轮转**: 当检测到直播 PK 等分辨率变更时，自动切换到新的录制文件，并为新分段重新写入 FLV 文件头，降低直播中途切换画质导致输出文件异常的风险
 - **自动录制**: 为订阅的直播间配置自动开播录制，后台定期检查直播间状态并自动启动录制，详见 [`subcheck.Service`](internal/services/subcheck/check.go)
 - **实时通知**: 通过 SSE 推送直播开播通知和自动录制状态，详见 [`notify.Service`](internal/services/notify/notify.go)
 - **缓冲池**: 使用 [`pool.BufferPool`](pkg/pool/pool.go) 减少内存分配
