@@ -46,8 +46,12 @@ var (
 	ErrInvalidTag      = errors.New("invalid FLV tag")
 	ErrBufferCorrupted = errors.New("buffer corruption detected")
 
-	// 🔥 優化: sync.Pool 用於復用 buffer 和對象
-	byteBufferPool = pool.NewBufferPool(DefaultBufferSize, MaxBufferSize)
+	// Dedicated pool for AccumulateFixer batch processing.
+	accumulateBufferPool = pool.NewBufferPool(DefaultBufferSize, MaxBufferSize)
+	// Dedicated pool for RealtimeFixer to isolate frequent live-room start/stop churn.
+	realtimeBufferPool = pool.NewBufferPool(DefaultBufferSize, MaxBufferSize)
+	// Dedicated pool for HeaderChangeDetector to isolate parser scratch usage.
+	headerDetectorBufferPool = pool.NewBufferPool(DefaultBufferSize, MaxBufferSize)
 
 	tagPool = sync.Pool{
 		New: func() any {

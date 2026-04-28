@@ -13,6 +13,7 @@ type ErrorStrategy int
 
 const (
 	StopOnError ErrorStrategy = iota
+	ReturnNextOnError
 	ContinueOnError
 	RetryOnError
 )

@@ -85,7 +85,7 @@ func (af *AccumulateFixer) Close() {
 
 	if af.buffer != nil {
 		af.buffer.Reset()
-		byteBufferPool.Put(af.buffer)
+		accumulateBufferPool.Put(af.buffer)
 		af.buffer = nil
 	}
 
@@ -108,7 +108,7 @@ func (af *AccumulateFixer) flushInternal() ([]byte, error) {
 	}
 
 	// 🔥 優化: 從 pool 取得 output buffer
-	output := byteBufferPool.Get()
+	output := accumulateBufferPool.Get()
 	output.Reset()
 
 	// Write header once globally (not per flush)
@@ -145,14 +145,14 @@ func (af *AccumulateFixer) flushInternal() ([]byte, error) {
 
 		if af.buffer.Len() < TagHeaderSize {
 			// Restore
-			tempBuf := byteBufferPool.Get()
+			tempBuf := accumulateBufferPool.Get()
 			tempBuf.Reset()
 			tempBuf.Write(prevTagSizeBytes)
 			tempBuf.Write(af.buffer.Bytes())
 			af.buffer.Reset()
 			af.buffer.Write(tempBuf.Bytes())
 			tempBuf.Reset()
-			byteBufferPool.Put(tempBuf)
+			accumulateBufferPool.Put(tempBuf)
 			smallBytesPool.PutBytes(prevTagSizeBytes)
 			break
 		}
@@ -164,7 +164,7 @@ func (af *AccumulateFixer) flushInternal() ([]byte, error) {
 
 		if af.buffer.Len() < int(dataSize) {
 			// Incomplete tag, restore buffer
-			tempBuf := byteBufferPool.Get()
+			tempBuf := accumulateBufferPool.Get()
 			tempBuf.Reset()
 			tempBuf.Write(prevTagSizeBytes)
 			tempBuf.Write(headerBytes)
@@ -172,7 +172,7 @@ func (af *AccumulateFixer) flushInternal() ([]byte, error) {
 			af.buffer.Reset()
 			af.buffer.Write(tempBuf.Bytes())
 			tempBuf.Reset()
-			byteBufferPool.Put(tempBuf)
+			accumulateBufferPool.Put(tempBuf)
 			headerBytesPool.PutBytes(headerBytes)
 			smallBytesPool.PutBytes(prevTagSizeBytes)
 			break
@@ -248,7 +248,7 @@ func (af *AccumulateFixer) flushInternal() ([]byte, error) {
 	copy(result, output.Bytes())
 
 	output.Reset()
-	byteBufferPool.Put(output)
+	accumulateBufferPool.Put(output)
 
 	return result, nil
 }

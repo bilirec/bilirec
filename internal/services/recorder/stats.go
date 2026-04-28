@@ -29,7 +29,7 @@ func (r *Service) GetStatus(roomId int) RecordStatus {
 
 func (r *Service) ListRecording() []int {
 	rooms := make([]int, 0)
-	r.recording.Range(func(key int, value *Recorder) bool {
+	r.recording.Range(func(key int, value *Info) bool {
 		rooms = append(rooms, key)
 		return true
 	})
@@ -47,12 +47,12 @@ func (r *Service) GetStats(roomId int) (*Stats, bool) {
 		Status:         status,
 		StartTime:      info.startTime.Unix(),
 		ElapsedSeconds: int64(time.Since(info.startTime).Seconds()),
-		OutputPath:     info.outputPath,
+		OutputPath:     info.OutputPath(),
 	}, true
 }
 
 func (r *Service) IsRecording(path string) bool {
-	return r.writtingFiles.Contains(filepath.Base(path))
+	return r.writingFiles.Contains(filepath.Base(path))
 }
 
 // IsRecordingUnder checks if any recordings are happening under the given relative path.
