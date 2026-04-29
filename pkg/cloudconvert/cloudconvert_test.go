@@ -5,9 +5,11 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/eric2788/bilirec/pkg/cloudconvert"
 	"github.com/eric2788/bilirec/utils"
+	"github.com/joho/godotenv"
 	"github.com/sirupsen/logrus"
 )
 
@@ -17,6 +19,13 @@ const (
 	convertTaskName = "convert-output"
 	exportTaskName  = "export-output"
 )
+
+func TestMain(m *testing.M) {
+	_ = godotenv.Overload(".env.local")
+	logrus.SetLevel(logrus.DebugLevel)
+	os.Setenv("DEBUG", "true")
+	os.Exit(m.Run())
+}
 
 func TestUploadFile(t *testing.T) {
 	if os.Getenv("CLOUDCONVERT_API_KEY") == "" {
@@ -116,6 +125,40 @@ func TestVideoConvertTask(t *testing.T) {
 	t.Logf("Export Task ID: %v", exportTaskID)
 }
 
+func TestListTasks(t *testing.T) {
+	if os.Getenv("CLOUDCONVERT_API_KEY") == "" {
+		t.Skip("CLOUDCONVERT_API_KEY not set, skipping test")
+	}
+	client := cloudconvert.NewClient(t.Context(), os.Getenv("CLOUDCONVERT_API_KEY"))
+
+	tasks, err := client.ListTasks(&cloudconvert.TaskListFilter{
+		JobID: "6ef54ed4-4267-4800-b24c-fe2d036d9bd3",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Logf("Tasks: %v", utils.PrettyPrintJSON(tasks))
+}
+
+func TestGetJobDetails(t *testing.T) {
+	if os.Getenv("CLOUDCONVERT_API_KEY") == "" {
+		t.Skip("CLOUDCONVERT_API_KEY not set, skipping test")
+	}
+	jobID := os.Getenv("CLOUDCONVERT_JOB_ID")
+	if jobID == "" {
+		t.Skip("CLOUDCONVERT_JOB_ID not set, skipping test")
+	}
+
+	client := cloudconvert.NewClient(t.Context(), os.Getenv("CLOUDCONVERT_API_KEY"))
+	job, err := client.GetJobDetails(jobID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Logf("Job Details: %v", utils.PrettyPrintJSON(job))
+}
+
 func TestGetTaskDetails(t *testing.T) {
 	if os.Getenv("CLOUDCONVERT_API_KEY") == "" {
 		t.Skip("CLOUDCONVERT_API_KEY not set, skipping test")
@@ -159,6 +202,71 @@ func TestDownloadExportTask(t *testing.T) {
 	}
 
 	t.Logf("Download URL: %v", task.Data.Result.Files[0].URL)
+}
+
+func TestRecoverImportedSourceFromTaskID(t *testing.T) {
+	if os.Getenv("CLOUDCONVERT_API_KEY") == "" {
+		t.Skip("CLOUDCONVERT_API_KEY not set, skipping test")
+	}
+	importTaskID := os.Getenv("CLOUDCONVERT_IMPORT_TASK_ID")
+	if importTaskID == "" {
+		importTaskID = os.Getenv("CLOUDCONVERT_TASK_ID") // backward compatibility
+	}
+	if importTaskID == "" {
+		t.Skip("CLOUDCONVERT_IMPORT_TASK_ID not set, skipping test")
+	}
+
+	client := cloudconvert.NewClient(t.Context(), os.Getenv("CLOUDCONVERT_API_KEY"))
+
+	exportTask, err := client.CreateExportURL(&cloudconvert.ExportURLRequest{Input: importTaskID})
+	if err != nil {
+		t.Fatalf("create export task for import task %s failed: %v", importTaskID, err)
+	}
+
+	exportTaskID := exportTask.Data.ID
+	if exportTaskID == "" {
+		t.Fatalf("empty export task id for import task %s", importTaskID)
+	}
+
+	t.Logf("created export task id=%s from import task id=%s", exportTaskID, importTaskID)
+
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+	timeout := time.NewTimer(5 * time.Minute)
+	defer timeout.Stop()
+
+	for {
+		select {
+		case <-t.Context().Done():
+			t.Skip("test context cancelled")
+		case <-timeout.C:
+			t.Fatalf("timeout waiting export task %s", exportTaskID)
+		case <-ticker.C:
+			task, err := client.GetTask(exportTaskID)
+			if err != nil {
+				t.Fatalf("get export task %s failed: %v", exportTaskID, err)
+			}
+
+			switch task.Data.Status {
+			case cloudconvert.TaskStatusFinished:
+				if len(task.Data.Result.Files) == 0 || task.Data.Result.Files[0].URL == "" {
+					t.Fatalf("export task %s finished but no downloadable file url", exportTaskID)
+				}
+				t.Logf("Recovered source file URL: %s", task.Data.Result.Files[0].URL)
+				t.Logf("Recovered source file name: %s", task.Data.Result.Files[0].Filename)
+				t.Logf("Recovered source file size: %d", task.Data.Result.Files[0].Size)
+				return
+			case cloudconvert.TaskStatusError:
+				msg := ""
+				if task.Data.Message != nil {
+					msg = *task.Data.Message
+				}
+				t.Fatalf("export task %s failed: %s", exportTaskID, msg)
+			default:
+				t.Logf("export task %s status=%s, waiting...", exportTaskID, task.Data.Status)
+			}
+		}
+	}
 }
 
 func TestUploadCommandFaststartDownload(t *testing.T) {
@@ -208,9 +316,4 @@ func TestUploadCommandFaststartDownload(t *testing.T) {
 
 	t.Logf("Upload successful, command task id=%s", commandTaskID)
 	t.Logf("Export task id=%s (use CLOUDCONVERT_TASK_ID to download)", exportTaskID)
-}
-
-func init() {
-	logrus.SetLevel(logrus.DebugLevel)
-	os.Setenv("DEBUG", "true")
 }

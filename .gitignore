@@ -11,3 +11,6 @@
 *.ts
 *.prof
 *.txt
+*.py
+
+.env.local
