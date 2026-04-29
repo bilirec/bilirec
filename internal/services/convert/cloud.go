@@ -38,7 +38,7 @@ type cloudConvertManager struct {
 	client     *cloudconvert.Client
 	serializer *pool.Serializer
 
-	downloading  ds.Set[string]
+	processing   ds.AtomicSet[string]
 	downloadPool *pool.BytesPool
 	concurrent   *semaphore.Weighted
 
@@ -52,9 +52,9 @@ func newCloudConvertManager(client *cloudconvert.Client, pathSvc *path.Service) 
 		logger:           logger.WithField("manager", "cloudconvert"),
 		client:           client,
 		serializer:       pool.NewSerializer(),
-		downloading:      ds.NewSyncedSet[string](),
+		processing:       ds.NewAtomicSet[string](),
 		downloadPool:     pool.NewBytesPool(config.ReadOnly.DownloadBufferSize()),
-		concurrent:       semaphore.NewWeighted(2),
+		concurrent:       semaphore.NewWeighted(int64(config.ReadOnly.CloudConvertMaxConcurrentDownloads())),
 		presignedUrlPool: xsync.NewMap[string, string](),
 		pathSvc:          pathSvc,
 	}
@@ -165,7 +165,7 @@ func (c *cloudConvertManager) ListInProgress() ([]*TaskQueue, error) {
 }
 
 func (c *cloudConvertManager) checkTaskStatusPeriodically(ctx context.Context) {
-	ticker := time.NewTicker(3 * time.Minute)
+	ticker := time.NewTicker(time.Duration(config.ReadOnly.CloudConvertCheckIntervalSecs()) * time.Second)
 	defer ticker.Stop()
 	for {
 		select {
@@ -176,39 +176,33 @@ func (c *cloudConvertManager) checkTaskStatusPeriodically(ctx context.Context) {
 			} else {
 				for _, queue := range list {
 					id := queue.TaskID
-
-					if c.downloading.Contains(id) {
-						c.logger.Debugf("task id=%v is downloading, skip status check", id)
+					if c.processing.LoadAndStore(id) {
+						c.logger.Debugf("task id=%v is being handled, skip status check", id)
 						continue
 					}
 
 					c.logger.Debugf("checking task queue for id=%v", id)
-					info, err := c.client.GetTask(queue.TaskID)
+					info, err := c.client.GetTask(id)
 					if err != nil {
 						if err == cloudconvert.ErrTaskNotFound {
 							c.logger.Warnf("task id=%v not found, re-enqueueing", id)
-							if err := c.onFailed(queue, &cloudconvert.TaskData{
-								Message: utils.Ptr("task not found"),
-							}); err != nil {
-								c.logger.Errorf("failed to re-enqueue task id=%v: %v", id, err)
-							}
+							go c.asyncOnFailed(queue, cloudconvert.TaskData{Message: utils.Ptr("task not found")})
 						} else {
-							c.logger.Errorf("failed to get task info for id=%v: %v", queue.TaskID, err)
+							c.logger.Errorf("failed to get task info for id=%v: %v", id, err)
+							c.processing.LoadAndDelete(id)
 						}
 						continue
 					}
 
-					c.logger.Infof("task id=%v status=%v", queue.TaskID, info.Data.Status)
+					c.logger.Infof("task id=%v status=%v", id, info.Data.Status)
 
 					switch info.Data.Status {
 					case cloudconvert.TaskStatusFinished:
-						err = c.onFinished(ctx, queue, &info.Data)
+						go c.asyncOnFinished(ctx, queue, info.Data)
 					case cloudconvert.TaskStatusError:
-						err = c.onFailed(queue, &info.Data)
-					}
-
-					if err != nil {
-						c.logger.Errorf("handling task id=%v status=%v failed: %v", queue.TaskID, info.Data.Status, err)
+						go c.asyncOnFailed(queue, info.Data)
+					default:
+						c.processing.LoadAndDelete(id)
 					}
 				}
 			}
@@ -219,7 +213,21 @@ func (c *cloudConvertManager) checkTaskStatusPeriodically(ctx context.Context) {
 	}
 }
 
-func (c *cloudConvertManager) onFinished(ctx context.Context, queue *TaskQueue, data *cloudconvert.TaskData) error {
+func (c *cloudConvertManager) asyncOnFinished(ctx context.Context, queue *TaskQueue, data cloudconvert.TaskData) {
+	defer c.processing.LoadAndDelete(queue.TaskID)
+	if err := c.handleFinished(ctx, queue, &data); err != nil {
+		c.logger.Errorf("handling task id=%v status=%v failed: %v", queue.TaskID, data.Status, err)
+	}
+}
+
+func (c *cloudConvertManager) asyncOnFailed(queue *TaskQueue, data cloudconvert.TaskData) {
+	defer c.processing.LoadAndDelete(queue.TaskID)
+	if err := c.handleFailed(queue, &data); err != nil {
+		c.logger.Errorf("handling task id=%v status=%v failed: %v", queue.TaskID, data.Status, err)
+	}
+}
+
+func (c *cloudConvertManager) handleFinished(ctx context.Context, queue *TaskQueue, data *cloudconvert.TaskData) error {
 	// download file
 	var download *cloudconvert.TaskResultFile
 	if len(data.Result.Files) == 0 {
@@ -247,9 +255,6 @@ func (c *cloudConvertManager) onFinished(ctx context.Context, queue *TaskQueue, 
 		}
 	}
 
-	c.downloading.Add(queue.TaskID)
-	defer c.downloading.Remove(queue.TaskID)
-
 	if err := c.downloadExportedFile(ctx, download.URL, queue.OutputPath); err != nil {
 		c.logger.Errorf("failed to download exported file for task %s: %v", queue.TaskID, err)
 		return err
@@ -258,7 +263,7 @@ func (c *cloudConvertManager) onFinished(ctx context.Context, queue *TaskQueue, 
 	if err := c.validateDownloadedOutputSize(queue); err != nil {
 		c.logger.Warnf("downloaded file validation failed for task %s: %v", queue.TaskID, err)
 		msg := err.Error()
-		return c.onFailed(queue, &cloudconvert.TaskData{Message: &msg})
+		return c.handleFailed(queue, &cloudconvert.TaskData{Message: &msg})
 	}
 
 	c.logger.Infof("successfully downloaded exported file for task %s to %s", queue.TaskID, queue.OutputPath)
@@ -282,7 +287,7 @@ func (c *cloudConvertManager) onFinished(ctx context.Context, queue *TaskQueue, 
 	})
 }
 
-func (c *cloudConvertManager) onFailed(queue *TaskQueue, info *cloudconvert.TaskData) error {
+func (c *cloudConvertManager) handleFailed(queue *TaskQueue, info *cloudconvert.TaskData) error {
 	message := "unknown error"
 	if info != nil && info.Message != nil {
 		message = *info.Message
@@ -326,7 +331,7 @@ func (c *cloudConvertManager) onFailed(queue *TaskQueue, info *cloudconvert.Task
 }
 
 func (c *cloudConvertManager) validateDownloadedOutputSize(queue *TaskQueue) error {
-	if err := validateOutputFileSize(queue.InputPath, queue.OutputPath); err == nil {
+	if err := ValidateOutputFileSize(queue.InputPath, queue.OutputPath); err == nil {
 		return nil
 	} else {
 		reason := err.Error()
@@ -338,8 +343,9 @@ func (c *cloudConvertManager) validateDownloadedOutputSize(queue *TaskQueue) err
 }
 
 func (c *cloudConvertManager) downloadExportedFile(ctx context.Context, url, outPath string) error {
-
-	c.concurrent.Acquire(ctx, 1)
+	if err := c.concurrent.Acquire(ctx, 1); err != nil {
+		return err
+	}
 	defer c.concurrent.Release(1)
 
 	// Open stream from CloudConvert client

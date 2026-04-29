@@ -5,10 +5,10 @@ import (
 	"os"
 )
 
-const minimumConvertedOutputBytes int64 = 1 * 1024 * 1024
+const MinimumExportedFileBytesRequired int64 = 1 * 1024 * 1024
 
-func isConvertedFileInvalid(outputBytes, inputBytes int64) bool {
-	if outputBytes < minimumConvertedOutputBytes {
+func IsConvertedFileInvalid(outputBytes, inputBytes int64) bool {
+	if outputBytes < MinimumExportedFileBytesRequired {
 		return true
 	}
 	if inputBytes > 0 && outputBytes*2 < inputBytes {
@@ -17,7 +17,7 @@ func isConvertedFileInvalid(outputBytes, inputBytes int64) bool {
 	return false
 }
 
-func validateOutputFileSize(inputPath, outputPath string) error {
+func ValidateOutputFileSize(inputPath, outputPath string) error {
 	output, err := os.Stat(outputPath)
 	if err != nil {
 		return fmt.Errorf("stat converted output %s: %w", outputPath, err)
@@ -32,7 +32,7 @@ func validateOutputFileSize(inputPath, outputPath string) error {
 	}
 
 	outputBytes := output.Size()
-	if !isConvertedFileInvalid(outputBytes, inputBytes) {
+	if !IsConvertedFileInvalid(outputBytes, inputBytes) {
 		return nil
 	}
 

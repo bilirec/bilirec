@@ -1,6 +1,10 @@
-package convert
+package convert_test
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/eric2788/bilirec/internal/services/convert"
+)
 
 func TestIsConvertedFileInvalid(t *testing.T) {
 	tests := []struct {
@@ -11,7 +15,7 @@ func TestIsConvertedFileInvalid(t *testing.T) {
 	}{
 		{
 			name:       "invalid when output less than 1MB",
-			downloaded: minimumConvertedOutputBytes - 1,
+			downloaded: convert.MinimumExportedFileBytesRequired - 1,
 			input:      10 * 1024 * 1024,
 			want:       true,
 		},
@@ -23,13 +27,13 @@ func TestIsConvertedFileInvalid(t *testing.T) {
 		},
 		{
 			name:       "valid at exact 1MB and half of input",
-			downloaded: minimumConvertedOutputBytes,
-			input:      2 * minimumConvertedOutputBytes,
+			downloaded: convert.MinimumExportedFileBytesRequired,
+			input:      2 * convert.MinimumExportedFileBytesRequired,
 			want:       false,
 		},
 		{
 			name:       "valid when source size unavailable and output above 1MB",
-			downloaded: 2 * minimumConvertedOutputBytes,
+			downloaded: 2 * convert.MinimumExportedFileBytesRequired,
 			input:      0,
 			want:       false,
 		},
@@ -37,7 +41,7 @@ func TestIsConvertedFileInvalid(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got := isConvertedFileInvalid(tc.downloaded, tc.input)
+			got := convert.IsConvertedFileInvalid(tc.downloaded, tc.input)
 			if got != tc.want {
 				t.Fatalf("isConvertedFileInvalid(%d, %d) = %v, want %v", tc.downloaded, tc.input, got, tc.want)
 			}

@@ -7,12 +7,13 @@ import (
 	"os/exec"
 	"time"
 
+	"github.com/eric2788/bilirec/internal/modules/config"
 	"github.com/eric2788/bilirec/pkg/db"
 	"github.com/eric2788/bilirec/pkg/pool"
 	"github.com/eric2788/bilirec/utils"
 	"github.com/puzpuzpuz/xsync/v4"
 	"github.com/sirupsen/logrus"
-	"go.etcd.io/bbolt"
+	"golang.org/x/sync/semaphore"
 )
 
 const (
@@ -28,6 +29,7 @@ type ffmpegConvertManager struct {
 	getActives GetActiveRecordings
 
 	processing *xsync.Map[string, context.CancelFunc]
+	concurrent *semaphore.Weighted
 }
 
 func newFFmpegConvertManager(getActives GetActiveRecordings) ConvertManager {
@@ -36,6 +38,7 @@ func newFFmpegConvertManager(getActives GetActiveRecordings) ConvertManager {
 		serializer: pool.NewSerializer(),
 		getActives: getActives,
 		processing: xsync.NewMap[string, context.CancelFunc](),
+		concurrent: semaphore.NewWeighted(int64(config.ReadOnly.FFmpegMaxConcurrentTasks())),
 	}
 }
 
@@ -94,7 +97,7 @@ func (f *ffmpegConvertManager) ListInProgress() ([]*TaskQueue, error) {
 }
 
 func (f *ffmpegConvertManager) runTaskPeriodically(ctx context.Context) {
-	ticker := time.NewTicker(1 * time.Minute)
+	ticker := time.NewTicker(time.Duration(config.ReadOnly.FFmpegCheckIntervalSecs()) * time.Second)
 	defer ticker.Stop()
 	for {
 		select {
@@ -104,57 +107,73 @@ func (f *ffmpegConvertManager) runTaskPeriodically(ctx context.Context) {
 				f.logger.Debugf("active recordings detected (%d), skipping ffmpeg tasks", actives)
 				continue
 			}
-			var queue *TaskQueue
-			if err := f.bucket.View(func(bucket *bbolt.Bucket) error {
-				k, v := bucket.Cursor().First()
-				if k == nil {
-					return nil
+
+			list, err := f.ListInProgress()
+			if err != nil {
+				f.logger.Errorf("failed to list ffmpeg in-progress tasks: %v", err)
+				continue
+			} else if len(list) == 0 {
+				continue
+			}
+
+			for _, queue := range list {
+				taskLog := f.logger.WithField("task_id", queue.TaskID)
+
+				if _, processing := f.processing.Load(queue.TaskID); processing {
+					taskLog.Debug("task is already being processed, skip this cycle")
+					continue
 				}
-				queue = &TaskQueue{}
-				if err := f.serializer.Deserialize(v, queue); err != nil {
-					return fmt.Errorf("deserialize task %s: %w", string(k), err)
+
+				if !utils.IsFileExists(queue.InputPath) {
+					taskLog.Warnf("input file %s no longer exists, cancelling task", queue.InputPath)
+					if err := f.deleteTaskFromQueue(queue.TaskID); err != nil {
+						taskLog.Errorf("failed to remove ffmpeg task from queue: %v", err)
+					}
+					continue
 				}
-				return nil
-			}); err != nil {
-				f.logger.Errorf("reading ffmpeg queue task failed: %v", err)
-				continue
-			} else if queue == nil {
-				continue
-			}
 
-			deleteBucket := func() error {
-				return utils.WithRetry(3, f.logger, "delete bucket", func() error {
-					return f.bucket.Delete([]byte(queue.TaskID))
-				})
-			}
-
-			taskLog := f.logger.WithField("task_id", queue.TaskID)
-
-			if !utils.IsFileExists(queue.InputPath) {
-				taskLog.Warnf("input file %s no longer exists, cancelling task", queue.InputPath)
-				if err := deleteBucket(); err != nil {
-					taskLog.Errorf("failed to remove ffmpeg task from queue: %v", err)
+				if !f.concurrent.TryAcquire(1) {
+					taskLog.Debug("ffmpeg concurrency limit reached, defer remaining tasks to next cycle")
+					break
 				}
-				continue
+
+				processCtx, cancel := context.WithCancel(ctx)
+				f.processing.Store(queue.TaskID, cancel)
+
+				taskLog.Infof("processing ffmpeg task input=%s output=%s", queue.InputPath, queue.OutputPath)
+				go f.asyncProcessTask(processCtx, queue, taskLog)
 			}
-
-			taskLog.Infof("processing ffmpeg task input=%s output=%s", queue.InputPath, queue.OutputPath)
-
-			if err := f.processTask(ctx, queue, taskLog); err != nil {
-				taskLog.Errorf("ffmpeg task failed: %v", err)
-				continue
-			}
-
-			if err := deleteBucket(); err != nil {
-				taskLog.Errorf("failed to remove ffmpeg task from queue: %v", err)
-				continue
-			}
-
-			taskLog.Info("completed and removed from queue")
 		case <-ctx.Done():
 			return
 		}
 	}
+}
+
+func (f *ffmpegConvertManager) deleteTaskFromQueue(taskID string) error {
+	return utils.WithRetry(3, f.logger, "delete bucket", func() error {
+		return f.bucket.Delete([]byte(taskID))
+	})
+}
+
+func (f *ffmpegConvertManager) asyncProcessTask(ctx context.Context, queue *TaskQueue, taskLog *logrus.Entry) {
+	defer func() {
+		if cancel, ok := f.processing.LoadAndDelete(queue.TaskID); ok {
+			cancel()
+		}
+	}()
+	defer f.concurrent.Release(1)
+
+	if err := f.processTask(ctx, queue, taskLog); err != nil {
+		taskLog.Errorf("ffmpeg task failed: %v", err)
+		return
+	}
+
+	if err := f.deleteTaskFromQueue(queue.TaskID); err != nil {
+		taskLog.Errorf("failed to remove ffmpeg task from queue: %v", err)
+		return
+	}
+
+	taskLog.Info("completed and removed from queue")
 }
 
 func (f *ffmpegConvertManager) processTask(ctx context.Context, queue *TaskQueue, taskLog *logrus.Entry) error {
@@ -164,15 +183,7 @@ func (f *ffmpegConvertManager) processTask(ctx context.Context, queue *TaskQueue
 		return nil
 	}
 
-	processCtx, cancel := context.WithCancel(ctx)
-	f.processing.Store(queue.TaskID, cancel)
-	defer func() {
-		if cancel, ok := f.processing.LoadAndDelete(queue.TaskID); ok {
-			cancel()
-		}
-	}()
-
-	cmd := exec.CommandContext(processCtx,
+	cmd := exec.CommandContext(ctx,
 		"ffmpeg",
 		"-hide_banner",
 		"-i",
@@ -193,7 +204,7 @@ func (f *ffmpegConvertManager) processTask(ctx context.Context, queue *TaskQueue
 
 	if err := cmd.Run(); err != nil {
 		return err
-	} else if err := validateOutputFileSize(queue.InputPath, queue.OutputPath); err != nil {
+	} else if err := ValidateOutputFileSize(queue.InputPath, queue.OutputPath); err != nil {
 		return err
 	} else if !queue.DeleteSource || queue.InputPath == queue.OutputPath {
 		return nil
