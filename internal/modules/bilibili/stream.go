@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/eric2788/bilirec/pkg/fp"
+	"github.com/eric2788/bilirec/utils"
 	"github.com/go-resty/resty/v2"
 )
 
@@ -120,17 +121,29 @@ func (c *Client) GetStreamURLs(roomID int) ([]string, error) {
 	}), nil
 }
 
-func (c *Client) GetStreamURLsV2(roomID int) ([]string, error) {
+func (c *Client) GetStreamURLsV2(roomID int, opts ...GetStreamURLsOption) ([]string, error) {
 	client := c.liveClient.R()
+	options := defaultGetStreamURLsOptions()
+	for _, opt := range opts {
+		if opt != nil {
+			opt(&options)
+		}
+	}
+
+	protocolRaw, formatRaw := profileQueryParams(options.profiles)
+	protocolStr := utils.EmptyOrElse(protocolRaw, "0,1")
+	formatStr := utils.EmptyOrElse(formatRaw, "0,1,2")
+	codecStr := utils.EmptyOrElse(joinCodecs(options.codecs), "0,1,2")
+
 	client.SetQueryParams(map[string]string{
 		"room_id":      fmt.Sprint(roomID),
 		"qn":           "10000",
 		"no_playurl":   "0",
 		"mask":         "1",
 		"platform":     "web",
-		"protocol":     "0,1",
-		"format":       "0,1,2",
-		"codec":        "0,1,2",
+		"protocol":     protocolStr,
+		"format":       formatStr,
+		"codec":        codecStr, // 0: avc, 1: hevc, 2: unknown
 		"dolby":        "5",
 		"panorama":     "1",
 		"hdr_type":     "0,1",
