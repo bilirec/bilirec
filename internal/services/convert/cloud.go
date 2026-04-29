@@ -87,9 +87,9 @@ func (c *cloudConvertManager) Enqueue(inputPath, outputPath, format string, dele
 			Filename: filepath.Base(inputPath),
 		})).
 		AddTask(cloudconvert.NewCommandTask(commandTaskName, &cloudconvert.CommandPayload{
-			Input:   importTaskName,
-			Engine:  "ffmpeg",
-			Command: "ffmpeg",
+			Input:         importTaskName,
+			Engine:        "ffmpeg",
+			Command:       "ffmpeg",
 			EngineVersion: "8.0.1",
 			Arguments: fmt.Sprintf(
 				"-i \"/input/%s/%s\" -map 0 -map_metadata 0 -movflags +faststart -c copy \"/output/%s\"",
@@ -341,11 +341,6 @@ func (c *cloudConvertManager) downloadExportedFile(ctx context.Context, url, out
 
 	c.concurrent.Acquire(ctx, 1)
 	defer c.concurrent.Release(1)
-
-	if utils.IsFileExists(outPath) {
-		c.logger.Warnf("file %s already exists, skipping download", outPath)
-		return nil
-	}
 
 	// Open stream from CloudConvert client
 	rc, err := c.client.DownloadAsFileStream(url)
