@@ -2,6 +2,7 @@ package bilibili_test
 
 import (
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -133,6 +134,75 @@ func TestGetStreamUrlsV2(t *testing.T) {
 	}
 }
 
+func TestGetStreamUrlsV2WithProfiles(t *testing.T) {
+	var client *bilibili.Client
+	app := fxtest.New(t,
+		config.Module,
+		bilibili.Module,
+		fx.Populate(&client),
+		fx.StartTimeout(25*time.Second),
+	)
+	app.RequireStart()
+	defer app.RequireStop()
+
+	roomID := 1770864917
+	if raw := os.Getenv("BILIBILI_TEST_ROOM_ID"); raw != "" {
+		if id, err := strconv.Atoi(raw); err == nil && id > 0 {
+			roomID = id
+		}
+	}
+
+	t.Run("http-flv profile", func(t *testing.T) {
+		urls, err := client.GetStreamURLsV2(roomID,
+			bilibili.WithProfiles(bilibili.ProfileHTTPFLV),
+		)
+		if err != nil {
+			if bilibili.IsErrRoomNotFound(err) {
+				t.Skip("room not found, skipped")
+			}
+			t.Fatal(err)
+		}
+		if len(urls) == 0 {
+			t.Skip("no flv stream urls available currently")
+		}
+		for _, u := range urls {
+			lower := strings.ToLower(u)
+			if strings.Contains(lower, ".m3u8") {
+				t.Fatalf("unexpected hls url in flv profile result: %s", u)
+			}
+			if !strings.Contains(lower, ".flv") {
+				t.Fatalf("expected .flv url in flv profile result: %s", u)
+			}
+			t.Logf("expected http-flv stream url: %s", u)
+		}
+	})
+
+	t.Run("hls-ts profile", func(t *testing.T) {
+		urls, err := client.GetStreamURLsV2(roomID,
+			bilibili.WithProfiles(bilibili.ProfileHLSTS),
+		)
+		if err != nil {
+			if bilibili.IsErrRoomNotFound(err) {
+				t.Skip("room not found, skipped")
+			}
+			t.Fatal(err)
+		}
+		if len(urls) == 0 {
+			t.Skip("no hls-ts stream urls available currently")
+		}
+		for _, u := range urls {
+			lower := strings.ToLower(u)
+			if strings.Contains(lower, ".flv") {
+				t.Fatalf("unexpected flv url in hls-ts profile result: %s", u)
+			}
+			if !strings.Contains(lower, ".m3u8") {
+				t.Fatalf("expected .m3u8 url in hls-ts profile result: %s", u)
+			}
+			t.Logf("expected hls-ts stream url: %s", u)
+		}
+	})
+}
+
 func TestHeaders(t *testing.T) {
 	var client *bilibili.Client
 	app := fxtest.New(t,
@@ -166,6 +236,6 @@ func TestHeaders(t *testing.T) {
 
 func init() {
 	// if os.Getenv("CI") != "" {
-		os.Setenv("ANONYMOUS_LOGIN", "true")
+	os.Setenv("ANONYMOUS_LOGIN", "true")
 	// }
 }
