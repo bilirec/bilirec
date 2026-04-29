@@ -122,7 +122,10 @@ func (r *Service) Start(roomId int) error {
 		return ErrStreamNotLive
 	}
 
-	urls, err := r.bilic.GetStreamURLsV2(roomId)
+	urls, err := r.bilic.GetStreamURLsV2(roomId,
+		bilibili.WithProfiles(bilibili.ProfileHTTPFLV), // force http-flv for recording
+	)
+
 	if err != nil {
 		return err
 	} else if len(urls) == 0 {
