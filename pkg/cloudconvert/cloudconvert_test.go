@@ -9,7 +9,6 @@ import (
 
 	"github.com/eric2788/bilirec/pkg/cloudconvert"
 	"github.com/eric2788/bilirec/utils"
-	"github.com/joho/godotenv"
 	"github.com/sirupsen/logrus"
 )
 
@@ -21,7 +20,7 @@ const (
 )
 
 func TestMain(m *testing.M) {
-	_ = godotenv.Overload(".env.local")
+	utils.LoadDotEnvLocal()
 	logrus.SetLevel(logrus.DebugLevel)
 	os.Setenv("DEBUG", "true")
 	os.Exit(m.Run())
@@ -267,6 +266,39 @@ func TestRecoverImportedSourceFromTaskID(t *testing.T) {
 			}
 		}
 	}
+}
+
+func TestRecoverSourceFromURLImmediately(t *testing.T) {
+	if os.Getenv("CLOUDCONVERT_API_KEY") == "" {
+		t.Skip("CLOUDCONVERT_API_KEY not set, skipping test")
+	}
+
+	sourceURL := os.Getenv("CLOUDCONVERT_RECOVER_SOURCE_URL")
+	if sourceURL == "" {
+		t.Skip("CLOUDCONVERT_RECOVER_SOURCE_URL not set, skipping test")
+	}
+
+	client := cloudconvert.NewClient(t.Context(), os.Getenv("CLOUDCONVERT_API_KEY"))
+
+	job, err := client.NewJobBuilder().
+		AddTask(cloudconvert.NewImportURLTask(importTaskName, &cloudconvert.ImportURLRequest{
+			URL: sourceURL,
+		})).
+		AddTask(cloudconvert.NewExportURLTask(exportTaskName, &cloudconvert.ExportURLRequest{
+			Input: importTaskName,
+		})).
+		Submit()
+	if err != nil {
+		t.Fatalf("submit import/url -> export/url recovery job failed: %v", err)
+	}
+
+	exportTaskID := job.TaskID(exportTaskName)
+	if exportTaskID == "" {
+		t.Fatalf("export task id not found for task name %s", exportTaskName)
+	}
+
+	t.Logf("created recovery export task id=%s", exportTaskID)
+	t.Logf("check this task in CloudConvert dashboard and use TestGetTaskDetails/TestDownloadExportTask after it finishes")
 }
 
 func TestUploadCommandFaststartDownload(t *testing.T) {
