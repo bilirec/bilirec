@@ -2,6 +2,7 @@ package convert
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -253,6 +254,12 @@ func (c *cloudConvertManager) onFinished(ctx context.Context, queue *TaskQueue, 
 		return err
 	}
 
+	if err := c.validateDownloadedOutputSize(queue); err != nil {
+		c.logger.Warnf("downloaded file validation failed for task %s: %v", queue.TaskID, err)
+		msg := err.Error()
+		return c.onFailed(queue, &cloudconvert.TaskData{Message: &msg})
+	}
+
 	c.logger.Infof("successfully downloaded exported file for task %s to %s", queue.TaskID, queue.OutputPath)
 	c.presignedUrlPool.Delete(queue.InputPath)
 
@@ -275,8 +282,12 @@ func (c *cloudConvertManager) onFinished(ctx context.Context, queue *TaskQueue, 
 }
 
 func (c *cloudConvertManager) onFailed(queue *TaskQueue, info *cloudconvert.TaskData) error {
+	message := "unknown error"
+	if info != nil && info.Message != nil {
+		message = *info.Message
+	}
 	// print log and queue again
-	c.logger.Errorf("task %s failed with message: %s", queue.TaskID, *info.Message)
+	c.logger.Errorf("task %s failed with message: %s", queue.TaskID, message)
 	c.logger.Infof("re-enqueueing task %s", queue.TaskID)
 
 	deleteBucket := func() error {
@@ -311,6 +322,18 @@ func (c *cloudConvertManager) onFailed(queue *TaskQueue, info *cloudconvert.Task
 	}
 
 	return nil
+}
+
+func (c *cloudConvertManager) validateDownloadedOutputSize(queue *TaskQueue) error {
+	if err := validateOutputFileSize(queue.InputPath, queue.OutputPath); err == nil {
+		return nil
+	} else {
+		reason := err.Error()
+		if removeErr := os.Remove(queue.OutputPath); removeErr != nil && !os.IsNotExist(removeErr) {
+			c.logger.Warnf("failed to remove invalid downloaded output %s: %v", queue.OutputPath, removeErr)
+		}
+		return errors.New(reason)
+	}
 }
 
 func (c *cloudConvertManager) downloadExportedFile(ctx context.Context, url, outPath string) error {

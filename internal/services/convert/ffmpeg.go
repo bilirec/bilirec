@@ -193,6 +193,8 @@ func (f *ffmpegConvertManager) processTask(ctx context.Context, queue *TaskQueue
 
 	if err := cmd.Run(); err != nil {
 		return err
+	} else if err := validateOutputFileSize(queue.InputPath, queue.OutputPath); err != nil {
+		return err
 	} else if !queue.DeleteSource || queue.InputPath == queue.OutputPath {
 		return nil
 	}
