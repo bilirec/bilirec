@@ -103,7 +103,7 @@ func (f *ffmpegConvertManager) runTaskPeriodically(ctx context.Context) {
 		select {
 		case <-ticker.C:
 			actives := f.getActives()
-			if actives > 0 {
+			if actives > 0 && !config.ReadOnly.FFmpegAllowDuringRecording() {
 				f.logger.Debugf("active recordings detected (%d), skipping ffmpeg tasks", actives)
 				continue
 			}

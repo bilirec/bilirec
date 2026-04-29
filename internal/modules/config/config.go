@@ -46,6 +46,7 @@ type Config struct {
 	CloudConvertMaxConcurrentDownloads int
 	FFmpegCheckIntervalSecs            int
 	FFmpegMaxConcurrentTasks           int
+	FFmpegAllowDuringRecording         bool
 
 	// configurable global performances
 	uploadBufferSize           int
@@ -113,6 +114,7 @@ func provider() (*Config, error) {
 		CloudConvertMaxConcurrentDownloads: utils.MustAtoi(utils.EmptyOrElse(os.Getenv("CLOUDCONVERT_MAX_CONCURRENT_DOWNLOADS"), "1")),
 		FFmpegCheckIntervalSecs:            utils.MustAtoi(utils.EmptyOrElse(os.Getenv("FFMPEG_CHECK_INTERVAL_SECS"), "60")),
 		FFmpegMaxConcurrentTasks:           utils.MustAtoi(utils.EmptyOrElse(os.Getenv("FFMPEG_MAX_CONCURRENT_TASKS"), "1")),
+		FFmpegAllowDuringRecording:         os.Getenv("FFMPEG_ALLOW_DURING_RECORDING") == "true",
 
 		// global performance configs
 		uploadBufferSize:           utils.MustAtoi(utils.EmptyOrElse(os.Getenv("UPLOAD_BUFFER_SIZE"), "5242880")),             // default 5MB

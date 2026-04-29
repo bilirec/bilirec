@@ -66,6 +66,10 @@ func (g *GlobalReadOnly) FFmpegMaxConcurrentTasks() int {
 	return g.config.FFmpegMaxConcurrentTasks
 }
 
+func (g *GlobalReadOnly) FFmpegAllowDuringRecording() bool {
+	return g.config.FFmpegAllowDuringRecording
+}
+
 func (g *GlobalReadOnly) Validate() {
 	if g.config.CloudConvertCheckIntervalSecs <= 0 {
 		logger.Warnf("CLOUDCONVERT_CHECK_INTERVAL_SECS is invalid (%d), using default %d seconds", g.config.CloudConvertCheckIntervalSecs, defaultCloudConvertCheckIntervalSecs)
