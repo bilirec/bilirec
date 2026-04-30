@@ -1,11 +1,9 @@
 package notify
 
 import (
-	"bufio"
-	"encoding/json"
-	"fmt"
-	"time"
+	"strings"
 
+	webpush "github.com/SherClockHolmes/webpush-go"
 	ns "github.com/eric2788/bilirec/internal/services/notify"
 	"github.com/gofiber/fiber/v3"
 )
@@ -17,62 +15,94 @@ type Controller struct {
 func NewController(app *fiber.App, notifySvc *ns.Service) *Controller {
 	c := &Controller{notifySvc: notifySvc}
 	group := app.Group("/notify")
-	group.Get("/stream", c.stream)
+	group.Get("/public-key", c.webPushPublicKey)
+	group.Post("/subscribe", c.webPushSubscribe)
+	group.Delete("/subscribe", c.webPushUnsubscribe)
 	return c
 }
 
-func (c *Controller) stream(ctx fiber.Ctx) error {
-	ctx.Set(fiber.HeaderContentType, "text/event-stream")
-	ctx.Set(fiber.HeaderCacheControl, "no-cache")
-	ctx.Set(fiber.HeaderConnection, "keep-alive")
+// @Summary Get Web Push public key
+// @Description Get VAPID public key used by frontend to create push subscription
+// @Tags notify
+// @Security BearerAuth
+// @Produce json
+// @Success 200 {object} WebPushPublicKeyResponse
+// @Router /notify/public-key [get]
+func (c *Controller) webPushPublicKey(ctx fiber.Ctx) error {
+	if !c.notifySvc.WebPushEnabled() {
+		return ctx.JSON(WebPushPublicKeyResponse{Enabled: false})
+	}
 
-	// force nginx to not buffer the response
-	ctx.Set("X-Accel-Buffering", "no")
-
-	_, ch, unsubscribe := c.notifySvc.Subscribe(32)
-
-	requestCtx := ctx.RequestCtx()
-	requestCtx.SetBodyStreamWriter(func(w *bufio.Writer) {
-		defer unsubscribe()
-		writeEvent := func(event string, payload []byte) bool {
-			if _, err := fmt.Fprintf(w, "event: %s\n", event); err != nil {
-				return false
-			}
-			if _, err := fmt.Fprintf(w, "data: %s\n\n", payload); err != nil {
-				return false
-			}
-			return w.Flush() == nil
-		}
-
-		if !writeEvent("ping", []byte(`{"ok":true}`)) {
-			return
-		}
-
-		heartbeat := time.NewTicker(25 * time.Second)
-		defer heartbeat.Stop()
-
-		for {
-			select {
-			case <-requestCtx.Done():
-				return
-			case <-heartbeat.C:
-				if !writeEvent("ping", []byte(`{"ok":true}`)) {
-					return
-				}
-			case evt, ok := <-ch:
-				if !ok {
-					return
-				}
-				payload, err := json.Marshal(evt)
-				if err != nil {
-					continue
-				}
-				if !writeEvent("notification", payload) {
-					return
-				}
-			}
-		}
+	return ctx.JSON(WebPushPublicKeyResponse{
+		Enabled:   true,
+		PublicKey: c.notifySvc.WebPushPublicKey(),
 	})
+}
 
-	return nil
+// @Summary Register Web Push subscription
+// @Description Register browser push subscription for receiving live notifications
+// @Tags notify
+// @Security BearerAuth
+// @Accept json
+// @Param subscription body WebPushSubscriptionRequest true "Push subscription payload"
+// @Success 201
+// @Failure 400 {string} string "Bad request"
+// @Failure 503 {string} string "Web Push not enabled"
+// @Router /notify/subscribe [post]
+func (c *Controller) webPushSubscribe(ctx fiber.Ctx) error {
+	if !c.notifySvc.WebPushEnabled() {
+		return fiber.NewError(fiber.StatusServiceUnavailable, "Web Push 尚未啟用")
+	}
+
+	var req WebPushSubscriptionRequest
+	if err := ctx.Bind().Body(&req); err != nil {
+		return fiber.ErrBadRequest
+	}
+
+	sub := webpush.Subscription{
+		Endpoint: req.Endpoint,
+		Keys: webpush.Keys{
+			Auth:   req.Keys.Auth,
+			P256dh: req.Keys.P256dh,
+		},
+	}
+
+	if ok := c.notifySvc.AddWebPushSubscription(sub); !ok {
+		return fiber.NewError(fiber.StatusBadRequest, "無效的 Web Push subscription")
+	}
+
+	return ctx.SendStatus(fiber.StatusCreated)
+}
+
+// @Summary Remove Web Push subscription
+// @Description Remove browser push subscription by endpoint
+// @Tags notify
+// @Security BearerAuth
+// @Accept json
+// @Param endpoint query string false "Subscription endpoint"
+// @Param request body WebPushUnsubscribeRequest false "Unsubscribe payload when endpoint is not set in query"
+// @Success 204
+// @Failure 400 {string} string "Bad request"
+// @Failure 404 {string} string "Not found"
+// @Router /notify/subscribe [delete]
+func (c *Controller) webPushUnsubscribe(ctx fiber.Ctx) error {
+	endpoint := strings.TrimSpace(ctx.Query("endpoint"))
+
+	if endpoint == "" {
+		var req WebPushUnsubscribeRequest
+		if err := ctx.Bind().Body(&req); err != nil {
+			return fiber.ErrBadRequest
+		}
+		endpoint = strings.TrimSpace(req.Endpoint)
+	}
+
+	if endpoint == "" {
+		return fiber.NewError(fiber.StatusBadRequest, "endpoint 為必填")
+	}
+
+	if ok := c.notifySvc.RemoveWebPushSubscription(endpoint); !ok {
+		return fiber.NewError(fiber.StatusNotFound, "找不到對應 subscription")
+	}
+
+	return ctx.SendStatus(fiber.StatusNoContent)
 }

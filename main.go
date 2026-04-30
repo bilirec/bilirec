@@ -38,8 +38,9 @@ func MainModule() fx.Option {
 		fx.Provide(ro.NewService),
 		fx.Provide(su.NewService),
 		fx.Provide(no.NewService),
-		fx.Provide(sc.NewService),
 		fx.Provide(fi.NewService),
+
+		fx.Invoke(sc.NewService),
 
 		fx.Invoke(room.NewController),
 		fx.Invoke(nc.NewController),

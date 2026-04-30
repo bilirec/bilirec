@@ -4,6 +4,7 @@ go 1.25.0
 
 require (
 	github.com/CuteReimu/bilibili/v2 v2.5.1
+	github.com/SherClockHolmes/webpush-go v1.4.0
 	github.com/gofiber/contrib/v3/jwt v1.0.0-rc.1
 	github.com/gofiber/fiber/v3 v3.0.0-rc.3
 	github.com/jellydator/ttlcache/v3 v3.4.0

@@ -31,6 +31,7 @@ type Config struct {
 
 	BackendHost        string
 	FrontendURL        *url.URL
+	WebPushSubscriber  string
 	Username           string
 	PasswordHash       string
 	ViewerUsername     string
@@ -102,6 +103,7 @@ func provider() (*Config, error) {
 		DeleteFlvAfterConvert:              os.Getenv("DELETE_FLV_AFTER_CONVERT") == "true",
 		FrontendURL:                        url,
 		BackendHost:                        utils.EmptyOrElse(os.Getenv("BACKEND_HOST"), "localhost:8080"),
+		WebPushSubscriber:                  utils.EmptyOrElse(os.Getenv("WEBPUSH_SUBSCRIBER"), "mailto:webpush@ericlamm.com"),
 		Username:                           username,
 		PasswordHash:                       string(passwordHash),
 		ViewerUsername:                     viewerUsername,

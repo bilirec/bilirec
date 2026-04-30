@@ -6,7 +6,7 @@
 
 - ✅ 手动触发录制任务，实时录制直播流
 - ✅ 自动录制 - 为直播间配置自动开播录制
-- ✅ 直播通知** - 实时推送开播通知（支持 SSE）
+- ✅ 直播通知** - 实时推送开播通知（支持 Web Push）
 - ✅ 自动分段轮转 - 当直播过程中发生直播 PK 等分辨率变更时，自动切换到新的 FLV 文件，避免录制文件花屏或损坏
 - ✅ 支持多个直播间同时录制
 - ✅ 自动处理流中断和恢复
@@ -87,6 +87,7 @@ docker run -d --name bilirec -p 8080:8080 eric1008818/bilirec:latest
 | `DELETE_FLV_AFTER_CONVERT` | 转换后是否删除原始 FLV 文件 | `false` |
 | `BACKEND_HOST` | 后端主机（用于生成Cookie域名） | `localhost:8080` |
 | `FRONTEND_URL` | 前端 URL（用于 CORS 与 cookie 域） | `http://localhost:8080` |
+| `WEBPUSH_SUBSCRIBER` | Web Push VAPID 的 subject（建议使用 `mailto:you@example.com`） | `mailto:admin@example.com` |
 | `USERNAME` | 可选：启用用户名/密码认证时的用户名 | (未设置) |
 | `PASSWORD` | 可选：启用用户名/密码认证时的密码 | (未设置) |
 | `JWT_SECRET` | JWT 签名密钥 | `bilirec_secret` |
@@ -130,6 +131,7 @@ export FFMPEG_MAX_CONCURRENT_TASKS=1
 export FFMPEG_ALLOW_DURING_RECORDING=false
 export BACKEND_HOST=localhost:8080
 export FRONTEND_URL=http://localhost:8080
+export WEBPUSH_SUBSCRIBER=mailto:admin@example.com
 export UPLOAD_BUFFER_SIZE=5242880
 export DOWNLOAD_BUFFER_SIZE=5242880
 export STREAM_WRITER_BUFFER_SIZE=1048576
@@ -143,6 +145,8 @@ export PRODUCTION_MODE=false
 ```
 
 如果你是使用二进制文件，启动服务后会生成 `.env` 文件，里面包含当前的环境变量配置（不包含敏感信息）。你可以编辑这个文件来修改配置，或者直接设置环境变量覆盖。
+
+Web Push 的 VAPID key 会由后端在启动时自动生成并写入 `SECRET_DIR`（默认 `secrets`）下的 `_webpush_public_key` 与 `_webpush_private_key`。后续重启会优先复用已存在的 key。
 
 ## 使用方法
 
@@ -426,26 +430,30 @@ Content-Type: application/json
 
 #### 实时通知
 
-- **订阅直播通知（SSE）**
+- **获取 Web Push 公钥**
 
   ```http
-  GET /notify/stream
+  GET /notify/public-key
   ```
 
-  通过 Server-Sent Events (SSE) 订阅实时直播通知。该接口返回事件流，包括以下事件类型：
-  - `ping` - 心跳信号（确保连接活跃）
-  - `live_detected` - 直播间已开播
-  - `live_auto_record_started` - 直播间已开播并已启动自动录制
+  获取前端订阅 Web Push 所需的 VAPID 公钥。
 
-  使用示例（JavaScript）：
+- **注册 Web Push 订阅**
 
-  ```javascript
-  const eventSource = new EventSource('/notify/stream');
-  eventSource.addEventListener('live_detected', (e) => {
-    const data = JSON.parse(e.data);
-    console.log(`房间 ${data.room_id} 已开播: ${data.message}`);
-  });
+  ```http
+  POST /notify/subscribe
+  Content-Type: application/json
   ```
+
+  请求体为浏览器 Push API 产生的 subscription JSON（包含 `endpoint` 与 `keys`）。
+
+- **取消 Web Push 订阅**
+
+  ```http
+  DELETE /notify/subscribe
+  ```
+
+  可通过 query 参数 `endpoint` 或 JSON body 提供 endpoint。
 
 ## 开发与调试
 
@@ -470,7 +478,7 @@ Content-Type: application/json
 │   ├── controllers/                  # HTTP 控制器
 │   │   ├── convert/                  # 转换任务管理
 │   │   ├── file/                     # 文件管理
-│   │   ├── notify/                   # 实时通知（SSE）
+│   │   ├── notify/                   # 实时通知（Web Push）
 │   │   ├── record/                   # 录制管理
 │   │   └── room/                     # 房间信息与订阅
 │   ├── modules/                      # 核心模块
@@ -515,7 +523,7 @@ Content-Type: application/json
 - **自动恢复**: 当流中断时自动重连，详见 [`recorder.Service`](internal/services/recorder/recorder.go)
 - **自动分段轮转**: 当检测到直播 PK 等分辨率变更时，自动切换到新的录制文件，并为新分段重新写入 FLV 文件头，降低直播中途切换画质导致输出文件异常的风险
 - **自动录制**: 为订阅的直播间配置自动开播录制，后台定期检查直播间状态并自动启动录制，详见 [`subcheck.Service`](internal/services/subcheck/check.go)
-- **实时通知**: 通过 SSE 推送直播开播通知和自动录制状态，详见 [`notify.Service`](internal/services/notify/notify.go)
+- **实时通知**: 通过 Web Push 推送直播开播通知和自动录制状态，详见 [`notify.Service`](internal/services/notify/notify.go)
 - **缓冲池**: 使用 [`pool.BufferPool`](pkg/pool/pool.go) 减少内存分配
 - **定期刷盘**: 每 5 秒自动刷新写入缓冲，防止数据丢失
 - **低资源占用**: 设计注重低内存和低 CPU 使用，适合树莓派等资源受限设备
