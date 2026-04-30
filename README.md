@@ -5,14 +5,14 @@
 ## 功能特性
 
 - ✅ 手动触发录制任务，实时录制直播流
-- ✅ **自动录制** - 为直播间配置自动开播录制
-- ✅ **直播通知** - 实时推送开播通知（支持 SSE）
-- ✅ **自动分段轮转** - 当直播过程中发生直播 PK 等分辨率变更时，自动切换到新的 FLV 文件，避免录制文件花屏或损坏
+- ✅ 自动录制 - 为直播间配置自动开播录制
+- ✅ 直播通知** - 实时推送开播通知（支持 SSE）
+- ✅ 自动分段轮转 - 当直播过程中发生直播 PK 等分辨率变更时，自动切换到新的 FLV 文件，避免录制文件花屏或损坏
 - ✅ 支持多个直播间同时录制
 - ✅ 自动处理流中断和恢复
 - ✅ RESTful API 管理录制任务
 - ✅ 文件管理、在线播放和下载功能
-- ✅ **在线播放** - 在浏览器中直接预览和播放已录制的视频
+- ✅ 在线播放 - 在浏览器中直接预览和播放已录制的视频
 - ✅ 支持匿名登录或账号登录
 - ✅ 自动刷新 Cookie 保持登录状态
 - ✅ 低内存与低 CPU 占用，适合在资源受限设备（如树莓派）上运行
@@ -74,7 +74,7 @@ docker run -d --name bilirec -p 8080:8080 eric1008818/bilirec:latest
 所有配置通过环境变量设置：
 
 | 环境变量 | 说明 | 默认值 |
-|---------|------|--------|
+| ------- | ---- | ------ |
 | `ANONYMOUS_LOGIN` | 是否使用匿名登录 | `false` |
 | `PORT` | API 服务端口 | `8080` |
 | `MAX_CONCURRENT_RECORDINGS` | 最大同时录制数 | `3` |
@@ -95,6 +95,11 @@ docker run -d --name bilirec -p 8080:8080 eric1008818/bilirec:latest
 | `DATABASE_DIR` | 本地数据库目录（bbolt，用于持久化转换任务等） | `database` |
 | `CLOUDCONVERT_THRESHOLD` | 使用 CloudConvert 的文件大小阈值（字节） | `1073741824` (1 GB) |
 | `CLOUDCONVERT_API_KEY` | 可选：CloudConvert API Key（为空则禁用 CloudConvert） | (未设置) |
+| `CLOUDCONVERT_CHECK_INTERVAL_SECS` | CloudConvert 任务状态轮询间隔（秒） | `180` |
+| `CLOUDCONVERT_MAX_CONCURRENT_DOWNLOADS` | CloudConvert 最大并发下载数 | `1` |
+| `FFMPEG_CHECK_INTERVAL_SECS` | 本地 FFmpeg 转换任务轮询间隔（秒） | `60` |
+| `FFMPEG_MAX_CONCURRENT_TASKS` | 本地 FFmpeg 最大并发转换任务数 | `1` |
+| `FFMPEG_ALLOW_DURING_RECORDING` | 是否允许在录制进行中时执行 FFmpeg 转换任务 | `false` |
 | `UPLOAD_BUFFER_SIZE` | 上传时或向外部服务（如 CloudConvert）传输文件使用的缓冲区大小（字节） | `5242880` (5 MB) |
 | `DOWNLOAD_BUFFER_SIZE` | 文件下载 / 导出时使用的缓冲区大小（字节） | `5242880` (5 MB) |
 | `STREAM_WRITER_BUFFER_SIZE` | 流写入器（写入文件）缓冲区大小（字节） | `1048576` (1 MB) |
@@ -117,6 +122,12 @@ export DELETE_FLV_AFTER_CONVERT=false
 # 可选：CloudConvert（如果启用会对大文件使用云端转换）
 export CLOUDCONVERT_THRESHOLD=1073741824
 export CLOUDCONVERT_API_KEY=
+export CLOUDCONVERT_CHECK_INTERVAL_SECS=180
+export CLOUDCONVERT_MAX_CONCURRENT_DOWNLOADS=1
+# FFmpeg 本地转换参数
+export FFMPEG_CHECK_INTERVAL_SECS=60
+export FFMPEG_MAX_CONCURRENT_TASKS=1
+export FFMPEG_ALLOW_DURING_RECORDING=false
 export BACKEND_HOST=localhost:8080
 export FRONTEND_URL=http://localhost:8080
 export UPLOAD_BUFFER_SIZE=5242880
@@ -169,25 +180,31 @@ Content-Type: application/json
 #### 录制管理
 
 - **开始录制**
-  ```
+
+  ```http
   POST /record/:roomID/start
   ```
 
 - **停止录制**
-  ```
+
+  ```http
   POST /record/:roomID/stop
   ```
 
 - **获取录制状态**
-  ```
+
+  ```http
   GET /record/:roomID/status
   ```
 
 - **获取录制统计**
-  ```
+
+  ```http
   GET /record/:roomID/stats
   ```
+
   返回：
+
   ```json
   {
     "bytes_written": 1048576,
@@ -197,43 +214,53 @@ Content-Type: application/json
     "output_path": "records/tester-123456/live-title-20260428_210000-1.flv"
   }
   ```
+
   `output_path` 表示当前正在写入的录制文件路径。如果直播过程中发生直播 PK 等分辨率变更，录制器会自动轮转到新的分段文件，后续分段文件名会追加 `-1`、`-2` 等后缀。
 
 - **列出所有录制任务**
-  ```
+
+  ```http
   GET /record/list
   ```
 
 #### 文件管理
 
 - **列出文件**
-  ```
+
+  ```http
   GET /files/browse/*
   ```
 
 - **下载文件**
-  ```
+
+  ```http
   GET /files/download/*
   ```
+
   下载接口直接返回存储的文件，**不再支持**通过查询参数进行即时格式转换（此前的 `?format=...` 参数已移除）。
   若要将录制的 FLV 转为 MP4，请启用 `CONVERT_FLV_TO_MP4`：在录制完成时，recorder 会将 FLV 文件加入转换队列，由后台任务异步转换为 MP4（转换行为受 `DELETE_FLV_AFTER_CONVERT` 控制）。
   当同时设置了 `CLOUDCONVERT_API_KEY` 且文件大小 >= `CLOUDCONVERT_THRESHOLD`（默认 1 GB）时，系统会优先使用 CloudConvert（异步任务，可通过 `/convert/tasks` 查询转换状态）；否则由本地 ffmpeg 后台任务处理。
 
 - **临时 / 预签名下载（Presigned）**
-  ```
+
+  ```http
   POST /files/presigned/{path}?ttl=<seconds>
   ```
+
   该接口需要身份认证（JWT），用于为文件创建一个临时的预签名下载令牌（`ttl` 可选，单位秒，默认 3600）。成功创建后会返回包含临时令牌或 URL 的响应。使用该令牌可以进行匿名下载：
 
-  ```
+  ```http
   GET /files/tempdownload?presigned=<token>
   ```
+
   `GET /files/tempdownload` 无需认证，但必须提供有效的 `presigned` 查询参数。该临时链接会在创建时设置过期时间，过期后将无法使用。
 
 - **删除多个文件**
-  ```
+
+  ```http
   DELETE /files/batch
   ```
+
   请求体：JSON 数组，包含要删除的相对文件路径，示例：
 
   ```json
@@ -241,27 +268,31 @@ Content-Type: application/json
   ```
 
 - **删除目录**
-  ```
+
+  ```http
   DELETE /files/{path}
   ```
 
 - **在线播放视频**
-  ```
+
+  ```http
   GET /files/playback/{path}
   ```
+
   在浏览器中直接播放已录制的 MP4 视频（VOD）。该接口返回视频流，浏览器会直接在网页中显示播放器而非下载文件。
-  
+
   支持的格式：
   - `video/mp4` - MP4 格式视频
-  
+
   使用示例：
+
   ```html
   <video controls width="100%">
     <source src="/files/playback/username-roomID/20250101.mp4" type="video/mp4">
     Your browser does not support HTML5 video.
   </video>
   ```
-  
+
   **注意**：
   - 只支持已完全转换为 MP4 格式的文件（需启用 `CONVERT_FLV_TO_MP4`）
   - 无法播放正在进行中的录制文件
@@ -270,61 +301,77 @@ Content-Type: application/json
 #### 转换任务
 
 - **列出进行中的转换任务**（需要认证，返回任务信息）
-  ```
+
+  ```http
   GET /convert/tasks
   ```
 
 - **取消转换任务**（需要认证）
-  ```
+
+  ```http
   DELETE /convert/tasks/:task_id
   ```
+
   返回 `204 No Content` 表示取消成功，若任务不存在返回 `404`。
 
 #### 房间信息
 
 - **获取房间信息**
-  ```
+
+  ```http
   GET /room/:roomID/info
   ```
+
   获取指定房间的详细信息。
 
 - **批量获取房间信息**
-  ```
+
+  ```http
   GET /room/infos?roomIDs=123,456,789
   ```
+
   通过逗号分隔的房间 ID 列表获取多个房间的信息。
 
 - **检查直播状态**
-  ```
+
+  ```http
   GET /room/:roomID/live
   ```
+
   检查指定房间的直播是否进行中。
 
 #### 房间订阅管理
 
 - **订阅房间**
-  ```
+
+  ```http
   POST /room/:roomID
   ```
+
   订阅一个直播房间，当房间开播时会接收更新。
   - 状态 `200`: 订阅成功
   - 状态 `409`: 已订阅此房间
   - 状态 `400`: 无效的房间 ID
 
 - **取消订阅**
-  ```
+
+  ```http
   DELETE /room/:roomID
   ```
+
   取消订阅直播房间。
   - 状态 `200`: 取消订阅成功
   - 状态 `404`: 未订阅此房间
   - 状态 `400`: 无效的房间 ID
 
 - **检查订阅状态**
-  ```
+
+  ```http
   GET /room/subscribe/:roomID
   ```
+
   检查是否已订阅指定房间。返回：
+
   ```json
   {
     "room_id": 123,
@@ -333,10 +380,13 @@ Content-Type: application/json
   ```
 
 - **列出所有订阅房间**
-  ```
+
+  ```http
   GET /room/subscribe
   ```
+
   获取所有已订阅房间的 ID 列表。返回：
+
   ```json
   {
     "room_ids": [123, 456, 789]
@@ -344,10 +394,13 @@ Content-Type: application/json
   ```
 
 - **获取房间配置**
-  ```
+
+  ```http
   GET /room/:roomID/config
   ```
+
   获取指定房间的配置（自动录制、通知等）。返回：
+
   ```json
   {
     "room_id": 123,
@@ -357,10 +410,13 @@ Content-Type: application/json
   ```
 
 - **更新房间配置**
-  ```
+
+  ```http
   PUT /room/:roomID/config
   ```
+
   更新房间的配置（自动录制、通知等）。请求体：
+
   ```json
   {
     "auto_record": true,
@@ -371,15 +427,18 @@ Content-Type: application/json
 #### 实时通知
 
 - **订阅直播通知（SSE）**
-  ```
+
+  ```http
   GET /notify/stream
   ```
+
   通过 Server-Sent Events (SSE) 订阅实时直播通知。该接口返回事件流，包括以下事件类型：
   - `ping` - 心跳信号（确保连接活跃）
   - `live_detected` - 直播间已开播
   - `live_auto_record_started` - 直播间已开播并已启动自动录制
-  
+
   使用示例（JavaScript）：
+
   ```javascript
   const eventSource = new EventSource('/notify/stream');
   eventSource.addEventListener('live_detected', (e) => {
@@ -396,7 +455,7 @@ Content-Type: application/json
 
 ## 项目结构
 
-```
+```text
 .
 ├── .github/                          # CI / workflows
 ├── Dockerfile
