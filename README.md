@@ -87,7 +87,7 @@ docker run -d --name bilirec -p 8080:8080 eric1008818/bilirec:latest
 | `DELETE_FLV_AFTER_CONVERT` | 转换后是否删除原始 FLV 文件 | `false` |
 | `BACKEND_HOST` | 后端主机（用于生成Cookie域名） | `localhost:8080` |
 | `FRONTEND_URL` | 前端 URL（用于 CORS 与 cookie 域） | `http://localhost:8080` |
-| `WEBPUSH_SUBSCRIBER` | Web Push VAPID 的 subject（建议使用 `mailto:you@example.com`） | `mailto:admin@example.com` |
+| `WEBPUSH_SUBSCRIBER` | Web Push VAPID 的 subject（建议使用 `mailto:you@example.com`） | `mailto:webpush@ericlamm.com` |
 | `USERNAME` | 可选：启用用户名/密码认证时的用户名 | (未设置) |
 | `PASSWORD` | 可选：启用用户名/密码认证时的密码 | (未设置) |
 | `JWT_SECRET` | JWT 签名密钥 | `bilirec_secret` |
@@ -131,7 +131,7 @@ export FFMPEG_MAX_CONCURRENT_TASKS=1
 export FFMPEG_ALLOW_DURING_RECORDING=false
 export BACKEND_HOST=localhost:8080
 export FRONTEND_URL=http://localhost:8080
-export WEBPUSH_SUBSCRIBER=mailto:admin@example.com
+export WEBPUSH_SUBSCRIBER=mailto:webpush@ericlamm.com
 export UPLOAD_BUFFER_SIZE=5242880
 export DOWNLOAD_BUFFER_SIZE=5242880
 export STREAM_WRITER_BUFFER_SIZE=1048576

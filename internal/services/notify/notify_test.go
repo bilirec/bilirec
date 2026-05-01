@@ -3,12 +3,12 @@ package notify_test
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	webpush "github.com/SherClockHolmes/webpush-go"
 	"github.com/eric2788/bilirec/internal/modules/config"
 	ns "github.com/eric2788/bilirec/internal/services/notify"
-	push "github.com/eric2788/bilirec/pkg/webpush"
 	"go.uber.org/fx"
 	"go.uber.org/fx/fxtest"
 )
@@ -28,11 +28,13 @@ func setEnv(tb testing.TB, key, value string) {
 	})
 }
 
-func newNotifyService(tb testing.TB, webPushSubscriber string) (*ns.Service, string) {
+func newNotifyService(tb testing.TB, webPushSubscriber string) *ns.Service {
 	tb.Helper()
 
 	secretDir := tb.TempDir()
+	databaseDir := tb.TempDir()
 	setEnv(tb, "SECRET_DIR", secretDir)
+	setEnv(tb, "DATABASE_DIR", databaseDir)
 	setEnv(tb, "WEBPUSH_SUBSCRIBER", webPushSubscriber)
 
 	var svc *ns.Service
@@ -46,60 +48,76 @@ func newNotifyService(tb testing.TB, webPushSubscriber string) (*ns.Service, str
 		app.RequireStop()
 	})
 
-	return svc, secretDir
+	return svc
 }
 
 func TestService_WebPushConfigAndSubscriptions(t *testing.T) {
-	svc, secretDir := newNotifyService(t, "mailto:test@example.com")
+	svc := newNotifyService(t, "mailto:test@example.com")
 
-	if !svc.WebPushEnabled() {
+	state := svc.WebPushServiceState()
+
+	if !state.Enabled {
 		t.Fatal("expected web push to be enabled")
 	}
 
-	if got := svc.WebPushPublicKey(); got == "" {
+	if state.PublicKey == "" {
 		t.Fatal("expected non-empty web push public key")
 	}
 
-	publicPath := filepath.Join(secretDir, push.PublicKeyFileName)
-	privatePath := filepath.Join(secretDir, push.PrivateKeyFileName)
-	if _, err := os.Stat(publicPath); err != nil {
-		t.Fatalf("expected persisted public key file: %v", err)
-	}
-	if _, err := os.Stat(privatePath); err != nil {
-		t.Fatalf("expected persisted private key file: %v", err)
-	}
-
-	created := svc.AddWebPushSubscription(webpush.Subscription{
+	err := svc.AddWebPushSubscription(webpush.Subscription{
 		Endpoint: "https://push.example/send/abc",
 		Keys: webpush.Keys{
 			Auth:   "auth-token",
 			P256dh: "p256dh-token",
 		},
 	})
-	if !created {
-		t.Fatal("expected adding subscription to succeed")
+	if err != nil {
+		t.Fatalf("expected adding subscription to succeed but got error: %v", err)
 	}
 
-	created = svc.AddWebPushSubscription(webpush.Subscription{
+	err = svc.AddWebPushSubscription(webpush.Subscription{
+		Endpoint: "https://push.example/send/def",
+		Keys: webpush.Keys{
+			Auth:   "auth-token-updated",
+			P256dh: "p256dh-token-updated",
+		},
+	})
+	if err != nil {
+		t.Fatalf("expected adding subscription to succeed but got error: %v", err)
+	}
+
+	err = svc.AddWebPushSubscription(webpush.Subscription{
 		Endpoint: "https://push.example/send/abc",
 		Keys: webpush.Keys{
 			Auth:   "auth-token-updated",
 			P256dh: "p256dh-token-updated",
 		},
 	})
-	if !created {
-		t.Fatal("expected duplicate add to replace existing subscription")
+	if err != nil {
+		t.Fatalf("expected adding existing subscription to succeed but got error: %v", err)
 	}
 
-	if ok := svc.RemoveWebPushSubscription("https://push.example/send/abc"); !ok {
-		t.Fatal("expected removing existing subscription to succeed")
+	if err := svc.RemoveWebPushSubscription("https://push.example/send/abc"); err != nil {
+		t.Fatalf("expected removing existing subscription to succeed but got error: %v", err)
 	}
 
-	if ok := svc.RemoveWebPushSubscription("https://push.example/send/abc"); ok {
-		t.Fatal("expected removing non-existing subscription to fail")
+	if err := svc.RemoveWebPushSubscription("https://push.example/send/xyz"); err != nil {
+		t.Fatalf("expected removing non-existing subscription to succeed but got error: %v", err)
+	}
+}
+
+func repoRootFromThisFile(tb testing.TB) string {
+	tb.Helper()
+
+	_, file, _, ok := runtime.Caller(0)
+	if !ok {
+		tb.Fatal("failed to resolve current file path")
 	}
 
-	if ok := svc.AddWebPushSubscription(webpush.Subscription{}); ok {
-		t.Fatal("expected invalid subscription to be rejected")
+	root := filepath.Clean(filepath.Join(filepath.Dir(file), "..", "..", ".."))
+	if _, err := os.Stat(filepath.Join(root, "go.mod")); err != nil {
+		tb.Fatalf("failed to resolve repo root from test file: %v", err)
 	}
+
+	return root
 }

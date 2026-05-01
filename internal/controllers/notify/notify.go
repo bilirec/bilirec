@@ -6,7 +6,10 @@ import (
 	webpush "github.com/SherClockHolmes/webpush-go"
 	ns "github.com/eric2788/bilirec/internal/services/notify"
 	"github.com/gofiber/fiber/v3"
+	"github.com/sirupsen/logrus"
 )
+
+var logger = logrus.WithField("controller", "notify")
 
 type Controller struct {
 	notifySvc *ns.Service
@@ -29,14 +32,14 @@ func NewController(app *fiber.App, notifySvc *ns.Service) *Controller {
 // @Success 200 {object} WebPushPublicKeyResponse
 // @Router /notify/public-key [get]
 func (c *Controller) webPushPublicKey(ctx fiber.Ctx) error {
-	if !c.notifySvc.WebPushEnabled() {
+	if state := c.notifySvc.WebPushServiceState(); !state.Enabled {
 		return ctx.JSON(WebPushPublicKeyResponse{Enabled: false})
+	} else {
+		return ctx.JSON(WebPushPublicKeyResponse{
+			Enabled:   true,
+			PublicKey: state.PublicKey,
+		})
 	}
-
-	return ctx.JSON(WebPushPublicKeyResponse{
-		Enabled:   true,
-		PublicKey: c.notifySvc.WebPushPublicKey(),
-	})
 }
 
 // @Summary Register Web Push subscription
@@ -50,7 +53,7 @@ func (c *Controller) webPushPublicKey(ctx fiber.Ctx) error {
 // @Failure 503 {string} string "Web Push not enabled"
 // @Router /notify/subscribe [post]
 func (c *Controller) webPushSubscribe(ctx fiber.Ctx) error {
-	if !c.notifySvc.WebPushEnabled() {
+	if !c.notifySvc.WebPushServiceState().Enabled {
 		return fiber.NewError(fiber.StatusServiceUnavailable, "Web Push 尚未啟用")
 	}
 
@@ -67,8 +70,9 @@ func (c *Controller) webPushSubscribe(ctx fiber.Ctx) error {
 		},
 	}
 
-	if ok := c.notifySvc.AddWebPushSubscription(sub); !ok {
-		return fiber.NewError(fiber.StatusBadRequest, "無效的 Web Push subscription")
+	if err := c.notifySvc.AddWebPushSubscription(sub); err != nil {
+		logger.Errorf("failed to add web push subscription: %v", err)
+		return fiber.NewError(fiber.StatusBadRequest, "新增 Web Push subscription 失敗")
 	}
 
 	return ctx.SendStatus(fiber.StatusCreated)
@@ -100,8 +104,9 @@ func (c *Controller) webPushUnsubscribe(ctx fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusBadRequest, "endpoint 為必填")
 	}
 
-	if ok := c.notifySvc.RemoveWebPushSubscription(endpoint); !ok {
-		return fiber.NewError(fiber.StatusNotFound, "找不到對應 subscription")
+	if err := c.notifySvc.RemoveWebPushSubscription(endpoint); err != nil {
+		logger.Warnf("failed to remove web push subscription: %s", endpoint)
+		return fiber.NewError(fiber.StatusNotFound, "取消 web push subscription 失敗")
 	}
 
 	return ctx.SendStatus(fiber.StatusNoContent)
