@@ -24,6 +24,7 @@ func NewService(lc fx.Lifecycle, bilic *bilibili.Client) *Service {
 		cache: ttlcache.New(
 			ttlcache.WithTTL[string, *bilibili.LiveRoomInfoDetail](defaultTTL),
 			ttlcache.WithCapacity[string, *bilibili.LiveRoomInfoDetail](100),
+			ttlcache.WithDisableTouchOnHit[string, *bilibili.LiveRoomInfoDetail](),
 		),
 	}
 
