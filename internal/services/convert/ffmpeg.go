@@ -62,13 +62,14 @@ func (f *ffmpegConvertManager) Enqueue(inputPath, outputPath, format string, del
 		return nil, err
 	}
 	queue := &TaskQueue{
-		Provider:     ProviderFFmpeg,
-		TaskID:       uuid,
-		InputPath:    inputPath,
-		OutputPath:   outputPath,
-		InputFormat:  utils.GetPathFormat(inputPath),
-		OutputFormat: format,
-		DeleteSource: deleteSource,
+		Provider:      ProviderFFmpeg,
+		TaskID:        uuid,
+		InputPath:     inputPath,
+		InputFileSize: fileSize(inputPath),
+		OutputPath:    outputPath,
+		InputFormat:   utils.GetPathFormat(inputPath),
+		OutputFormat:  format,
+		DeleteSource:  deleteSource,
 	}
 	data, err := f.serializer.Serialize(queue)
 	if err != nil {

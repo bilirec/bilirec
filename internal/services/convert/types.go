@@ -22,6 +22,7 @@ type TaskQueue struct {
 	TaskID        string   `json:"task_id"`
 	ConvertTaskID string   `json:"convert_task_id,omitempty"` // the real convert task id used by the cloudconvert only
 	InputPath     string   `json:"input_path"`
+	InputFileSize *int64   `json:"input_file_size,omitempty"`
 	OutputPath    string   `json:"output_path"`
 	InputFormat   string   `json:"input_format"`
 	OutputFormat  string   `json:"output_format"`

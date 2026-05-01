@@ -114,6 +114,7 @@ func (c *cloudConvertManager) Enqueue(inputPath, outputPath, format string, dele
 		TaskID:        exportTaskID,
 		ConvertTaskID: convertTaskID,
 		InputPath:     inputPath,
+		InputFileSize: fileSize(inputPath),
 		OutputPath:    outputPath,
 		InputFormat:   originalFormat,
 		OutputFormat:  format,

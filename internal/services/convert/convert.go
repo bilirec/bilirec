@@ -159,3 +159,12 @@ func (s *Service) checkAvailableManagers() error {
 	}
 	return nil
 }
+
+func fileSize(path string) *int64 {
+	info, err := os.Stat(path)
+	if err != nil {
+		logger.Warnf("failed to get file info for path %s: %v", path, err)
+		return nil
+	}
+	return utils.Ptr(info.Size())
+}
