@@ -1,6 +1,7 @@
 package config
 
 import (
+	"context"
 	"net/url"
 	"os"
 
@@ -58,7 +59,7 @@ type Config struct {
 
 var logger = logrus.WithField("module", "config")
 
-func provider() (*Config, error) {
+func provider(lc fx.Lifecycle) (*Config, error) {
 
 	// parse username and password
 	username, passwordHash, err := parseUsernameAndPassword("USERNAME", "PASSWORD")
@@ -127,6 +128,20 @@ func provider() (*Config, error) {
 
 	ReadOnly = &GlobalReadOnly{config: c}
 	ReadOnly.Validate()
+
+	lc.Append(fx.StartHook(func(context.Context) error {
+		if err := os.MkdirAll(c.OutputDir, 0755); err != nil {
+			return err
+		}
+		if err := os.MkdirAll(c.DatabaseDir, 0755); err != nil {
+			return err
+		}
+		if err := os.MkdirAll(c.SecretDir, 0700); err != nil {
+			return err
+		}
+		return nil
+	}))
+
 	return c, nil
 }
 

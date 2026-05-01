@@ -35,9 +35,6 @@ func NewService(lc fx.Lifecycle, cfg *config.Config, roomSvc *room.Service) *Ser
 
 	lc.Append(fx.StartStopHook(
 		func() error {
-			if err := os.MkdirAll(cfg.DatabaseDir, 0755); err != nil {
-				return err
-			}
 			if client, err := db.Open(cfg.DatabaseDir + string(os.PathSeparator) + "subscribes.db"); err != nil {
 				return err
 			} else if bucket, err := client.Bucket(roomSubscribeBucket); err != nil {

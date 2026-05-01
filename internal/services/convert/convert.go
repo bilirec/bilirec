@@ -55,9 +55,6 @@ func NewService(ls fx.Lifecycle, cfg *config.Config, pathSvc *path.Service) *Ser
 
 	ls.Append(fx.StartStopHook(
 		func() error {
-			if err := os.MkdirAll(cfg.DatabaseDir, 0755); err != nil {
-				return err
-			}
 			// use bbolt for offline storage
 			db, err := db.Open(cfg.DatabaseDir + string(os.PathSeparator) + "queues.db")
 			if err != nil {

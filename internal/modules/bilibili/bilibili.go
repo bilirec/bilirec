@@ -52,9 +52,6 @@ func provider(cfg *config.Config, ls fx.Lifecycle) *Client {
 
 	ls.Append(
 		fx.StartHook(func(ctx context.Context) error {
-			if err := os.MkdirAll(cfg.SecretDir, 0644); err != nil {
-				return err
-			}
 			return client.loadCookiesOrLogin(ctx, cfg)
 		}),
 	)
