@@ -30,6 +30,7 @@ type ffmpegConvertManager struct {
 
 	processing *xsync.Map[string, context.CancelFunc]
 	concurrent *semaphore.Weighted
+	cooldowns  *xsync.Map[string, time.Time]
 }
 
 func newFFmpegConvertManager(getActives GetActiveRecordings) ConvertManager {
@@ -39,6 +40,7 @@ func newFFmpegConvertManager(getActives GetActiveRecordings) ConvertManager {
 		getActives: getActives,
 		processing: xsync.NewMap[string, context.CancelFunc](),
 		concurrent: semaphore.NewWeighted(int64(config.ReadOnly.FFmpegMaxConcurrentTasks())),
+		cooldowns:  xsync.NewMap[string, time.Time](),
 	}
 }
 
@@ -122,6 +124,12 @@ func (f *ffmpegConvertManager) runTaskPeriodically(ctx context.Context) {
 				if _, processing := f.processing.Load(queue.TaskID); processing {
 					taskLog.Debug("task is already being processed, skip this cycle")
 					continue
+				} else if cooldown, onCooldown := f.cooldowns.Load(queue.TaskID); onCooldown {
+					if time.Now().Before(cooldown) {
+						taskLog.Debugf("task is on cooldown until %v, skip this cycle", cooldown.Format(time.RFC3339))
+						continue
+					}
+					f.cooldowns.Delete(queue.TaskID)
 				}
 
 				if !utils.IsFileExists(queue.InputPath) {
@@ -161,10 +169,16 @@ func (f *ffmpegConvertManager) asyncProcessTask(ctx context.Context, queue *Task
 			cancel()
 		}
 	}()
+
 	defer f.concurrent.Release(1)
 
 	if err := f.processTask(ctx, queue, taskLog); err != nil {
 		taskLog.Errorf("ffmpeg task failed: %v", err)
+		// delay the tasks to interval + 30s to avoid multiple tasks failing at the same time and retrying immediately
+		delay := time.Duration(config.ReadOnly.FFmpegCheckIntervalSecs())*time.Second + 30*time.Second
+		delayTime := time.Now().Add(delay)
+		f.cooldowns.Store(queue.TaskID, delayTime)
+		taskLog.Warnf("delayed the task until %v", delayTime.Format(time.RFC3339))
 		return
 	}
 
@@ -178,7 +192,10 @@ func (f *ffmpegConvertManager) asyncProcessTask(ctx context.Context, queue *Task
 
 func (f *ffmpegConvertManager) processTask(ctx context.Context, queue *TaskQueue, taskLog *logrus.Entry) error {
 
-	if utils.IsFileExists(queue.OutputPath) {
+	if !utils.IsFileExists(queue.InputPath) {
+		taskLog.Warnf("input file %s no longer exists, skipping conversion", queue.InputPath)
+		return nil
+	} else if utils.IsFileExists(queue.OutputPath) {
 		taskLog.Warnf("output file %s already exists, skipping conversion", queue.OutputPath)
 		return nil
 	}
