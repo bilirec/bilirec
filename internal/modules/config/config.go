@@ -105,7 +105,7 @@ func provider(lc fx.Lifecycle) (*Config, error) {
 		DeleteFlvAfterConvert:              os.Getenv("DELETE_FLV_AFTER_CONVERT") == "true",
 		FrontendURL:                        url,
 		BackendHost:                        utils.EmptyOrElse(os.Getenv("BACKEND_HOST"), "localhost:8080"),
-		WebPushSubscriber:                  utils.EmptyOrElse(os.Getenv("WEBPUSH_SUBSCRIBER"), "mailto:webpush@ericlamm.com"),
+		WebPushSubscriber:                  utils.EmptyOrElse(os.Getenv("WEBPUSH_SUBSCRIBER"), "mailto:webpush@example.com"),
 		Username:                           username,
 		PasswordHash:                       string(passwordHash),
 		ViewerUsername:                     viewerUsername,
