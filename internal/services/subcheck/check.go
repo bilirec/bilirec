@@ -130,13 +130,16 @@ func (s *Service) tryStartAllAutoRecordRooms() {
 		logger.Debugf("checking room %d (%s): isLive=%v, config=%+v", roomID, info.Uname, isLive, cfg)
 
 		if cfg.AutoRecord {
-			status := s.recSvc.GetStatus(roomID)
-			if status == recorder.Recording || status == recorder.Recovering {
+
+			if !isLive {
+				if cfg.Notify {
+					s.clearNotified(roomID)
+				}
 				continue
 			}
 
-			if !isLive {
-				s.clearNotified(roomID)
+			status := s.recSvc.GetStatus(roomID)
+			if status == recorder.Recording || status == recorder.Recovering {
 				continue
 			}
 
@@ -168,17 +171,18 @@ func (s *Service) tryStartAllAutoRecordRooms() {
 }
 
 func (s *Service) clearNotified(roomID int) {
-	wasLive, _ := s.liveStates.LoadAndStore(roomID, false)
-	if !wasLive {
+	wasLive, loaded := s.liveStates.LoadAndStore(roomID, false)
+	if !loaded || !wasLive {
 		return
-	} else if err := s.bucket.Put([]byte(strconv.Itoa(roomID)), []byte{0}); err != nil {
+	}
+	if err := s.bucket.Put([]byte(strconv.Itoa(roomID)), []byte{0}); err != nil {
 		logger.Warnf("failed to update live state for room %d: %v", roomID, err)
 	}
 }
 
 func (s *Service) publishLiveOnce(roomID int, streamer string, roomTitle string, autoRecordStarted bool) {
-	wasLive, _ := s.liveStates.LoadAndStore(roomID, true)
-	if wasLive {
+	wasLive, loaded := s.liveStates.LoadAndStore(roomID, true)
+	if loaded && wasLive {
 		logger.Debugf("skipped notification for room %d (%s) due to notified.", roomID, streamer)
 		return
 	}
@@ -196,11 +200,13 @@ func (s *Service) invalidateNotified(rooms map[int]*subscribe.RoomConfig) {
 		}
 		return true
 	})
-	for roomID := range staleRooms {
+	for _, roomID := range staleRooms {
 		if err := s.bucket.Delete([]byte(strconv.Itoa(roomID))); err != nil {
 			logger.Warnf("failed to delete live state for room %d: %v", roomID, err)
+		} else {
+			logger.Debugf("removed liveStates for room: %v", roomID)
+			s.liveStates.Delete(roomID)
 		}
-		s.liveStates.Delete(roomID)
 	}
 }
 
