@@ -6,10 +6,11 @@
 
 - ✅ 手动触发录制任务，实时录制直播流
 - ✅ 自动录制 - 为直播间配置自动开播录制
-- ✅ 直播通知** - 实时推送开播通知（支持 Web Push）
+- ✅ 直播通知 - 实时推送开播通知（支持真正 VAPID Web Push）
 - ✅ 自动分段轮转 - 当直播过程中发生直播 PK 等分辨率变更时，自动切换到新的 FLV 文件，避免录制文件花屏或损坏
 - ✅ 支持多个直播间同时录制
-- ✅ 自动处理流中断和恢复
+- ✅ 自动处理流中断和恢复（录制固定使用 http-flv 协议，提升稳定性与兼容性）
+- ✅ FFmpeg 转换冷却机制 - 自动调节后台转换频率，避免过度消耗系统资源
 - ✅ RESTful API 管理录制任务
 - ✅ 文件管理、在线播放和下载功能
 - ✅ 在线播放 - 在浏览器中直接预览和播放已录制的视频
@@ -87,12 +88,15 @@ docker run -d --name bilirec -p 8080:8080 eric1008818/bilirec:latest
 | `DELETE_FLV_AFTER_CONVERT` | 转换后是否删除原始 FLV 文件 | `false` |
 | `BACKEND_HOST` | 后端主机（用于生成Cookie域名） | `localhost:8080` |
 | `FRONTEND_URL` | 前端 URL（用于 CORS 与 cookie 域） | `http://localhost:8080` |
-| `WEBPUSH_SUBSCRIBER` | Web Push VAPID 的 subject（建议使用 `mailto:you@example.com`） | `mailto:webpush@ericlamm.com` |
+| `WEBPUSH_SUBSCRIBER` | Web Push VAPID 的 subject（建议使用 `mailto:you@example.com`） | `mailto:webpush@example.com` |
 | `USERNAME` | 可选：启用用户名/密码认证时的用户名 | (未设置) |
 | `PASSWORD` | 可选：启用用户名/密码认证时的密码 | (未设置) |
+| `VIEWER_USERNAME` | 可选：仅查看权限的访客用户名 | (未设置) |
+| `VIEWER_PASSWORD` | 可选：仅查看权限的访客密码 | (未设置) |
 | `JWT_SECRET` | JWT 签名密钥 | `bilirec_secret` |
 | `DEBUG` | 启用调试模式（会开启 pprof 和临时 hex token） | `false` |
 | `PRODUCTION_MODE` | 启用生产模式（影响 cookie 与 CORS） | `false` |
+| `SILENT_ACCESS_LOG` | 启用静默访问日志（仅记录 4xx/5xx 响应） | `false` |
 | `DATABASE_DIR` | 本地数据库目录（bbolt，用于持久化转换任务等） | `database` |
 | `CLOUDCONVERT_THRESHOLD` | 使用 CloudConvert 的文件大小阈值（字节） | `1073741824` (1 GB) |
 | `CLOUDCONVERT_API_KEY` | 可选：CloudConvert API Key（为空则禁用 CloudConvert） | (未设置) |
@@ -105,6 +109,7 @@ docker run -d --name bilirec -p 8080:8080 eric1008818/bilirec:latest
 | `DOWNLOAD_BUFFER_SIZE` | 文件下载 / 导出时使用的缓冲区大小（字节） | `5242880` (5 MB) |
 | `STREAM_WRITER_BUFFER_SIZE` | 流写入器（写入文件）缓冲区大小（字节） | `1048576` (1 MB) |
 | `LIVE_STREAM_WRITER_BUFFER_SIZE` | 实时流写入缓冲区（用于直播录制或实时下载，字节） | `5242880` (5 MB) |
+| `MIN_DISK_SPACE_BYTES` | 录制所需的最小磁盘空间（字节），低于此值将拒绝新录制任务 | `5368709120` (5 GB) |
 
 ### 示例配置
 
@@ -131,7 +136,7 @@ export FFMPEG_MAX_CONCURRENT_TASKS=1
 export FFMPEG_ALLOW_DURING_RECORDING=false
 export BACKEND_HOST=localhost:8080
 export FRONTEND_URL=http://localhost:8080
-export WEBPUSH_SUBSCRIBER=mailto:webpush@ericlamm.com
+export WEBPUSH_SUBSCRIBER=mailto:webpush@example.com
 export UPLOAD_BUFFER_SIZE=5242880
 export DOWNLOAD_BUFFER_SIZE=5242880
 export STREAM_WRITER_BUFFER_SIZE=1048576
@@ -513,7 +518,7 @@ Content-Type: application/json
 
 ### 录制流程
 
-1. 通过 [`bilibili.Client`](internal/modules/bilibili/bilibili.go) 获取直播流地址
+1. 通过 [`bilibili.Client`](internal/modules/bilibili/bilibili.go) 获取直播流地址（录制固定使用 http-flv 协议）
 2. 使用 [`stream.Service`](internal/services/stream/stream.go) 读取流数据
 3. [`recorder.Service`](internal/services/recorder/recorder.go) 管理录制任务（自动重连与恢复）
 4. 数据写入到 FLV 文件，保存在配置的输出目录；如果流中途发生直播 PK 等分辨率变更，录制器会自动轮转到新的分段文件。首个文件名形如 `标题-时间戳.flv`，后续分段会命名为 `标题-时间戳-1.flv`、`标题-时间戳-2.flv`。如果启用了 `CONVERT_FLV_TO_MP4`，每个录制分段在完成时都会自动加入转换队列，并由后台任务异步转换为 MP4（转换行为受 `DELETE_FLV_AFTER_CONVERT` 控制，转换任务可通过 `/convert/tasks` 查询）。
@@ -528,7 +533,7 @@ Content-Type: application/json
 - **定期刷盘**: 每 5 秒自动刷新写入缓冲，防止数据丢失
 - **低资源占用**: 设计注重低内存和低 CPU 使用，适合树莓派等资源受限设备
 - **文件管理**: 支持列出、预览、下载（可转换格式）、批量删除文件及删除目录，详见 `internal/controllers/file/file.go`
-- **自动转换**: 如果启用 `CONVERT_FLV_TO_MP4`，录制完成时会自动将 FLV 转为 MP4；可通过 `DELETE_FLV_AFTER_CONVERT` 控制是否删除原始 FLV
+- **自动转换**: 如果启用 `CONVERT_FLV_TO_MP4`，录制完成时会自动将 FLV 转为 MP4；可通过 `DELETE_FLV_AFTER_CONVERT` 控制是否删除原始 FLV。已修复部分不支持的编解码器导致转换失败的问题，并具备 FFmpeg 任务冷却机制避免卡死失败任务
 - **在线播放**: 支持在浏览器中直接播放已转换的 MP4 视频，提供原生 HTML5 video 标签体验，支持暂停/快进/全屏等操作
 - **实时修复（Realtime Fixer）**: 在流式写入场景下逐个修复 FLV Tag 的时间戳并输出，包含重复 Tag 去重（可查询去重统计），并通过内存池、去重缓存与周期清理来保持低延迟与低内存占用，适合边录制边推送或实时下载的场景。
 - **函数式编程工具**: 提供 [`fp`](pkg/fp/) 包含便捷的 maps 和 slices 操作函数
