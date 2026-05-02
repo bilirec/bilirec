@@ -39,8 +39,9 @@ type Config struct {
 	ViewerPasswordHash string
 	JwtSecret          string
 
-	Debug          bool
-	ProductionMode bool
+	Debug           bool
+	ProductionMode  bool
+	SilentAccessLog bool
 
 	MinDiskSpaceBytes int64
 
@@ -112,6 +113,7 @@ func provider(lc fx.Lifecycle) (*Config, error) {
 		JwtSecret:                          utils.EmptyOrElse(os.Getenv("JWT_SECRET"), "bilirec_secret"),
 		Debug:                              debug,
 		ProductionMode:                     os.Getenv("PRODUCTION_MODE") == "true",
+		SilentAccessLog:                    os.Getenv("SILENT_ACCESS_LOG") == "true",
 		MinDiskSpaceBytes:                  utils.MustAtoi64(utils.EmptyOrElse(os.Getenv("MIN_DISK_SPACE_BYTES"), "5368709120")), // 5GB
 		CloudConvertCheckIntervalSecs:      utils.MustAtoi(utils.EmptyOrElse(os.Getenv("CLOUDCONVERT_CHECK_INTERVAL_SECS"), "180")),
 		CloudConvertMaxConcurrentDownloads: utils.MustAtoi(utils.EmptyOrElse(os.Getenv("CLOUDCONVERT_MAX_CONCURRENT_DOWNLOADS"), "1")),

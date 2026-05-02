@@ -23,6 +23,7 @@ package rest
 import (
 	"context"
 	"errors"
+	"os"
 	"strings"
 	"time"
 
@@ -78,8 +79,15 @@ func provider(ls fx.Lifecycle, cfg *config.Config) *fiber.App {
 	}
 
 	app.Use(logging.New(logging.Config{
-		Format: "| ${status} | ${latency} | ${ip} | ${method} | ${path} | ${error}\n",
-		Stream: logger.Writer(),
+		TimeZone: utils.EmptyOrElse(os.Getenv("TZ"), "Asia/Hong_Kong"),
+		Format:   "| ${status} | ${latency} | ${ip} | ${method} | ${path} | ${error}\n",
+		Stream:   logger.Writer(),
+		Next: func(c fiber.Ctx) bool {
+			if cfg.SilentAccessLog {
+				return c.Response().StatusCode() < 400
+			}
+			return false
+		},
 	}))
 
 	app.Use(swagger.New(swagger.Config{
