@@ -58,15 +58,18 @@ func (r *Service) GetMultipleRoomInfos(roomIDs ...int) (map[string]*bilibili.Liv
 		}
 	}
 
-	// Fetch missing ones
-	if len(missedIDs) > 0 {
-		fetchedInfos, err := r.bilic.GetLiveRoomInfos(missedIDs...)
+	// Fetch missing ones in batches of 100
+	const batchSize = 100
+	for i := 0; i < len(missedIDs); i += batchSize {
+		end := i + batchSize
+		if end > len(missedIDs) {
+			end = len(missedIDs)
+		}
+		fetchedInfos, err := r.bilic.GetLiveRoomInfos(missedIDs[i:end]...)
 		if err != nil {
 			// no caching since we don't know which one failed
 			return nil, err
 		}
-
-		// Cache and add to result
 		for id, info := range fetchedInfos {
 			r.cache.Set(id, info, ttlcache.DefaultTTL)
 			infos[id] = info
