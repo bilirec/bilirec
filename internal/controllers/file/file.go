@@ -1,10 +1,12 @@
 package file
 
 import (
+	"io/fs"
 	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/eric2788/bilirec/internal/modules/rest"
@@ -91,13 +93,16 @@ func (c *Controller) playbackFile(ctx fiber.Ctx) error {
 }
 
 // @Summary List files and directories
-// @Description List files and directories under a given path
+// @Description List files and directories under a given path with optional pagination and search
 // @Tags files
 // @Security BearerAuth
 // @Accept json
 // @Produce json
 // @Param path path string false "Relative path"
-// @Success 200 {array} file.Tree "List of files and directories"
+// @Param offset query int false "Offset (default 0)"
+// @Param limit query int false "Limit (default 0 = all, max 200)"
+// @Param search query string false "Search by filename (case-insensitive)"
+// @Success 200 {object} file.PagedTree "Paged list of files and directories"
 // @Failure 400 {string} string "Invalid path"
 // @Failure 403 {string} string "Forbidden"
 // @Failure 404 {string} string "Not found"
@@ -108,12 +113,30 @@ func (c *Controller) listFiles(ctx fiber.Ctx) error {
 	if err != nil {
 		return fiber.ErrBadRequest
 	}
-	trees, err := c.fileSvc.ListTree(path)
+
+	offset, err := strconv.Atoi(ctx.Query("offset", "0"))
+	if err != nil || offset < 0 {
+		return fiber.NewError(fiber.StatusBadRequest, "offset 必須為非負整數")
+	}
+	limit, err := strconv.Atoi(ctx.Query("limit", "0"))
+	if err != nil || limit < 0 || limit > 200 {
+		return fiber.NewError(fiber.StatusBadRequest, "limit 必須為 0 至 200 之間的整數")
+	}
+
+	paged, err := c.fileSvc.ListTreeWithOptions(path, file.ListOptions{
+		Filter: func(f fs.DirEntry) bool {
+			return !strings.HasSuffix(f.Name(), ".tmp")
+		},
+		Search: ctx.Query("search"),
+		Offset: offset,
+		Limit:  limit,
+	})
 	if err != nil {
 		logger.Warnf("error listing dir at path %s: %v", path, err)
 		return c.parseFiberError(err)
 	}
-	return ctx.JSON(c.withRecordingStatus(trees))
+	paged.Items = c.withRecordingStatus(paged.Items)
+	return ctx.JSON(paged)
 }
 
 // @Summary Download a file
@@ -334,9 +357,9 @@ func (c *Controller) parseFiberError(err error) error {
 	}
 }
 
-func (c *Controller) withRecordingStatus(tree []file.Tree) []file.Tree {
-	out := make([]file.Tree, len(tree))
-	copy(out, tree)
+func (c *Controller) withRecordingStatus(items []file.Tree) []file.Tree {
+	out := make([]file.Tree, len(items))
+	copy(out, items)
 	for i := range out {
 		if !out[i].IsDir {
 			out[i].IsRecording = c.recorderSvc.IsRecording(out[i].Path)

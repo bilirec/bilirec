@@ -33,6 +33,18 @@ type Tree struct {
 	IsRecording bool   `json:"is_recording,omitempty"`
 }
 
+type PagedTree struct {
+	Total int    `json:"total"`
+	Items []Tree `json:"items"`
+}
+
+type ListOptions struct {
+	Filter func(fs.DirEntry) bool // nil = no filter
+	Search string                 // empty = no search
+	Offset int
+	Limit  int // 0 = all
+}
+
 func NewService(ls fx.Lifecycle, cfg *config.Config, pathSvc *path.Service) *Service {
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -77,7 +89,9 @@ func (s *Service) ListTreeWithFilter(path string, filter func(fs.DirEntry) bool)
 				IsDir: entry.IsDir(),
 				Path:  entryPath,
 				Size: func() int64 {
-					if info, err := entry.Info(); err == nil {
+					if entry.IsDir() {
+						return 0
+					} else if info, err := entry.Info(); err == nil {
 						return info.Size()
 					}
 					return 0
@@ -86,6 +100,69 @@ func (s *Service) ListTreeWithFilter(path string, filter func(fs.DirEntry) bool)
 		}
 	}
 	return files, nil
+}
+
+func (s *Service) ListTreeWithOptions(path string, opts ListOptions) (*PagedTree, error) {
+	fullPath, err := s.path.ValidatePath(path)
+	if err != nil {
+		return nil, err
+	}
+
+	entries, err := os.ReadDir(fullPath)
+	if err != nil {
+		return nil, err
+	}
+
+	relativePath, err := s.path.GetRelativePath(fullPath)
+	if err != nil {
+		return nil, err
+	}
+
+	// Apply filter + search to collect matching entries (cheap: no stat)
+	filtered := make([]fs.DirEntry, 0, len(entries))
+	for _, entry := range entries {
+		if opts.Filter != nil && !opts.Filter(entry) {
+			continue
+		}
+		if opts.Search != "" && !strings.Contains(strings.ToLower(entry.Name()), strings.ToLower(opts.Search)) {
+			continue
+		}
+		filtered = append(filtered, entry)
+	}
+
+	total := len(filtered)
+
+	// Determine the page slice
+	start := min(opts.Offset, total)
+	end := total
+	if opts.Limit > 0 {
+		end = min(start + opts.Limit, total)
+	}
+	page := filtered[start:end]
+
+	// Build Tree items — only call entry.Info() (stat) for files in this page
+	items := make([]Tree, 0, len(page))
+	for _, entry := range page {
+		entryPath := filepath.Join(relativePath, entry.Name())
+		items = append(items, Tree{
+			Name:  entry.Name(),
+			IsDir: entry.IsDir(),
+			Path:  entryPath,
+			Size: func() int64 {
+				if entry.IsDir() {
+					return 0
+				} else if info, err := entry.Info(); err == nil {
+					return info.Size()
+				}
+				return 0
+			}(),
+		})
+	}
+
+	return &PagedTree{
+		Total: total,
+		Items: items,
+	}, nil
 }
 
 func (s *Service) GetFileStream(path string) (io.ReadCloser, os.FileInfo, error) {
