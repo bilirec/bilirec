@@ -98,11 +98,7 @@ func (r *Controller) getRoomInfos(ctx fiber.Ctx) error {
 	res, err := r.roomSvc.GetMultipleRoomInfos(roomIds...)
 	if err != nil {
 		logger.Errorf("error getting room infos for rooms %v: %v", roomIds, err)
-		return utils.Ternary(
-			bilibili.IsErrRoomNotFound(err),
-			fiber.NewError(fiber.StatusNotFound, "部分或全部房間不存在"),
-			fiber.ErrInternalServerError,
-		)
+		return fiber.ErrInternalServerError
 	}
 	return ctx.JSON(res)
 }

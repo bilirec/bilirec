@@ -2,31 +2,32 @@ package room
 
 import (
 	"fmt"
+	"strconv"
 
 	"github.com/eric2788/bilirec/internal/modules/bilibili"
-	"github.com/jellydator/ttlcache/v3"
 )
 
 var roomtNotFoundMarker = &bilibili.LiveRoomInfoDetail{}
 
 func (r *Service) GetLiveRoomInfo(roomID int) (*bilibili.LiveRoomInfoDetail, error) {
-	data := r.cache.Get(fmt.Sprint(roomID))
-	if data != nil {
-		info := data.Value()
+	key := fmt.Sprint(roomID)
+	if info, ok, stale := r.cache.Get(key); ok {
+		if stale {
+			r.cache.RevalidateAsync(key, r.getFreshRoomInfo(roomID))
+		}
 		if info == roomtNotFoundMarker {
 			return nil, bilibili.ErrRoomNotFound
-		} else {
-			return info, nil
 		}
+		return info, nil
 	}
-	info, err := r.bilic.GetLiveRoomInfo(roomID)
+
+	info, err := r.cache.Load(key, r.getFreshRoomInfo(roomID))
 	if err != nil {
-		if bilibili.IsErrRoomNotFound(err) {
-			r.cache.Set(fmt.Sprint(roomID), roomtNotFoundMarker, ttlcache.DefaultTTL)
-		}
 		return nil, err
 	}
-	r.cache.Set(fmt.Sprint(roomID), info, ttlcache.DefaultTTL)
+	if info == roomtNotFoundMarker {
+		return nil, bilibili.ErrRoomNotFound
+	}
 	return info, nil
 }
 
@@ -41,40 +42,93 @@ func (r *Service) IsRoomLive(roomID int) (bool, error) {
 func (r *Service) GetMultipleRoomInfos(roomIDs ...int) (map[string]*bilibili.LiveRoomInfoDetail, error) {
 	infos := make(map[string]*bilibili.LiveRoomInfoDetail)
 	missedIDs := make([]int, 0, len(roomIDs))
+	staleIDs := make([]int, 0)
 
 	// Check cache first
 	for _, id := range roomIDs {
 		idStr := fmt.Sprint(id)
-		if data := r.cache.Get(idStr); data != nil {
-			info := data.Value()
+		if info, ok, stale := r.cache.Get(idStr); ok {
 			if info != roomtNotFoundMarker {
 				infos[idStr] = info
-			} else {
-				// earily return if any room not found
-				return nil, bilibili.ErrRoomNotFound
+				if stale {
+					staleIDs = append(staleIDs, id)
+				}
 			}
 		} else {
 			missedIDs = append(missedIDs, id)
 		}
 	}
 
-	// Fetch missing ones in batches of 100
-	const batchSize = 100
-	for i := 0; i < len(missedIDs); i += batchSize {
-		end := i + batchSize
-		if end > len(missedIDs) {
-			end = len(missedIDs)
-		}
-		fetchedInfos, err := r.bilic.GetLiveRoomInfos(missedIDs[i:end]...)
-		if err != nil {
+	if len(missedIDs) > 0 {
+		if err := r.fetchAndStoreRoomInfos(missedIDs); err != nil {
 			// no caching since we don't know which one failed
 			return nil, err
 		}
-		for id, info := range fetchedInfos {
-			r.cache.Set(id, info, ttlcache.DefaultTTL)
-			infos[id] = info
+		for _, id := range missedIDs {
+			idStr := fmt.Sprint(id)
+			info, ok, _ := r.cache.Get(idStr)
+			if ok && info != roomtNotFoundMarker {
+				infos[idStr] = info
+			}
 		}
 	}
 
+	if len(staleIDs) > 0 {
+		r.refreshRoomInfosInBackground(staleIDs)
+	}
+
 	return infos, nil
+}
+
+func (r *Service) fetchAndStoreRoomInfos(roomIDs []int) error {
+	const batchSize = 100
+	for i := 0; i < len(roomIDs); i += batchSize {
+		end := min(i+batchSize, len(roomIDs))
+		batch := roomIDs[i:end]
+		fetchedInfos, err := r.bilic.GetLiveRoomInfos(batch...)
+		if err != nil {
+			if bilibili.IsErrRoomNotFound(err) {
+				for _, id := range batch {
+					r.cache.Set(fmt.Sprint(id), roomtNotFoundMarker)
+				}
+				continue
+			}
+			return err
+		}
+		for id, info := range fetchedInfos {
+			r.cache.Set(id, info)
+		}
+		for _, id := range batch {
+			idStr := strconv.Itoa(id)
+			if _, ok := fetchedInfos[idStr]; !ok {
+				r.cache.Set(idStr, roomtNotFoundMarker)
+			}
+		}
+	}
+	return nil
+}
+
+func (r *Service) refreshRoomInfosInBackground(roomIDs []int) {
+	if len(roomIDs) == 0 {
+		return
+	}
+	ids := append([]int(nil), roomIDs...)
+	go func() {
+		if err := r.fetchAndStoreRoomInfos(ids); err != nil {
+			logger.Debugf("background revalidation failed for rooms %v: %v", ids, err)
+		}
+	}()
+}
+
+func (r *Service) getFreshRoomInfo(roomID int) func() (*bilibili.LiveRoomInfoDetail, error) {
+	return func() (*bilibili.LiveRoomInfoDetail, error) {
+		fetched, err := r.bilic.GetLiveRoomInfo(roomID)
+		if err != nil {
+			if bilibili.IsErrRoomNotFound(err) {
+				return roomtNotFoundMarker, nil
+			}
+			return nil, err
+		}
+		return fetched, nil
+	}
 }
