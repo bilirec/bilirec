@@ -6,13 +6,13 @@
 
 - ✅ 手动触发录制任务，实时录制直播流
 - ✅ 自动录制 - 为直播间配置自动开播录制
-- ✅ 直播通知 - 实时推送开播通知（支持真正 VAPID Web Push）
+- ✅ 直播通知 - 实时推送开播通知（网页/手机推送）
 - ✅ 自动分段轮转 - 当直播过程中发生直播 PK 等分辨率变更时，自动切换到新的 FLV 文件，避免录制文件花屏或损坏
 - ✅ 支持多个直播间同时录制
 - ✅ 自动处理流中断和恢复（录制固定使用 http-flv 协议，提升稳定性与兼容性）
-- ✅ FFmpeg 转换冷却机制 - 自动调节后台转换频率，避免过度消耗系统资源
+- ✅ FFmpeg 转换冷却机制 - 其中一个档案转换失败时自动退让给其他档案转换任务
 - ✅ RESTful API 管理录制任务
-- ✅ 文件管理、在线播放和下载功能
+- ✅ 文件管理和下载功能
 - ✅ 在线播放 - 在浏览器中直接预览和播放已录制的视频
 - ✅ 支持匿名登录或账号登录
 - ✅ 自动刷新 Cookie 保持登录状态
@@ -66,8 +66,8 @@ docker run -d \
 如果你有可用的镜像仓库（例如 GHCR 或 Docker Hub），也可以直接拉取并运行镜像（示例）：
 
 ```bash
-docker pull eric1008818/bilirec:latest # 最新测试版本请用 :edge
-docker run -d --name bilirec -p 8080:8080 eric1008818/bilirec:latest
+docker pull ghcr.io/eric2788/bilirec:latest # 最新测试版本请用 :edge
+docker run -d --name bilirec -p 8080:8080 ghcr.io/eric2788/bilirec:latest
 ```
 
 ## 配置
@@ -239,6 +239,27 @@ Content-Type: application/json
   ```http
   GET /files/browse/*
   ```
+
+  支持以下查询参数：
+
+  | 参数 | 说明 | 默认值 |
+  | ---- | ---- | ------ |
+  | `offset` | 分页偏移量（跳过前 N 条） | `0` |
+  | `limit` | 每页最大条数（0 表示不限制，最大 200） | `0` |
+  | `search` | 按文件名搜索（大小写不敏感） | (不过滤) |
+
+  返回 `PagedTree` 对象：
+
+  ```json
+  {
+    "total": 42,
+    "items": [
+      { "name": "title-20260428.flv", "is_dir": false, "path": "room123/title-20260428.flv", "size": 1048576 }
+    ]
+  }
+  ```
+
+  `total` 为过滤/搜索后的总条数（不受 `offset`/`limit` 影响），`items` 为当前页的文件列表。
 
 - **下载文件**
 
@@ -510,7 +531,8 @@ Content-Type: application/json
 │   ├── monitor/                      # 监控与统计
 │   ├── pipeline/                     # 流处理管道
 │   ├── pool/                         # 内存池
-│   └── signeddownload/               # 预签名下载
+│   ├── signeddownload/               # 预签名下载
+│   └── swr/                          # Stale-While-Revalidate 缓存
 └── utils/                            # 工具函数库
 ```
 
@@ -530,6 +552,7 @@ Content-Type: application/json
 - **自动录制**: 为订阅的直播间配置自动开播录制，后台定期检查直播间状态并自动启动录制，详见 [`subcheck.Service`](internal/services/subcheck/check.go)
 - **实时通知**: 通过 Web Push 推送直播开播通知和自动录制状态，详见 [`notify.Service`](internal/services/notify/notify.go)
 - **缓冲池**: 使用 [`pool.BufferPool`](pkg/pool/pool.go) 减少内存分配
+- **SWR 缓存**: 房间信息缓存采用 Stale-While-Revalidate 策略（[`pkg/swr`](pkg/swr/)），结合 singleflight 去重，缓存命中时立即返回旧数据并在后台异步刷新，软 TTL 5 分钟、硬 TTL 30 分钟，有效降低 Bilibili API 请求压力
 - **定期刷盘**: 每 5 秒自动刷新写入缓冲，防止数据丢失
 - **低资源占用**: 设计注重低内存和低 CPU 使用，适合树莓派等资源受限设备
 - **文件管理**: 支持列出、预览、下载（可转换格式）、批量删除文件及删除目录，详见 `internal/controllers/file/file.go`
