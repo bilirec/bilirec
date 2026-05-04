@@ -42,6 +42,10 @@ func (c *Cache[K, V]) DeleteAll() {
 	c.cache.DeleteAll()
 }
 
+func (c *Cache[K, V]) Delete(key K) {
+	c.cache.Delete(key)
+}
+
 func (c *Cache[K, V]) Set(key K, value V) {
 	c.cache.Set(key, &entry[V]{
 		Value:     value,

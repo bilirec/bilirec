@@ -31,6 +31,12 @@ func (r *Service) GetLiveRoomInfo(roomID int) (*bilibili.LiveRoomInfoDetail, err
 	return info, nil
 }
 
+func (r *Service) InvalidateRooms(roomIDs ...int) {
+	for _, id := range roomIDs {
+		r.cache.Delete(fmt.Sprint(id))
+	}
+}
+
 func (r *Service) IsRoomLive(roomID int) (bool, error) {
 	info, err := r.GetLiveRoomInfo(roomID)
 	if err != nil {

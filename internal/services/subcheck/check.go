@@ -116,7 +116,9 @@ func (s *Service) tryStartAllAutoRecordRooms() {
 		return cfg != nil && (cfg.Notify || cfg.AutoRecord)
 	})
 
-	notifyRoomInfos := s.getNotifyRoomInfos(slices.Collect(maps.Keys(liveCheckRooms)))
+	liveCheckRoomIDs := slices.Collect(maps.Keys(liveCheckRooms))
+	s.roomSvc.InvalidateRooms(liveCheckRoomIDs...)
+	notifyRoomInfos := s.getNotifyRoomInfos(liveCheckRoomIDs)
 
 	s.invalidateNotified(rooms)
 
