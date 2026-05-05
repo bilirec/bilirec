@@ -278,9 +278,10 @@ func (r *Controller) getRoomConfig(ctx fiber.Ctx) error {
 	}
 
 	return ctx.JSON(RoomConfigResponse{
-		RoomId:     roomId,
-		AutoRecord: cfg.AutoRecord,
-		Notify:     cfg.Notify,
+		RoomId:                roomId,
+		AutoRecord:            cfg.AutoRecord,
+		Notify:                cfg.Notify,
+		RecordDurationMinutes: cfg.RecordDurationMinutes,
 	})
 }
 
@@ -311,7 +312,7 @@ func (r *Controller) updateRoomConfig(ctx fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusBadRequest, "無效的請求資料")
 	}
 
-	if err := r.subSvc.UpdateConfig(roomId, &subscribe.RoomConfig{AutoRecord: req.AutoRecord, Notify: req.Notify}); err != nil {
+	if err := r.subSvc.UpdateConfig(roomId, &subscribe.RoomConfig{AutoRecord: req.AutoRecord, Notify: req.Notify, RecordDurationMinutes: req.RecordDurationMinutes}); err != nil {
 		logger.Errorf("error updating room config for room %d: %v", roomId, err)
 		if err == subscribe.ErrRoomNotSubscribed {
 			return fiber.NewError(fiber.StatusNotFound, "未訂閱此房間")
@@ -320,8 +321,9 @@ func (r *Controller) updateRoomConfig(ctx fiber.Ctx) error {
 	}
 
 	return ctx.JSON(RoomConfigResponse{
-		RoomId:     roomId,
-		AutoRecord: req.AutoRecord,
-		Notify:     req.Notify,
+		RoomId:                roomId,
+		AutoRecord:            req.AutoRecord,
+		Notify:                req.Notify,
+		RecordDurationMinutes: req.RecordDurationMinutes,
 	})
 }

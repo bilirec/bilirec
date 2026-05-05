@@ -2,6 +2,7 @@ package record
 
 import (
 	"strconv"
+	"time"
 
 	"github.com/eric2788/bilirec/internal/modules/bilibili"
 	"github.com/eric2788/bilirec/internal/modules/rest"
@@ -31,9 +32,9 @@ func NewController(app *fiber.App, service *recorder.Service) *Controller {
 // @Description Start recording a Bilibili live stream for the specified room
 // @Tags record
 // @Security BearerAuth
-// @Accept json
 // @Produce json
 // @Param roomID path int true "Room ID"
+// @Param duration_minutes query int false "Recording duration in minutes. 0 = unlimited, >0 = stop after N minutes, omit = system default (MAX_RECORDING_HOURS)"
 // @Success 200 "Recording started successfully"
 // @Failure 400 {string} string "Invalid room ID"
 // @Failure 403 {string} string "Forbidden"
@@ -45,7 +46,21 @@ func (r *Controller) startRecording(ctx fiber.Ctx) error {
 		logger.Warnf("cannot parse roomId to int: %v", err)
 		return fiber.NewError(fiber.StatusBadRequest, "無效的房間 ID")
 	}
-	err = r.service.Start(roomId)
+
+	// duration_minutes query param: -1 (sentinel) = not provided → use system default
+	const notProvided = -1
+	durationMinutes := fiber.Query(ctx, "duration_minutes", notProvided)
+
+	var startArgs []time.Duration
+	switch {
+	case durationMinutes == 0:
+		startArgs = []time.Duration{0} // unlimited
+	case durationMinutes > 0:
+		startArgs = []time.Duration{time.Duration(durationMinutes) * time.Minute}
+	}
+	// durationMinutes == -1 (not provided): pass no args → system default
+
+	err = r.service.Start(roomId, startArgs...)
 	if err != nil {
 		logger.Errorf("error starting recording for room %d: %v", roomId, err)
 		switch err {

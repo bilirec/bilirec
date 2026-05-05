@@ -15,12 +15,14 @@ type SubscribeList struct {
 }
 
 type RoomConfigResponse struct {
-	RoomId     int  `json:"room_id"`
-	AutoRecord bool `json:"auto_record"`
-	Notify     bool `json:"notify"`
+	RoomId                int  `json:"room_id"`
+	AutoRecord            bool `json:"auto_record"`
+	Notify                bool `json:"notify"`
+	RecordDurationMinutes int  `json:"record_duration_minutes"`
 }
 
 type UpdateRoomConfigRequest struct {
-	AutoRecord bool `json:"auto_record"`
-	Notify     bool `json:"notify"`
+	AutoRecord            bool `json:"auto_record"`
+	Notify                bool `json:"notify"`
+	RecordDurationMinutes int  `json:"record_duration_minutes"`
 }

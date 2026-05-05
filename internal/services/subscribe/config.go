@@ -9,8 +9,9 @@ import (
 )
 
 type RoomConfig struct {
-	AutoRecord bool
-	Notify     bool
+	AutoRecord            bool
+	Notify                bool
+	RecordDurationMinutes int // 0 = system default, -1 = unlimited, >0 = custom minutes
 }
 
 var roomConfigSerializer = pool.NewSerializer()
@@ -25,7 +26,7 @@ func mustSerializeRoomConfig(cfg *RoomConfig) []byte {
 }
 
 func defaultRoomConfig() *RoomConfig {
-	return &RoomConfig{AutoRecord: false, Notify: false}
+	return &RoomConfig{AutoRecord: false, Notify: false, RecordDurationMinutes: 0}
 }
 
 func (s *Service) UpdateConfig(roomID int, cfg *RoomConfig) error {

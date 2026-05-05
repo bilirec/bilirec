@@ -10,10 +10,11 @@ import (
 )
 
 type Info struct {
-	status     atomic.Pointer[RecordStatus]
-	bytesRead  atomic.Uint64
-	startTime  time.Time
-	outputPath ds.Atomic[string]
+	status      atomic.Pointer[RecordStatus]
+	bytesRead   atomic.Uint64
+	startTime   time.Time
+	outputPath  ds.Atomic[string]
+	maxDuration time.Duration // 0 = unlimited
 
 	cancel context.CancelFunc
 	room   *bilibili.LiveRoomInfoDetail

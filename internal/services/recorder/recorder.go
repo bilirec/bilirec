@@ -86,7 +86,7 @@ func NewService(
 	return s
 }
 
-func (r *Service) Start(roomId int) error {
+func (r *Service) Start(roomId int, duration ...time.Duration) error {
 
 	l := logger.WithField("room", roomId)
 
@@ -147,11 +147,20 @@ func (r *Service) Start(roomId int) error {
 			continue
 		}
 
+		// resolve effective max duration: explicit arg > system default
+		var maxDuration time.Duration
+		if len(duration) > 0 {
+			maxDuration = duration[0]
+		} else {
+			maxDuration = time.Duration(r.cfg.MaxRecordingHours) * time.Hour
+		}
+
 		// initialize Recorder info
 		info := &Info{
-			cancel:    cancel,
-			startTime: now,
-			room:      roomInfo,
+			cancel:      cancel,
+			startTime:   now,
+			room:        roomInfo,
+			maxDuration: maxDuration,
 		}
 		info.SetOutputPath("") // initialize output path to empty string to avoid potential nil pointer dereference in finalize()
 		return r.prepare(roomId, ch, ctx, info)
@@ -194,7 +203,7 @@ func (r *Service) prepare(roomId int, ch <-chan []byte, ctx context.Context, inf
 		}
 	}()
 
-	go r.checkRecordingDurationPeriodically(roomId, ctx)
+	go r.checkRecordingDurationPeriodically(roomId, ctx, info.maxDuration)
 	return nil
 }
 
@@ -293,11 +302,17 @@ func (r *Service) rev(roomId int, ch <-chan []byte, info *Info, ctx context.Cont
 	return nil
 }
 
-func (r *Service) checkRecordingDurationPeriodically(roomId int, ctx context.Context) {
+func (r *Service) checkRecordingDurationPeriodically(roomId int, ctx context.Context, maxDuration time.Duration) {
 	log := logger.WithField("room", roomId)
+
+	// 0 means unlimited — skip the time-limit loop entirely
+	if maxDuration == 0 {
+		log.Info("recording duration: unlimited")
+		return
+	}
+
 	ticker := time.NewTicker(1 * time.Minute)
 	defer ticker.Stop()
-	maxDuration := time.Duration(r.cfg.MaxRecordingHours) * time.Hour
 	for {
 		select {
 		case <-ticker.C:
@@ -307,7 +322,7 @@ func (r *Service) checkRecordingDurationPeriodically(roomId int, ctx context.Con
 			}
 			elapsed := time.Since(info.startTime)
 			if elapsed >= maxDuration {
-				log.Infof("maximum recording hours reached (%v), stopping", elapsed.Round(time.Minute))
+				log.Infof("maximum recording duration reached (%v), stopping", elapsed.Round(time.Minute))
 				r.Stop(roomId)
 				return
 			}

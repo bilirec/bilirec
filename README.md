@@ -6,6 +6,7 @@
 
 - ✅ 手动触发录制任务，实时录制直播流
 - ✅ 自动录制 - 为直播间配置自动开播录制
+- ✅ 可选录制时长 - 手动开始录制时可指定时长上限，时间到后自动停止；也可在订阅配置中预设自动录制的时长上限；支持设为无限录制
 - ✅ 直播通知 - 实时推送开播通知（网页/手机推送）
 - ✅ 自动分段轮转 - 当直播过程中发生直播 PK 等分辨率变更时，自动切换到新的 FLV 文件，避免录制文件花屏或损坏
 - ✅ 支持多个直播间同时录制
@@ -191,8 +192,16 @@ Content-Type: application/json
 - **开始录制**
 
   ```http
-  POST /record/:roomID/start
+  POST /record/:roomID/start?duration_minutes=<N>
   ```
+
+  `duration_minutes` 为**可选** query 参数：
+
+  | 值 | 说明 |
+  | -- | ---- |
+  | 不传 | 使用系统预设（`MAX_RECORDING_HOURS`） |
+  | `0` | 无限录制，不自动停止 |
+  | `N`（正整数） | N 分钟后自动停止 |
 
 - **停止录制**
 
@@ -435,7 +444,8 @@ Content-Type: application/json
   {
     "room_id": 123,
     "auto_record": true,
-    "notify": true
+    "notify": true,
+    "record_duration_minutes": 120
   }
   ```
 
@@ -450,9 +460,18 @@ Content-Type: application/json
   ```json
   {
     "auto_record": true,
-    "notify": true
+    "notify": true,
+    "record_duration_minutes": 120
   }
   ```
+
+  `record_duration_minutes` 为**可选**字段，仅在 `auto_record: true` 时生效，作为自动录制的时长上限：
+
+  | 值 | 说明 |
+  | -- | ---- |
+  | `0`（默认） | 使用系统预设（`MAX_RECORDING_HOURS`） |
+  | `-1` | 无限录制，不自动停止 |
+  | `N`（正整数） | N 分钟后自动停止 |
 
 #### 实时通知
 

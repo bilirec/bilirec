@@ -67,6 +67,57 @@ func TestFlvRecord(t *testing.T) {
 	t.Logf("growth after stop: %.2f MB", float64((m3.Alloc-m2.Alloc)/1024/1024))
 }
 
+func TestFlvRecord_AutoStopAfterDuration(t *testing.T) {
+
+	const room = 1844041783
+	const recordDuration = 60 * time.Second
+	const pollInterval = 2 * time.Second
+	const tolerance = 20 * time.Second // allow extra time for stop to propagate
+
+	var recorderService *recorder.Service
+
+	app := fxtest.New(t,
+		config.Module,
+		bilibili.Module,
+		fx.Provide(path.NewService),
+		fx.Provide(stream.NewService),
+		fx.Provide(convert.NewService),
+		fx.Provide(recorder.NewService),
+		fx.Populate(&recorderService),
+	)
+
+	app.RequireStart()
+	defer app.RequireStop()
+
+	t.Logf("starting recording with duration limit: %v", recordDuration)
+	err := recorderService.Start(room, recordDuration)
+	if err != nil {
+		if err == recorder.ErrStreamNotLive {
+			t.Skip(err)
+		}
+		t.Fatal(err)
+	}
+
+	if status := recorderService.GetStatus(room); status != recorder.Recording {
+		t.Fatalf("expected status %q immediately after start, got %q", recorder.Recording, status)
+	}
+
+	deadline := time.Now().Add(recordDuration + tolerance)
+	startTime := time.Now()
+	for time.Now().Before(deadline) {
+		<-time.After(pollInterval)
+		status := recorderService.GetStatus(room)
+		t.Logf("elapsed: %v, status: %s", time.Since(startTime).Round(time.Second), status)
+		if status == recorder.Idle {
+			t.Logf("recording auto-stopped after ~%v as expected", recordDuration)
+			return
+		}
+	}
+
+	t.Errorf("recording did not auto-stop within %v (duration=%v + tolerance=%v)", recordDuration+tolerance, recordDuration, tolerance)
+	recorderService.Stop(room)
+}
+
 func TestChannelRangeReturnedWhileStreaming(t *testing.T) {
 	ch := make(chan int, 10)
 	// give some random elements keep sending to channel

@@ -145,7 +145,17 @@ func (s *Service) tryStartAllAutoRecordRooms() {
 				continue
 			}
 
-			err := s.recSvc.Start(roomID)
+			// Resolve duration from subscription config (priority 2: subscription config)
+			// 0 = use system default (no arg), -1 = unlimited (pass 0), >0 = custom minutes
+			var autoRecordArgs []time.Duration
+			switch {
+			case cfg.RecordDurationMinutes == -1:
+				autoRecordArgs = []time.Duration{0} // unlimited
+			case cfg.RecordDurationMinutes > 0:
+				autoRecordArgs = []time.Duration{time.Duration(cfg.RecordDurationMinutes) * time.Minute}
+			}
+
+			err := s.recSvc.Start(roomID, autoRecordArgs...)
 			if err == nil {
 				logger.Infof("started recording for room %d (%s) from auto-record", roomID, info.Uname)
 				if cfg.Notify {
