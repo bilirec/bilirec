@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"runtime/debug"
+	"sync"
 	"time"
 
 	"github.com/eric2788/bilirec/internal/modules/bilibili"
@@ -55,6 +56,7 @@ type Service struct {
 
 	cfg *config.Config
 	ctx context.Context
+	wg  sync.WaitGroup
 }
 
 func NewService(
@@ -82,7 +84,10 @@ func NewService(
 
 	go s.backgroundMaintenance(ctx)
 
-	lc.Append(fx.StopHook(cancel))
+	lc.Append(fx.StopHook(func() {
+		cancel()
+		s.wg.Wait()
+	}))
 	return s
 }
 
@@ -194,14 +199,14 @@ func (r *Service) prepare(roomId int, ch <-chan []byte, ctx context.Context, inf
 	info.status.Store(recordingPtr)
 	r.recording.Store(roomId, info)
 
-	go func() {
+	r.wg.Go(func() {
 		defer r.recover(roomId)
 		defer info.cancel()
 		err := r.rotate(roomId, ch, info, ctx)
 		if err != nil {
 			logger.Errorf("error rotating recording: %v", err)
 		}
-	}()
+	})
 
 	go r.checkRecordingDurationPeriodically(roomId, ctx, info.maxDuration)
 	return nil
