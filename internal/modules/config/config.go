@@ -23,8 +23,9 @@ const (
 
 // all config will be loaded from environment variables
 type Config struct {
-	AnonymousLogin bool
-	Port           string
+	AnonymousLogin  bool   // BILIBILI_ANONYMOUS_LOGIN or deprecated ANONYMOUS_LOGIN
+	BilibiliLoginOn string // startup or controller (default: startup)
+	Port            string
 	TrustedProxies []string
 
 	FRPEnabled     bool
@@ -129,7 +130,8 @@ func provider(lc fx.Lifecycle) (*Config, error) {
 	frpToken := resolveFRPToken(frpServer, frpBaseDomain)
 
 	c := &Config{
-		AnonymousLogin:                     os.Getenv("ANONYMOUS_LOGIN") == "true",
+		AnonymousLogin:                     utils.EmptyOrElse(os.Getenv("BILIBILI_ANONYMOUS_LOGIN"), os.Getenv("ANONYMOUS_LOGIN")) == "true", // deprecated ANONYMOUS_LOGIN for backward compatibility, remove later
+		BilibiliLoginOn:                    utils.EmptyOrElse(os.Getenv("BILIBILI_LOGIN_ON"), "startup"),
 		Port:                               utils.EmptyOrElse(os.Getenv("PORT"), "8080"),
 		TrustedProxies:                     parseCommaSeparatedValues(utils.EmptyOrElse(os.Getenv("TRUSTED_PROXIES"), "161.33.159.26")),
 		FRPEnabled:                         os.Getenv("FRP_ENABLED") == "true",

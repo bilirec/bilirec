@@ -500,7 +500,7 @@ func verifyRecordingPlayability(t *testing.T, filePath string, expectedFormat st
 
 func init() {
 	if os.Getenv("CI") != "" {
-		os.Setenv("ANONYMOUS_LOGIN", "true")
+		os.Setenv("BILIBILI_ANONYMOUS_LOGIN", "true")
 		os.Setenv("SKIP_SMALL_FLUSH", "false")
 	}
 	logrus.SetLevel(logrus.DebugLevel)

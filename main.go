@@ -4,6 +4,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/eric2788/bilirec/internal/controllers/auth"
 	"github.com/eric2788/bilirec/internal/controllers/convert"
 	"github.com/eric2788/bilirec/internal/controllers/file"
 	nc "github.com/eric2788/bilirec/internal/controllers/notify"
@@ -48,15 +49,25 @@ func MainModule() fx.Option {
 		fx.Invoke(nc.NewController),
 		fx.Invoke(record.NewController),
 		fx.Invoke(file.NewController),
+		fx.Invoke(auth.NewController),
 		fx.Invoke(convert.NewController),
 	)
+}
+
+func noQrCodePrompt() bool {
+	return utils.EmptyOrElse(os.Getenv("BILIBILI_ANONYMOUS_LOGIN"), os.Getenv("ANONYMOUS_LOGIN")) == "true" || os.Getenv("BILIBILI_LOGIN_ON") == "controller"
 }
 
 func main() {
 
 	app := fx.New(
 		MainModule(),
-		fx.StartTimeout(utils.Ternary(os.Getenv("ANONYMOUS_LOGIN") == "true", 15*time.Second, 1*time.Minute)),
+		fx.StartTimeout(
+			utils.Ternary(
+				noQrCodePrompt(),
+				15*time.Second,
+				1*time.Minute,
+			)),
 		fx.StopTimeout(1*time.Minute),
 	)
 

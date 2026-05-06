@@ -8,6 +8,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"go.uber.org/fx"
 
@@ -16,6 +17,7 @@ import (
 	"github.com/eric2788/bilirec/utils"
 	"github.com/go-resty/resty/v2"
 	"github.com/sirupsen/logrus"
+	"golang.org/x/sync/singleflight"
 )
 
 var logger = logrus.WithField("module", "bilibili")
@@ -30,10 +32,13 @@ const liveUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537
 
 type Client struct {
 	*bili.Client
+
+	loginMode        string
 	refreshToken     string
 	wbi              *bili.WBI
 	liveClient       *resty.Client
 	liveStreamClient *resty.Client
+	ctx              context.Context
 
 	cookiePath       string
 	refreshTokenPath string
@@ -43,9 +48,15 @@ type Client struct {
 	liveHlsPlaylistClient *resty.Client
 	hlsSegmentClientOnce  sync.Once
 	liveHlsSegmentClient  *resty.Client
+
+	// Auth session management for controller mode
+	session atomic.Pointer[AuthSession]
+	loginSF singleflight.Group
 }
 
 func provider(cfg *config.Config, ls fx.Lifecycle) *Client {
+
+	ctx, cancel := context.WithCancel(context.Background())
 
 	client := utils.TernaryFunc(
 		cfg.AnonymousLogin,
@@ -57,16 +68,41 @@ func provider(cfg *config.Config, ls fx.Lifecycle) *Client {
 		},
 	)
 
+	client.ctx = ctx
+	client.loginMode = cfg.BilibiliLoginOn
 	client.wbi = bili.NewDefaultWbi()
 	client.liveClient = client.withLiveClient()
 	client.liveStreamClient = client.withLiveStreamClient()
 	client.cookiePath = fmt.Sprintf("%s%c_cookies", cfg.SecretDir, os.PathSeparator)
 	client.refreshTokenPath = fmt.Sprintf("%s%c_refresh_token", cfg.SecretDir, os.PathSeparator)
+	client.session.Store(&AuthSession{State: StateIdle})
 
 	ls.Append(
-		fx.StartHook(func(ctx context.Context) error {
-			return client.loadCookiesOrLogin(ctx, cfg)
-		}),
+		fx.StartStopHook(
+			func() error {
+				if cfg.AnonymousLogin {
+					logger.Info("using anonymous login, skipping bilibili login process")
+					return nil
+				}
+
+				// Handle login timing based on config
+				if cfg.BilibiliLoginOn == "controller" {
+					// Controller mode: preload only, don't block on QR
+					logger.Info("bilibili login mode: controller (preload only)")
+					return client.preloadCookies()
+				} else if cfg.BilibiliLoginOn == "startup" {
+					// Startup mode (default): full login flow at startup
+					logger.Info("starting bilibili login process")
+					return client.loadCookiesOrLogin()
+				} else {
+					return fmt.Errorf("unknown bilibili login mode: %s", cfg.BilibiliLoginOn)
+				}
+			},
+			func() error {
+				cancel()
+				return nil
+			},
+		),
 	)
 
 	return client

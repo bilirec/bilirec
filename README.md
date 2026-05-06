@@ -98,6 +98,7 @@ docker build -t bilirec:latest .
 docker run -d \
   --name bilirec \
   -p 8080:8080 \
+  -e BILIBILI_LOGIN_ON=controller \
   -e PORT=8080 \
   -e FRONTEND_URL=http://localhost:8080 \
   -v /path/to/records:/app/records \
@@ -115,6 +116,7 @@ docker pull eric1008818/bilirec:latest # 最新测试版本请用 :edge
 docker run -d \
   --name bilirec \
   -p 8080:8080 \
+  -e BILIBILI_LOGIN_ON=controller \
   -e PORT=8080 \
   -e FRONTEND_URL=http://localhost:8080 \
   -v /path/to/records:/app/records \
@@ -131,7 +133,10 @@ docker run -d \
 
 | 环境变量 | 说明 | 默认值 |
 | ------- | ---- | ------ |
-| `ANONYMOUS_LOGIN` | 是否使用匿名登录 | `false` |
+| `BILIBILI_ANONYMOUS_LOGIN` | 是否使用匿名登录（新变量，建议使用） | `false` |
+| `ANONYMOUS_LOGIN` | 是否使用匿名登录（已弃用，保留兼容） | `false` |
+| `BILIBILI_LOGIN_ON` | 登录模式：`startup`（启动时登录）或 `controller`（由 API 控制登录） | `startup` |
+| `HOST` | API 服务绑定地址（空值时监听所有网卡） | (空字符串) |
 | `PORT` | API 服务端口 | `8080` |
 | `SERVER_CRT` | 可选：HTTPS 证书文件路径；当与 `SERVER_KEY` 同时设置时，Fiber 默认启用 HTTPS | (未设置) |
 | `SERVER_KEY` | 可选：HTTPS 私钥文件路径；当与 `SERVER_CRT` 同时设置时，Fiber 默认启用 HTTPS | (未设置) |
@@ -236,7 +241,12 @@ FRP enabled in custom-selfhost mode
 ### 示例配置
 
 ```bash
-export ANONYMOUS_LOGIN=false
+export BILIBILI_ANONYMOUS_LOGIN=false
+# 兼容旧变量（已弃用，建议改用 BILIBILI_ANONYMOUS_LOGIN）
+# export ANONYMOUS_LOGIN=false
+export BILIBILI_LOGIN_ON=startup
+# 可选：指定监听网卡；留空表示监听所有网卡
+# export HOST=0.0.0.0
 export PORT=8080
 # 可选：启用 HTTPS（当两者都设置时，Fiber 默认启用 HTTPS）
 # export SERVER_CRT=/path/to/server.crt
@@ -392,6 +402,83 @@ Content-Type: application/json
 ```
 
 登录成功后会在响应中设置 JWT cookie（键名 `jwtToken`），随后对需要认证的接口请携带该 cookie。若未设置用户名/密码，API 默认为公开访问。
+
+#### Bilibili 登录（controller 模式）
+
+当 `BILIBILI_LOGIN_ON=controller` 时，可以通过 `/auth/bilibili` 相关接口在服务运行后触发扫码登录。
+
+- `GET /auth/bilibili/status`
+  - 用途：查询当前认证状态（`idle` / `awaiting_qr` / `authenticating` / `authenticated` / `failed` 等）
+  - 返回：是否已登录、账号信息、二维码 URL（若已生成）、最近错误（若有）
+  - 响应示例（已登录）：
+    ```json
+    {
+      "authenticated": true,
+      "state": "authenticated",
+      "account": {
+        "mid": 123456789,
+        "uname": "bilibili_user"
+      }
+    }
+    ```
+  - 响应示例（等待扫码）：
+    ```json
+    {
+      "authenticated": false,
+      "state": "awaiting_qr",
+      "qr": {
+        "url": "https://api.bilibili.com/x/web-interface/qrcode/generate?qrcode_key=abc123..."
+      }
+    }
+    ```
+
+- `POST /auth/bilibili/init`
+  - 用途：创建新的二维码登录会话（支持账号切换，即使已登录也可重新发起登录）
+  - 成功：`201 Created`
+  - 错误：`400 Bad Request`（当前不在 controller 模式）或 `500 Internal Server Error`（获取二维码失败）
+  - 响应示例（成功）：
+    ```json
+    {
+      "qr": {
+        "url": "https://api.bilibili.com/x/web-interface/qrcode/generate?qrcode_key=def456..."
+      }
+    }
+    ```
+  - 响应示例（400 Bad Request）：
+    ```json
+    {
+      "error": "后端没有启用 controller 模式"
+    }
+    ```
+  - 响应示例（500 Internal Server Error）：
+    ```json
+    {
+      "error": "failed to get QR code: ..."
+    }
+    ```
+
+典型流程：
+
+1. 先 `POST /login`（如果你启用了 `USERNAME` / `PASSWORD`）
+2. 调用 `POST /auth/bilibili/init` 获取二维码链接
+3. 用户扫码后，轮询 `GET /auth/bilibili/status`，直到 `state=authenticated`
+
+**账号切换流程**：已登录用户可随时调用 `POST /auth/bilibili/init` 发起新的登录会话，扫码后会切换到新的账号。
+
+示例（使用 cookie 持久化会话）：
+
+```bash
+# 1) 登录（启用了 USERNAME/PASSWORD 时需要）
+curl -i -c cookies.txt -X POST http://127.0.0.1:8080/login \
+  -H "Content-Type: application/json" \
+  -d '{"user":"admin","pass":"changeme"}'
+
+# 2) 初始化二维码登录
+curl -i -b cookies.txt -X POST http://127.0.0.1:8080/auth/bilibili/init
+
+# 3) 查询登录状态
+curl -s -b cookies.txt http://127.0.0.1:8080/auth/bilibili/status
+```
 
 #### 录制管理
 
