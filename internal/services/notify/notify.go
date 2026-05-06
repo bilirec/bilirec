@@ -39,12 +39,21 @@ type ServiceState struct {
 	privateKey string
 }
 
+type LiveState string
+
 var logger = logrus.WithField("service", "notify")
 
 const (
 	webPushSubscriptionBucket = "WebPush_Subscriptions"
 	webPushPublicKeyFileName  = "_webpush_public_key"
 	webPushPrivateKeyFileName = "_webpush_private_key"
+)
+
+const (
+	LiveStateLiveDetected      LiveState = "live_detected"
+	LiveStateAutoRecordStarted LiveState = "live_auto_record_started"
+	LiveStateAutoRecordFailed  LiveState = "live_auto_record_failed"
+	LiveStateLiveEnded         LiveState = "live_ended"
 )
 
 func NewService(lc fx.Lifecycle, cfg *config.Config) (*Service, error) {
@@ -220,18 +229,23 @@ func loadOrCreateVAPIDKeys(secretDir string) (string, string, error) {
 	return generatedPublicKey, generatedPrivateKey, nil
 }
 
-func (s *Service) PublishLive(roomID int, streamer string, roomTitle string, autoRecordStarted bool) {
-	message := "直播間已開播"
-	eventType := "live_detected"
-	if autoRecordStarted {
-		message = "直播間已開播並已啟動自動錄製"
-		eventType = "live_auto_record_started"
+func (s *Service) PublishLive(roomID int, streamer string, roomTitle string, state LiveState) {
+	var message string
+	switch state {
+	case LiveStateLiveDetected:
+		message = "直播間已開播"
+	case LiveStateAutoRecordStarted:
+		message = "直播間已開播並已啟動錄製"
+	case LiveStateAutoRecordFailed:
+		message = "直播間已開播但錄製啟動失敗"
+	case LiveStateLiveEnded:
+		message = "直播間已結束"
 	}
 
 	logger.Infof("pushing notification for room %d (%s): %s", roomID, streamer, message)
 
 	s.Publish(Event{
-		Type:      eventType,
+		Type:      string(state),
 		RoomID:    roomID,
 		Streamer:  streamer,
 		RoomTitle: roomTitle,

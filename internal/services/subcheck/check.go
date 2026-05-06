@@ -24,17 +24,17 @@ import (
 var logger = logrus.WithField("service", "subcheck")
 
 const (
-	checkInterval        = 1 * time.Minute
-	liveStatesBucketName = "SubCheck_LiveStates"
+	checkInterval         = 1 * time.Minute
+	sessionKeysBucketName = "SubCheck_LiveStates"
 )
 
 type Service struct {
-	subSvc     *subscribe.Service
-	roomSvc    *room.Service
-	recSvc     *recorder.Service
-	notifySvc  *notify.Service
-	bucket     *db.Bucket
-	liveStates *xsync.Map[int, bool]
+	subSvc      *subscribe.Service
+	roomSvc     *room.Service
+	recSvc      *recorder.Service
+	notifySvc   *notify.Service
+	bucket      *db.Bucket
+	sessionKeys *xsync.Map[int, string]
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -43,13 +43,13 @@ type Service struct {
 func NewService(lc fx.Lifecycle, cfg *config.Config, subSvc *subscribe.Service, roomSvc *room.Service, recSvc *recorder.Service, notifySvc *notify.Service) *Service {
 	ctx, cancel := context.WithCancel(context.Background())
 	s := &Service{
-		subSvc:     subSvc,
-		roomSvc:    roomSvc,
-		recSvc:     recSvc,
-		notifySvc:  notifySvc,
-		liveStates: xsync.NewMap[int, bool](),
-		ctx:        ctx,
-		cancel:     cancel,
+		subSvc:      subSvc,
+		roomSvc:     roomSvc,
+		recSvc:      recSvc,
+		notifySvc:   notifySvc,
+		sessionKeys: xsync.NewMap[int, string](),
+		ctx:         ctx,
+		cancel:      cancel,
 	}
 
 	lc.Append(fx.StartStopHook(
@@ -64,7 +64,7 @@ func (s *Service) start(cfg *config.Config) error {
 	if err != nil {
 		return err
 	}
-	bucket, err := client.Bucket(liveStatesBucketName)
+	bucket, err := client.Bucket(sessionKeysBucketName)
 	if err != nil {
 		return err
 	}
@@ -75,8 +75,14 @@ func (s *Service) start(cfg *config.Config) error {
 		if err != nil {
 			return nil // skip invalid keys
 		}
-		isLive := len(v) > 0 && v[0] == 1
-		s.liveStates.Store(roomID, isLive)
+		if len(v) == 0 {
+			return nil
+		}
+		// Backward compatibility: historical format was bool-like [0]/[1].
+		if len(v) == 1 && (v[0] == 0 || v[0] == 1) {
+			return nil
+		}
+		s.sessionKeys.Store(roomID, string(v))
 		return nil
 	}); err != nil {
 		return err
@@ -120,7 +126,7 @@ func (s *Service) tryStartAllAutoRecordRooms() {
 	s.roomSvc.InvalidateRooms(liveCheckRoomIDs...)
 	notifyRoomInfos := s.getNotifyRoomInfos(liveCheckRoomIDs)
 
-	s.invalidateNotified(rooms)
+	s.invalidateStaleRooms(rooms)
 
 	for roomID, cfg := range liveCheckRooms {
 		info, ok := notifyRoomInfos[roomID]
@@ -128,97 +134,83 @@ func (s *Service) tryStartAllAutoRecordRooms() {
 			continue
 		}
 		isLive := info.LiveStatus == 1
+		currentSessionKey := resolveLiveSessionKey(info)
 
-		logger.Debugf("checking room %d (%s): isLive=%v, config=%+v", roomID, info.Uname, isLive, cfg)
+		logger.Debugf("checking room %d (%s): isLive=%v, key=%s, config=%+v", roomID, info.Uname, isLive, currentSessionKey, cfg)
 
-		if cfg.AutoRecord {
-
-			if !isLive {
-				if cfg.Notify {
-					s.clearNotified(roomID)
-				}
-				continue
-			}
-
-			status := s.recSvc.GetStatus(roomID)
-			if status == recorder.Recording || status == recorder.Recovering {
-				continue
-			}
-
-			// Resolve duration from subscription config (priority 2: subscription config)
-			// 0 = use system default (no arg), -1 = unlimited (pass 0), >0 = custom minutes
-			var autoRecordArgs []time.Duration
-			switch {
-			case cfg.RecordDurationMinutes == -1:
-				autoRecordArgs = []time.Duration{0} // unlimited
-			case cfg.RecordDurationMinutes > 0:
-				autoRecordArgs = []time.Duration{time.Duration(cfg.RecordDurationMinutes) * time.Minute}
-			}
-
-			err := s.recSvc.Start(roomID, autoRecordArgs...)
-			if err == nil {
-				logger.Infof("started recording for room %d (%s) from auto-record", roomID, info.Uname)
-				if cfg.Notify {
-					s.publishLiveOnce(roomID, info.Uname, info.Title, true)
-				}
-				continue
-			}
-
-			switch err {
-			case recorder.ErrRecordingStarted:
-				continue
-			default:
-				logger.Warnf("failed to start recording for room %d (%s) from auto-record: %v", roomID, info.Uname, err)
-				continue
-			}
-		} else if cfg.Notify {
-			if isLive {
-				s.publishLiveOnce(roomID, info.Uname, info.Title, false)
-			} else {
-				s.clearNotified(roomID)
-			}
+		if !isLive || currentSessionKey == "" {
+			s.clearSessionState(roomID)
 			continue
 		}
+
+		storedSessionKey, loaded := s.sessionKeys.Load(roomID)
+		if loaded && storedSessionKey == currentSessionKey {
+			continue
+		}
+
+		logger.Debugf("new live session detected for room %d (%s), key: %s", roomID, info.Uname, currentSessionKey)
+		state := notify.LiveStateLiveDetected
+
+		if cfg.AutoRecord {
+			status := s.recSvc.GetStatus(roomID)
+			if status != recorder.Recording && status != recorder.Recovering {
+				// Resolve duration from subscription config: -1 = unlimited, >0 = custom minutes.
+				var autoRecordArgs []time.Duration
+				switch {
+				case cfg.RecordDurationMinutes == -1:
+					autoRecordArgs = []time.Duration{0}
+				case cfg.RecordDurationMinutes > 0:
+					autoRecordArgs = []time.Duration{time.Duration(cfg.RecordDurationMinutes) * time.Minute}
+				}
+
+				err := s.recSvc.Start(roomID, autoRecordArgs...)
+				switch err {
+				case nil, recorder.ErrRecordingStarted:
+					state = notify.LiveStateAutoRecordStarted
+					logger.Infof("started recording for room %d (%s)", roomID, info.Uname)
+				default:
+					state = notify.LiveStateAutoRecordFailed
+					logger.Warnf("failed to start recording for room %d: %v", roomID, err)
+				}
+			}
+		}
+
+		if cfg.Notify {
+			s.notifySvc.PublishLive(roomID, info.Uname, info.Title, state)
+		}
+
+		s.markSessionState(roomID, currentSessionKey)
 	}
 }
 
-func (s *Service) clearNotified(roomID int) {
-	wasLive, loaded := s.liveStates.LoadAndStore(roomID, false)
-	if !loaded || !wasLive {
+func (s *Service) markSessionState(roomID int, sessionKey string) {
+	s.sessionKeys.Store(roomID, sessionKey)
+	if err := s.bucket.Put([]byte(strconv.Itoa(roomID)), []byte(sessionKey)); err != nil {
+		logger.Warnf("failed to save session key for room %d: %v", roomID, err)
+	}
+}
+
+func (s *Service) clearSessionState(roomID int) {
+	_, loaded := s.sessionKeys.LoadAndDelete(roomID)
+	if !loaded {
 		return
 	}
-	if err := s.bucket.Put([]byte(strconv.Itoa(roomID)), []byte{0}); err != nil {
-		logger.Warnf("failed to update live state for room %d: %v", roomID, err)
+	if err := s.bucket.Delete([]byte(strconv.Itoa(roomID))); err != nil {
+		logger.Warnf("failed to clear session state for room %d: %v", roomID, err)
 	}
 }
 
-func (s *Service) publishLiveOnce(roomID int, streamer string, roomTitle string, autoRecordStarted bool) {
-	wasLive, loaded := s.liveStates.LoadAndStore(roomID, true)
-	if loaded && wasLive {
-		logger.Debugf("skipped notification for room %d (%s) due to notified.", roomID, streamer)
-		return
-	}
-	s.notifySvc.PublishLive(roomID, streamer, roomTitle, autoRecordStarted)
-	if err := s.bucket.Put([]byte(strconv.Itoa(roomID)), []byte{1}); err != nil {
-		logger.Warnf("failed to update live state for room %d: %v", roomID, err)
-	}
-}
-
-func (s *Service) invalidateNotified(rooms map[int]*subscribe.RoomConfig) {
+func (s *Service) invalidateStaleRooms(rooms map[int]*subscribe.RoomConfig) {
 	staleRooms := make([]int, 0)
-	s.liveStates.Range(func(key int, value bool) bool {
-		if cfg, ok := rooms[key]; !ok || cfg == nil || !cfg.Notify {
+	s.sessionKeys.Range(func(key int, value string) bool {
+		if cfg, ok := rooms[key]; !ok || cfg == nil || (!cfg.Notify && !cfg.AutoRecord) {
 			staleRooms = append(staleRooms, key)
 		}
 		return true
 	})
 	for _, roomID := range staleRooms {
-		if err := s.bucket.Delete([]byte(strconv.Itoa(roomID))); err != nil {
-			logger.Warnf("failed to delete live state for room %d: %v", roomID, err)
-		} else {
-			logger.Debugf("removed liveStates for room: %v", roomID)
-			s.liveStates.Delete(roomID)
-		}
+		s.clearSessionState(roomID)
+		logger.Debugf("removed stale session state for room: %v", roomID)
 	}
 }
 
@@ -247,4 +239,20 @@ func (s *Service) getNotifyRoomInfos(liveCheckRoomIDs []int) map[int]*bilibili.L
 	}
 
 	return notifyRoomInfos
+}
+
+func resolveLiveSessionKey(info *bilibili.LiveRoomInfoDetail) string {
+	if info == nil {
+		return ""
+	}
+	if info.LiveIDStr != "" && info.LiveIDStr != "0" {
+		return "live_id_str:" + info.LiveIDStr
+	}
+	if info.LiveID > 0 {
+		return "live_id:" + strconv.FormatInt(info.LiveID, 10)
+	}
+	if info.LiveTime != "" && info.LiveTime != "0000-00-00 00:00:00" {
+		return "live_time:" + info.LiveTime
+	}
+	return ""
 }
