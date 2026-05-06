@@ -25,6 +25,7 @@ const (
 type Config struct {
 	AnonymousLogin  bool   // BILIBILI_ANONYMOUS_LOGIN or deprecated ANONYMOUS_LOGIN
 	BilibiliLoginOn string // startup or controller (default: startup)
+	Host            string
 	Port            string
 	TrustedProxies []string
 
@@ -132,6 +133,7 @@ func provider(lc fx.Lifecycle) (*Config, error) {
 	c := &Config{
 		AnonymousLogin:                     utils.EmptyOrElse(os.Getenv("BILIBILI_ANONYMOUS_LOGIN"), os.Getenv("ANONYMOUS_LOGIN")) == "true", // deprecated ANONYMOUS_LOGIN for backward compatibility, remove later
 		BilibiliLoginOn:                    utils.EmptyOrElse(os.Getenv("BILIBILI_LOGIN_ON"), "startup"),
+		Host:                               os.Getenv("HOST"),
 		Port:                               utils.EmptyOrElse(os.Getenv("PORT"), "8080"),
 		TrustedProxies:                     parseCommaSeparatedValues(utils.EmptyOrElse(os.Getenv("TRUSTED_PROXIES"), "161.33.159.26")),
 		FRPEnabled:                         os.Getenv("FRP_ENABLED") == "true",

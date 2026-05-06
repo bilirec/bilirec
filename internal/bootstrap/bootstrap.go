@@ -1,4 +1,4 @@
-package main
+package bootstrap
 
 import (
 	"os"
@@ -58,18 +58,16 @@ func noQrCodePrompt() bool {
 	return utils.EmptyOrElse(os.Getenv("BILIBILI_ANONYMOUS_LOGIN"), os.Getenv("ANONYMOUS_LOGIN")) == "true" || os.Getenv("BILIBILI_LOGIN_ON") == "controller"
 }
 
-func main() {
-
-	app := fx.New(
+func NewApp() *fx.App {
+	return fx.New(
 		MainModule(),
 		fx.StartTimeout(
 			utils.Ternary(
 				noQrCodePrompt(),
 				15*time.Second,
 				1*time.Minute,
-			)),
+			),
+		),
 		fx.StopTimeout(1*time.Minute),
 	)
-
-	app.Run()
 }
