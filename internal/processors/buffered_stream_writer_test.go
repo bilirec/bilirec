@@ -20,7 +20,7 @@ func TestBufferedStreamWriter_MemoryLeak(t *testing.T) {
 	testFile := filepath.Join(tempDir, "test_output.flv")
 
 	// Create pipeline with buffered writer
-	writerInfo := processors.NewBufferedStreamWriter(testFile, 5*1024*1024) // 5MB buffer
+	writerInfo := processors.NewBufferedStreamWriter(testFile, processors.WithBufferSize(5*1024*1024)) // 5MB buffer
 	pipe := pipeline.New(writerInfo)
 
 	ctx := context.Background()
@@ -172,7 +172,7 @@ func TestBufferedStreamWriter_ConcurrentMemoryLeak(t *testing.T) {
 			defer func() { done <- true }()
 
 			testFile := filepath.Join(tempDir, "test_concurrent_"+string(rune('0'+id))+".flv")
-			writerInfo := processors.NewBufferedStreamWriter(testFile, 5*1024*1024) // 5MB buffer
+			writerInfo := processors.NewBufferedStreamWriter(testFile, processors.WithBufferSize(5*1024*1024)) // 5MB buffer
 			pipe := pipeline.New(writerInfo)
 
 			ctx := context.Background()
@@ -228,7 +228,7 @@ func TestBufferedStreamWriter_LongRunningMemoryProfile(t *testing.T) {
 	tempDir := t.TempDir()
 	testFile := filepath.Join(tempDir, "test_long_running.flv")
 
-	writerInfo := processors.NewBufferedStreamWriter(testFile, 5*1024*1024) // 5MB buffer
+	writerInfo := processors.NewBufferedStreamWriter(testFile, processors.WithBufferSize(5*1024*1024)) // 5MB buffer
 	pipe := pipeline.New(writerInfo)
 
 	ctx := context.Background()
@@ -306,7 +306,7 @@ func TestBufferedStreamWriter_NoReturnedDataLeak(t *testing.T) {
 	tempDir := t.TempDir()
 	testFile := filepath.Join(tempDir, "test_return_leak.flv")
 
-	writerInfo := processors.NewBufferedStreamWriter(testFile, 5*1024*1024) // 5MB buffer
+	writerInfo := processors.NewBufferedStreamWriter(testFile, processors.WithBufferSize(5*1024*1024)) // 5MB buffer
 	pipe := pipeline.New(writerInfo)
 
 	ctx := context.Background()
@@ -375,6 +375,129 @@ func average(values []float64) float64 {
 		sum += v
 	}
 	return sum / float64(len(values))
+}
+
+func TestBufferedStreamWriter_SDCardProtection_SkipsFlushWhenUnderBufferSize(t *testing.T) {
+	const bufferSize = 1 * 1024 * 1024 // 1MB
+
+	tempDir := t.TempDir()
+	testFile := filepath.Join(tempDir, "small_write.flv")
+
+	writerInfo := processors.NewBufferedStreamWriter(testFile,
+		processors.WithBufferSize(bufferSize),
+		processors.WithSDCardProtection(true),
+	)
+	pipe := pipeline.New(writerInfo)
+
+	ctx := context.Background()
+	if err := pipe.Open(ctx); err != nil {
+		t.Fatalf("failed to open pipeline: %v", err)
+	}
+
+	// write less than bufferSize total
+	smallChunk := make([]byte, 512*1024) // 512KB < 1MB buffer
+	if _, err := rand.Read(smallChunk); err != nil {
+		t.Fatalf("failed to generate random data: %v", err)
+	}
+	if _, err := pipe.Process(ctx, smallChunk); err != nil {
+		t.Fatalf("failed to process chunk: %v", err)
+	}
+
+	pipe.Close()
+
+	info, err := os.Stat(testFile)
+	if err != nil {
+		t.Fatalf("failed to stat output file: %v", err)
+	}
+
+	if info.Size() >= int64(bufferSize) {
+		t.Errorf("expected file size < %d bytes (SD card protection), got %d bytes", bufferSize, info.Size())
+	}
+
+	// file should exist but be empty (bufio never flushed, and Close skipped flush)
+	if info.Size() != 0 {
+		t.Errorf("expected empty file under SD card protection, got %d bytes", info.Size())
+	}
+}
+
+func TestBufferedStreamWriter_SDCardProtection_WritesNormallyWhenOverBufferSize(t *testing.T) {
+	const bufferSize = 1 * 1024 * 1024 // 1MB
+
+	tempDir := t.TempDir()
+	testFile := filepath.Join(tempDir, "large_write.flv")
+
+	writerInfo := processors.NewBufferedStreamWriter(testFile,
+		processors.WithBufferSize(bufferSize),
+		processors.WithSDCardProtection(true),
+	)
+	pipe := pipeline.New(writerInfo)
+
+	ctx := context.Background()
+	if err := pipe.Open(ctx); err != nil {
+		t.Fatalf("failed to open pipeline: %v", err)
+	}
+
+	// write more than bufferSize total to trigger bufio auto-flush
+	chunk := make([]byte, 256*1024) // 256KB per chunk
+	if _, err := rand.Read(chunk); err != nil {
+		t.Fatalf("failed to generate random data: %v", err)
+	}
+	totalWritten := 0
+	for totalWritten < bufferSize+256*1024 { // write ~1.25MB
+		if _, err := pipe.Process(ctx, chunk); err != nil {
+			t.Fatalf("failed to process chunk: %v", err)
+		}
+		totalWritten += len(chunk)
+	}
+
+	pipe.Close()
+
+	info, err := os.Stat(testFile)
+	if err != nil {
+		t.Fatalf("failed to stat output file: %v", err)
+	}
+
+	if info.Size() == 0 {
+		t.Errorf("expected file to have data when total written (%d) >= bufferSize (%d)", totalWritten, bufferSize)
+	}
+}
+
+func TestBufferedStreamWriter_NoSDCardProtection_AlwaysFlushes(t *testing.T) {
+	const bufferSize = 1 * 1024 * 1024 // 1MB
+
+	tempDir := t.TempDir()
+	testFile := filepath.Join(tempDir, "no_protection.flv")
+
+	writerInfo := processors.NewBufferedStreamWriter(testFile,
+		processors.WithBufferSize(bufferSize),
+		// sdcardProtection defaults to false
+	)
+	pipe := pipeline.New(writerInfo)
+
+	ctx := context.Background()
+	if err := pipe.Open(ctx); err != nil {
+		t.Fatalf("failed to open pipeline: %v", err)
+	}
+
+	// write less than bufferSize — without protection, Close should still flush
+	smallChunk := make([]byte, 512*1024) // 512KB
+	if _, err := rand.Read(smallChunk); err != nil {
+		t.Fatalf("failed to generate random data: %v", err)
+	}
+	if _, err := pipe.Process(ctx, smallChunk); err != nil {
+		t.Fatalf("failed to process chunk: %v", err)
+	}
+
+	pipe.Close()
+
+	info, err := os.Stat(testFile)
+	if err != nil {
+		t.Fatalf("failed to stat output file: %v", err)
+	}
+
+	if info.Size() == 0 {
+		t.Errorf("expected file to have data when SD card protection is disabled, got 0 bytes")
+	}
 }
 
 func init() {

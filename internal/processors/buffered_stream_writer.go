@@ -12,25 +12,32 @@ import (
 )
 
 type BufferedStreamWriterProcessor struct {
-	mu         sync.Mutex
-	file       *os.File
-	path       string
-	bufferSize int
-	writer     *bufio.Writer
-	logger     *logrus.Entry
+	mu               sync.Mutex
+	file             *os.File
+	path             string
+	bufferSize       int
+	sdcardProtection bool
+	writer           *bufio.Writer
+	logger           *logrus.Entry
 
-	ctx    context.Context
-	cancel context.CancelFunc
-	wait   sync.WaitGroup
+	ctx          context.Context
+	cancel       context.CancelFunc
+	wait         sync.WaitGroup
+	bytesWritten int64
 }
 
-func NewBufferedStreamWriter(path string, bufferSize int) *pipeline.ProcessorInfo[[]byte] {
+type BufferedStreamWriterOptions = func(*BufferedStreamWriterProcessor)
+
+func NewBufferedStreamWriter(path string, opts ...BufferedStreamWriterOptions) *pipeline.ProcessorInfo[[]byte] {
+	processor := &BufferedStreamWriterProcessor{
+		path:             path,
+		bufferSize:       1 * 1024 * 1024, // default 1MB
+		sdcardProtection: false,
+	}
+	processor.applyOptions(opts...)
 	return pipeline.NewProcessorInfo(
 		"buffered-writer",
-		&BufferedStreamWriterProcessor{
-			path:       path,
-			bufferSize: bufferSize,
-		},
+		processor,
 		pipeline.WithTimeout[[]byte](30*time.Second),
 	)
 }
@@ -45,8 +52,6 @@ func (w *BufferedStreamWriterProcessor) Open(ctx context.Context, log *logrus.En
 	w.logger = log.WithField("file", file.Name())
 
 	w.ctx, w.cancel = context.WithCancel(context.Background())
-	w.wait.Add(2)
-	go w.flushPeriodically(w.ctx)
 	go w.syncPeriodically(w.ctx)
 	return nil
 }
@@ -54,7 +59,8 @@ func (w *BufferedStreamWriterProcessor) Open(ctx context.Context, log *logrus.En
 func (w *BufferedStreamWriterProcessor) Process(ctx context.Context, log *logrus.Entry, data []byte) ([]byte, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	_, err := w.writer.Write(data)
+	n, err := w.writer.Write(data)
+	w.bytesWritten += int64(n)
 	return data, err
 }
 
@@ -63,34 +69,22 @@ func (w *BufferedStreamWriterProcessor) Close() error {
 	w.wait.Wait()
 	w.mu.Lock()
 	defer w.mu.Unlock()
+	if w.sdcardProtection && w.bytesWritten < int64(w.bufferSize) {
+		w.logger.Warnf("total bytes written (%d) less than buffer size (%d), skipping flush to reduce SD card wear", w.bytesWritten, w.bufferSize)
+		return w.file.Close()
+	}
 	if err := w.writer.Flush(); err != nil {
 		w.logger.Warnf("error flushing writer: %v", err)
 	} else if err := w.file.Sync(); err != nil {
 		w.logger.Warnf("error syncing file: %v", err)
 	}
+	w.logger.Debugf("file path: %s, total written %vB", w.path, w.bytesWritten)
 	return w.file.Close()
-}
-
-func (w *BufferedStreamWriterProcessor) flushPeriodically(ctx context.Context) {
-	ticker := time.NewTicker(5 * time.Second)
-	defer w.wait.Done()
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ticker.C:
-			w.mu.Lock()
-			if err := w.writer.Flush(); err != nil {
-				w.logger.Warnf("error flushing writer: %v", err)
-			}
-			w.mu.Unlock()
-		case <-ctx.Done():
-			return
-		}
-	}
 }
 
 func (w *BufferedStreamWriterProcessor) syncPeriodically(ctx context.Context) {
 	ticker := time.NewTicker(30 * time.Second)
+	w.wait.Add(1)
 	defer w.wait.Done()
 	defer ticker.Stop()
 	for {
@@ -104,5 +98,23 @@ func (w *BufferedStreamWriterProcessor) syncPeriodically(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		}
+	}
+}
+
+func (p *BufferedStreamWriterProcessor) applyOptions(opts ...BufferedStreamWriterOptions) {
+	for _, opt := range opts {
+		opt(p)
+	}
+}
+
+func WithSDCardProtection(enabled bool) BufferedStreamWriterOptions {
+	return func(p *BufferedStreamWriterProcessor) {
+		p.sdcardProtection = enabled
+	}
+}
+
+func WithBufferSize(size int) BufferedStreamWriterOptions {
+	return func(p *BufferedStreamWriterProcessor) {
+		p.bufferSize = size
 	}
 }

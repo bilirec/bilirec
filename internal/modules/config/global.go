@@ -30,6 +30,10 @@ func (g *GlobalReadOnly) LiveStreamWriterBufferSize() int {
 	return g.config.liveStreamWriterBufferSize
 }
 
+func (g *GlobalReadOnly) SkipSmallFlush() bool {
+	return g.config.skipSmallFlush
+}
+
 func (g *GlobalReadOnly) RestAuthEnabled() bool {
 	return g.config.Username != "" && g.config.PasswordHash != ""
 }

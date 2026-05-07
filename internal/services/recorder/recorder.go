@@ -237,7 +237,11 @@ func (r *Service) rotate(roomId int, ch <-chan []byte, info *Info, ctx context.C
 			// emit FLV file header once per segment, with optional video/audio sequence-header tags
 			processors.NewFlvHeaderWriter(videoHdr, audioHdr),
 			// write to file with buffered writer, flushes every 5 seconds then writes to disk
-			processors.NewBufferedStreamWriter(info.OutputPath(), config.ReadOnly.LiveStreamWriterBufferSize()),
+			processors.NewBufferedStreamWriter(
+				info.OutputPath(),
+				processors.WithBufferSize(config.ReadOnly.LiveStreamWriterBufferSize()),
+				processors.WithSDCardProtection(config.ReadOnly.SkipSmallFlush()),
+			),
 		)
 
 		startCtx, startCancel := context.WithTimeout(ctx, 10*time.Second)
