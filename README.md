@@ -67,8 +67,8 @@ docker run -d \
 如果你有可用的镜像仓库（例如 GHCR 或 Docker Hub），也可以直接拉取并运行镜像（示例）：
 
 ```bash
-docker pull ghcr.io/eric2788/bilirec:latest # 最新测试版本请用 :edge
-docker run -d --name bilirec -p 8080:8080 ghcr.io/eric2788/bilirec:latest
+docker pull eric1008818/bilirec:latest # 最新测试版本请用 :edge
+docker run -d --name bilirec -p 8080:8080 eric1008818/bilirec:latest
 ```
 
 ## 配置
