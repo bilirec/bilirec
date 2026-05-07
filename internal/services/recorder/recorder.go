@@ -141,7 +141,7 @@ func (r *Service) Start(roomId int, duration ...time.Duration) error {
 
 	// retry mechanism
 	for _, url := range urls {
-		resp, err := r.bilic.FetchLiveStreamUrl(url)
+		resp, err := r.bilic.FetchLiveStreamUrlWithCtx(url, ctx)
 		if err != nil {
 			l.Errorf("cannot fetch url: %v, will try next url", err)
 			continue
@@ -465,26 +465,22 @@ func (r *Service) backgroundMaintenance(ctx context.Context) {
 		select {
 		case <-ticker.C:
 			activeCount := r.recording.Size()
-			var m runtime.MemStats
-			runtime.ReadMemStats(&m)
 
 			if activeCount == 0 && lastActiveCount > 0 {
 				// Just transitioned from active to idle - cleanup
 				logger.Info("No ongoing recordings, performing maintenance GC")
+
+				var m runtime.MemStats
+				runtime.ReadMemStats(&m)
+				logger.Debugf("Before cleanup: Alloc=%d MB, Sys=%d MB, NumGC=%d",
+					m.Alloc/1024/1024, m.Sys/1024/1024, m.NumGC)
+
 				runtime.GC()
 				debug.FreeOSMemory()
 
 				runtime.ReadMemStats(&m)
 				logger.Infof("After cleanup: Alloc=%d MB, Sys=%d MB",
 					m.Alloc/1024/1024, m.Sys/1024/1024)
-			} else if activeCount == 0 {
-				// Still idle - just log
-				logger.Debugf("Idle: Memory: Alloc=%d MB, Sys=%d MB, NumGC=%d",
-					m.Alloc/1024/1024, m.Sys/1024/1024, m.NumGC)
-			} else {
-				// Recordings active - just log stats
-				logger.Debugf("Active recordings: %d, Memory: Alloc=%d MB, Sys=%d MB, NumGC=%d",
-					activeCount, m.Alloc/1024/1024, m.Sys/1024/1024, m.NumGC)
 			}
 
 			lastActiveCount = activeCount

@@ -1,6 +1,7 @@
 package bilibili
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"time"
@@ -190,5 +191,11 @@ func (c *Client) GetStreamURLsV2(roomID int, opts ...GetStreamURLsOption) ([]str
 func (c *Client) FetchLiveStreamUrl(url string) (*resty.Response, error) {
 	return c.DoLiveStream(func(req *resty.Request) (*resty.Response, error) {
 		return req.Get(url)
+	})
+}
+
+func (c *Client) FetchLiveStreamUrlWithCtx(url string, ctx context.Context) (*resty.Response, error) {
+	return c.DoLiveStream(func(req *resty.Request) (*resty.Response, error) {
+		return req.SetContext(ctx).Get(url)
 	})
 }

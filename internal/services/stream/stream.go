@@ -35,6 +35,14 @@ func (r *Service) Flush(buf []byte) {
 func (r *Service) read(ch chan<- []byte, stream io.ReadCloser, ctx context.Context) {
 	defer stream.Close()
 	defer close(ch)
+	backoffDelays := []time.Duration{
+		1 * time.Millisecond,
+		5 * time.Millisecond,
+		20 * time.Millisecond,
+		100 * time.Millisecond,
+		200 * time.Millisecond,
+	}
+	backOffIndex := 0
 	for {
 		select {
 		case <-ctx.Done():
@@ -52,6 +60,7 @@ func (r *Service) read(ch chan<- []byte, stream io.ReadCloser, ctx context.Conte
 				return
 			}
 			if n > 0 {
+				backOffIndex = 0
 				select {
 				case ch <- buf[:n]:
 				case <-ctx.Done():
@@ -64,7 +73,10 @@ func (r *Service) read(ch chan<- []byte, stream io.ReadCloser, ctx context.Conte
 				case <-ctx.Done():
 					return
 				default:
-					time.Sleep(1 * time.Millisecond)
+					time.Sleep(backoffDelays[backOffIndex])
+					if backOffIndex < len(backoffDelays)-1 {
+						backOffIndex++
+					}
 				}
 			}
 		}
