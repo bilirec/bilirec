@@ -87,6 +87,15 @@ type (
 		Host  string `json:"host"`
 		Extra string `json:"extra"`
 	}
+
+	StreamURLInfo struct {
+		Protocol string
+		Format   string
+		Codec    string
+		URL      string
+		Qn       int
+		AcceptQn []int
+	}
 )
 
 const v1StreamAPI = "https://api.live.bilibili.com/room/v1/Room/playUrl"
@@ -122,7 +131,7 @@ func (c *Client) GetStreamURLs(roomID int) ([]string, error) {
 	}), nil
 }
 
-func (c *Client) GetStreamURLsV2(roomID int, opts ...GetStreamURLsOption) ([]string, error) {
+func (c *Client) GetStreamURLsV2(roomID int, opts ...GetStreamURLsOption) ([]StreamURLInfo, error) {
 	client := c.liveClient.R()
 	options := defaultGetStreamURLsOptions()
 	for _, opt := range opts {
@@ -174,18 +183,28 @@ func (c *Client) GetStreamURLsV2(roomID int, opts ...GetStreamURLsOption) ([]str
 	}
 
 	if sr.Data.PlayurlInfo == nil || sr.Data.PlayurlInfo.Playurl == nil {
-		return []string{}, nil
+		return []StreamURLInfo{}, nil
 	}
 
-	return fp.FlatMap(sr.Data.PlayurlInfo.Playurl.Streams, func(stream StreamItem) []string {
-		return fp.FlatMap(stream.Formats, func(format FormatItem) []string {
-			return fp.FlatMap(format.Codecs, func(codec CodecItem) []string {
-				return fp.Map(codec.UrlInfos, func(urlInfo UrlInfoItem) string {
-					return urlInfo.Host + codec.BaseUrl + urlInfo.Extra
-				})
-			})
-		})
-	}), nil
+	streamInfos := make([]StreamURLInfo, 0)
+	for _, stream := range sr.Data.PlayurlInfo.Playurl.Streams {
+		for _, format := range stream.Formats {
+			for _, codec := range format.Codecs {
+				for _, urlInfo := range codec.UrlInfos {
+					streamInfos = append(streamInfos, StreamURLInfo{
+						Protocol: stream.ProtocolName,
+						Format:   format.FormatName,
+						Codec:    codec.CodecName,
+						URL:      urlInfo.Host + codec.BaseUrl + urlInfo.Extra,
+						Qn:       codec.CurrentQn,
+						AcceptQn: codec.AcceptQn,
+					})
+				}
+			}
+		}
+	}
+
+	return streamInfos, nil
 }
 
 func (c *Client) FetchLiveStreamUrl(url string) (*resty.Response, error) {

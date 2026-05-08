@@ -129,8 +129,8 @@ func TestGetStreamUrlsV2(t *testing.T) {
 		}
 		t.Fatal(err)
 	}
-	for _, url := range urls {
-		t.Logf("Stream URL: %s", url)
+	for _, streamInfo := range urls {
+		t.Logf("Stream URL: %s, protocol=%s, format=%s, codec=%s, qn=%d", streamInfo.URL, streamInfo.Protocol, streamInfo.Format, streamInfo.Codec, streamInfo.Qn)
 	}
 }
 
@@ -165,15 +165,15 @@ func TestGetStreamUrlsV2WithProfiles(t *testing.T) {
 		if len(urls) == 0 {
 			t.Skip("no flv stream urls available currently")
 		}
-		for _, u := range urls {
-			lower := strings.ToLower(u)
+		for _, streamInfo := range urls {
+			lower := strings.ToLower(streamInfo.URL)
 			if strings.Contains(lower, ".m3u8") {
-				t.Fatalf("unexpected hls url in flv profile result: %s", u)
+				t.Fatalf("unexpected hls url in flv profile result: %s", streamInfo.URL)
 			}
 			if !strings.Contains(lower, ".flv") {
-				t.Fatalf("expected .flv url in flv profile result: %s", u)
+				t.Fatalf("expected .flv url in flv profile result: %s", streamInfo.URL)
 			}
-			t.Logf("expected http-flv stream url: %s", u)
+			t.Logf("expected http-flv stream url: %s (protocol=%s, format=%s, codec=%s, qn=%d)", streamInfo.URL, streamInfo.Protocol, streamInfo.Format, streamInfo.Codec, streamInfo.Qn)
 		}
 	})
 
@@ -190,15 +190,15 @@ func TestGetStreamUrlsV2WithProfiles(t *testing.T) {
 		if len(urls) == 0 {
 			t.Skip("no hls-ts stream urls available currently")
 		}
-		for _, u := range urls {
-			lower := strings.ToLower(u)
+		for _, streamInfo := range urls {
+			lower := strings.ToLower(streamInfo.URL)
 			if strings.Contains(lower, ".flv") {
-				t.Fatalf("unexpected flv url in hls-ts profile result: %s", u)
+				t.Fatalf("unexpected flv url in hls-ts profile result: %s", streamInfo.URL)
 			}
 			if !strings.Contains(lower, ".m3u8") {
-				t.Fatalf("expected .m3u8 url in hls-ts profile result: %s", u)
+				t.Fatalf("expected .m3u8 url in hls-ts profile result: %s", streamInfo.URL)
 			}
-			t.Logf("expected hls-ts stream url: %s", u)
+			t.Logf("expected hls-ts stream url: %s (protocol=%s, format=%s, codec=%s, qn=%d)", streamInfo.URL, streamInfo.Protocol, streamInfo.Format, streamInfo.Codec, streamInfo.Qn)
 		}
 	})
 }

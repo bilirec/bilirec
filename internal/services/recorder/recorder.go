@@ -126,13 +126,13 @@ func (r *Service) Start(roomId int, duration ...time.Duration) error {
 		return ErrStreamNotLive
 	}
 
-	urls, err := r.bilic.GetStreamURLsV2(roomId,
+	streams, err := r.bilic.GetStreamURLsV2(roomId,
 		bilibili.WithProfiles(bilibili.ProfileHTTPFLV), // force http-flv for recording
 	)
 
 	if err != nil {
 		return err
-	} else if len(urls) == 0 {
+	} else if len(streams) == 0 {
 		return ErrEmptyStreamURLs
 	}
 
@@ -140,12 +140,50 @@ func (r *Service) Start(roomId int, duration ...time.Duration) error {
 	ctx, cancel := context.WithCancel(r.ctx)
 
 	// retry mechanism
-	for _, url := range urls {
-		resp, err := r.bilic.FetchLiveStreamUrlWithCtx(url, ctx)
+	for idx, streamInfo := range streams {
+		urlPreview := utils.TruncateString(streamInfo.URL, 160)
+
+		l.Debugf("trying stream url [%d/%d]: protocol=%s, format=%s, codec=%s, qn=%d, url=%s",
+			idx+1,
+			len(streams),
+			streamInfo.Protocol,
+			streamInfo.Format,
+			streamInfo.Codec,
+			streamInfo.Qn,
+			urlPreview,
+		)
+
+		resp, err := r.bilic.FetchLiveStreamUrlWithCtx(streamInfo.URL, ctx)
 		if err != nil {
-			l.Errorf("cannot fetch url: %v, will try next url", err)
+			l.Errorf("cannot fetch url: %v, will try next url (protocol=%s, format=%s, codec=%s, qn=%d, url=%s)",
+				err,
+				streamInfo.Protocol,
+				streamInfo.Format,
+				streamInfo.Codec,
+				streamInfo.Qn,
+				urlPreview,
+			)
 			continue
 		}
+
+		finalURL := ""
+		if resp.RawResponse != nil && resp.RawResponse.Request != nil && resp.RawResponse.Request.URL != nil {
+			finalURL = resp.RawResponse.Request.URL.String()
+		}
+
+		l.Debugf("stream response [%d/%d]: status=%d, content-type=%s, protocol=%s, format=%s, codec=%s, qn=%d, req=%s, final=%s",
+			idx+1,
+			len(streams),
+			resp.StatusCode(),
+			resp.Header().Get("Content-Type"),
+			streamInfo.Protocol,
+			streamInfo.Format,
+			streamInfo.Codec,
+			streamInfo.Qn,
+			urlPreview,
+			utils.TruncateString(finalURL, 160),
+		)
+
 		ch, err := r.st.ReadStream(resp, ctx)
 		if err != nil {
 			l.Errorf("cannot capture url stream: %v, will try next url", err)
