@@ -155,12 +155,12 @@ func (s *Service) tryStartAllAutoRecordRooms() {
 			status := s.recSvc.GetStatus(roomID)
 			if status != recorder.Recording && status != recorder.Recovering {
 				// Resolve duration from subscription config: -1 = unlimited, >0 = custom minutes.
-				var autoRecordArgs []time.Duration
+				var autoRecordArgs []recorder.RecordStartOption
 				switch {
 				case cfg.RecordDurationMinutes == -1:
-					autoRecordArgs = []time.Duration{0}
+					autoRecordArgs = []recorder.RecordStartOption{recorder.WithDuration(0)}
 				case cfg.RecordDurationMinutes > 0:
-					autoRecordArgs = []time.Duration{time.Duration(cfg.RecordDurationMinutes) * time.Minute}
+					autoRecordArgs = []recorder.RecordStartOption{recorder.WithDuration(time.Duration(cfg.RecordDurationMinutes) * time.Minute)}
 				}
 
 				err := s.recSvc.Start(roomID, autoRecordArgs...)

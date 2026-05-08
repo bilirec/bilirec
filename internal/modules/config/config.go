@@ -25,8 +25,8 @@ type Config struct {
 	SecretDir   string
 	DatabaseDir string
 
-	ConvertFLVToMp4       bool
-	DeleteFlvAfterConvert bool
+	ConvertToMp4             bool
+	DeleteSourceAfterConvert bool
 	CloudConvertThreshold int64
 	CloudConvertApiKey    string
 
@@ -102,8 +102,8 @@ func provider(lc fx.Lifecycle) (*Config, error) {
 		DatabaseDir:                        utils.EmptyOrElse(os.Getenv("DATABASE_DIR"), "database"),
 		CloudConvertThreshold:              utils.MustAtoi64(utils.EmptyOrElse(os.Getenv("CLOUDCONVERT_THRESHOLD"), "1073741824")), // 1 GB
 		CloudConvertApiKey:                 os.Getenv("CLOUDCONVERT_API_KEY"),                                                      // empty to disable
-		ConvertFLVToMp4:                    os.Getenv("CONVERT_FLV_TO_MP4") == "true",
-		DeleteFlvAfterConvert:              os.Getenv("DELETE_FLV_AFTER_CONVERT") == "true",
+		ConvertToMp4:                       os.Getenv("CONVERT_TO_MP4") == "true" || os.Getenv("CONVERT_FLV_TO_MP4") == "true",
+		DeleteSourceAfterConvert:           os.Getenv("DELETE_SOURCE_AFTER_CONVERT") == "true" || os.Getenv("DELETE_FLV_AFTER_CONVERT") == "true",
 		FrontendURL:                        url,
 		BackendHost:                        utils.EmptyOrElse(os.Getenv("BACKEND_HOST"), "localhost:8080"),
 		WebPushSubscriber:                  utils.EmptyOrElse(os.Getenv("WEBPUSH_SUBSCRIBER"), "mailto:webpush@example.com"),

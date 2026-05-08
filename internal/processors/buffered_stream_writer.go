@@ -20,9 +20,7 @@ type BufferedStreamWriterProcessor struct {
 	writer           *bufio.Writer
 	logger           *logrus.Entry
 
-	ctx          context.Context
-	cancel       context.CancelFunc
-	wait         sync.WaitGroup
+	syncer       *periodicFileSync
 	bytesWritten int64
 }
 
@@ -50,9 +48,7 @@ func (w *BufferedStreamWriterProcessor) Open(ctx context.Context, log *logrus.En
 	w.file = file
 	w.writer = bufio.NewWriterSize(file, w.bufferSize)
 	w.logger = log.WithField("file", file.Name())
-
-	w.ctx, w.cancel = context.WithCancel(context.Background())
-	go w.syncPeriodically(w.ctx)
+	w.syncer = startPeriodicFileSync(&w.mu, w.file, w.logger, 30*time.Second)
 	return nil
 }
 
@@ -65,8 +61,7 @@ func (w *BufferedStreamWriterProcessor) Process(ctx context.Context, log *logrus
 }
 
 func (w *BufferedStreamWriterProcessor) Close() error {
-	w.cancel()
-	w.wait.Wait()
+	w.syncer.Stop()
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	if w.sdcardProtection && w.bytesWritten < int64(w.bufferSize) {
@@ -80,25 +75,6 @@ func (w *BufferedStreamWriterProcessor) Close() error {
 	}
 	w.logger.Debugf("file path: %s, total written %vB", w.path, w.bytesWritten)
 	return w.file.Close()
-}
-
-func (w *BufferedStreamWriterProcessor) syncPeriodically(ctx context.Context) {
-	ticker := time.NewTicker(30 * time.Second)
-	w.wait.Add(1)
-	defer w.wait.Done()
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ticker.C:
-			w.mu.Lock()
-			if err := w.file.Sync(); err != nil {
-				w.logger.Warnf("error syncing file: %v", err)
-			}
-			w.mu.Unlock()
-		case <-ctx.Done():
-			return
-		}
-	}
 }
 
 func (p *BufferedStreamWriterProcessor) applyOptions(opts ...BufferedStreamWriterOptions) {

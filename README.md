@@ -1,16 +1,17 @@
 # Bilirec - Bilibili 直播录制工具
 
-一个用 Go 语言编写的 Bilibili 直播录制工具，支持自动录制直播流并保存为 FLV 格式。
+一个用 Go 语言编写的 Bilibili 直播录制工具，支持自动录制直播流。
 
 ## 功能特性
 
 - ✅ 手动触发录制任务，实时录制直播流
+- ✅ 支持多格式录制（HTTP-FLV / HLS-TS / HLS-fMP4）
 - ✅ 自动录制 - 为直播间配置自动开播录制
 - ✅ 可选录制时长 - 手动开始录制时可指定时长上限，时间到后自动停止；也可在订阅配置中预设自动录制的时长上限；支持设为无限录制
 - ✅ 直播通知 - 实时推送开播通知（网页/手机推送）
-- ✅ 自动分段轮转 - 当直播过程中发生直播 PK 等分辨率变更时，自动切换到新的 FLV 文件，避免录制文件花屏或损坏
+- ✅ 自动分段轮转 - 当直播过程中发生直播 PK 等分辨率变更时，自动切换到新的录制分段文件，避免文件花屏或损坏
 - ✅ 支持多个直播间同时录制
-- ✅ 自动处理流中断和恢复（录制固定使用 http-flv 协议，提升稳定性与兼容性）
+- ✅ 自动处理流中断和恢复（默认自动选择可用流格式，也支持手动指定 profile）
 - ✅ FFmpeg 转换冷却机制 - 其中一个档案转换失败时自动退让给其他档案转换任务
 - ✅ RESTful API 管理录制任务
 - ✅ 文件管理和下载功能
@@ -85,8 +86,8 @@ docker run -d --name bilirec -p 8080:8080 eric1008818/bilirec:latest
 | `MAX_RETRY_MINUTES` | 直播中断后判断是否仍在直播的最长容忍时间（分钟） | `10` |
 | `OUTPUT_DIR` | 录制文件保存目录 | `records` |
 | `SECRET_DIR` | Cookie 和 Token 保存目录 | `secrets` |
-| `CONVERT_FLV_TO_MP4` | 在下载时是否将 FLV 转为 MP4 | `false` |
-| `DELETE_FLV_AFTER_CONVERT` | 转换后是否删除原始 FLV 文件 | `false` |
+| `CONVERT_TO_MP4` | 录制完成后是否将可转换源文件（如 FLV/TS）转为 MP4 | `false` |
+| `DELETE_SOURCE_AFTER_CONVERT` | 转换后是否删除原始源文件 | `false` |
 | `BACKEND_HOST` | 后端主机（用于生成Cookie域名） | `localhost:8080` |
 | `FRONTEND_URL` | 前端 URL（用于 CORS 与 cookie 域） | `http://localhost:8080` |
 | `WEBPUSH_SUBSCRIBER` | Web Push VAPID 的 subject（建议使用 `mailto:you@example.com`） | `mailto:webpush@example.com` |
@@ -125,8 +126,8 @@ export MAX_RETRY_MINUTES=10
 export OUTPUT_DIR=/path/to/records
 export SECRET_DIR=/path/to/secrets
 export DATABASE_DIR=/path/to/database
-export CONVERT_FLV_TO_MP4=false
-export DELETE_FLV_AFTER_CONVERT=false
+export CONVERT_TO_MP4=false
+export DELETE_SOURCE_AFTER_CONVERT=false
 # 可选：CloudConvert（如果启用会对大文件使用云端转换）
 export CLOUDCONVERT_THRESHOLD=1073741824
 export CLOUDCONVERT_API_KEY=
@@ -194,7 +195,7 @@ Content-Type: application/json
 - **开始录制**
 
   ```http
-  POST /record/:roomID/start?duration_minutes=<N>
+  POST /record/:roomID/start?duration_minutes=<N>&stream_profile=<profile>
   ```
 
   `duration_minutes` 为**可选** query 参数：
@@ -204,6 +205,15 @@ Content-Type: application/json
   | 不传 | 使用系统预设（`MAX_RECORDING_HOURS`） |
   | `0` | 无限录制，不自动停止 |
   | `N`（正整数） | N 分钟后自动停止 |
+
+  `stream_profile` 也是**可选** query 参数，用于优先指定录制流格式：
+
+  | 值 | 说明 |
+  | -- | ---- |
+  | 不传 | 自动选择可用流（默认行为） |
+  | `http-flv` | 优先录制 HTTP-FLV |
+  | `hls-ts` | 优先录制 HLS-TS |
+  | `hls-fmp4` | 优先录制 HLS-fMP4 |
 
 - **停止录制**
 
@@ -279,7 +289,7 @@ Content-Type: application/json
   ```
 
   下载接口直接返回存储的文件，**不再支持**通过查询参数进行即时格式转换（此前的 `?format=...` 参数已移除）。
-  若要将录制的 FLV 转为 MP4，请启用 `CONVERT_FLV_TO_MP4`：在录制完成时，recorder 会将 FLV 文件加入转换队列，由后台任务异步转换为 MP4（转换行为受 `DELETE_FLV_AFTER_CONVERT` 控制）。
+  若要将录制的源文件（如 FLV/TS）转为 MP4，请启用 `CONVERT_TO_MP4`：在录制完成时，recorder 会将可转换文件加入转换队列，由后台任务异步转换为 MP4（转换行为受 `DELETE_SOURCE_AFTER_CONVERT` 控制）。
   当同时设置了 `CLOUDCONVERT_API_KEY` 且文件大小 >= `CLOUDCONVERT_THRESHOLD`（默认 1 GB）时，系统会优先使用 CloudConvert（异步任务，可通过 `/convert/tasks` 查询转换状态）；否则由本地 ffmpeg 后台任务处理。
 
 - **临时 / 预签名下载（Presigned）**
@@ -335,7 +345,7 @@ Content-Type: application/json
   ```
 
   **注意**：
-  - 只支持已完全转换为 MP4 格式的文件（需启用 `CONVERT_FLV_TO_MP4`）
+  - 只支持已为 MP4 的文件（来源可为原生 fMP4 录制，或启用 `CONVERT_TO_MP4` 后转换得到）
   - 无法播放正在进行中的录制文件
   - 支持浏览器的 Range 请求（可快进/快退）
 
@@ -561,10 +571,10 @@ Content-Type: application/json
 
 ### 录制流程
 
-1. 通过 [`bilibili.Client`](internal/modules/bilibili/bilibili.go) 获取直播流地址（录制固定使用 http-flv 协议）
+1. 通过 [`bilibili.Client`](internal/modules/bilibili/bilibili.go) 获取直播流地址（默认自动选择可用 profile，也可按需指定 `stream_profile`）
 2. 使用 [`stream.Service`](internal/services/stream/stream.go) 读取流数据
 3. [`recorder.Service`](internal/services/recorder/recorder.go) 管理录制任务（自动重连与恢复）
-4. 数据写入到 FLV 文件，保存在配置的输出目录；如果流中途发生直播 PK 等分辨率变更，录制器会自动轮转到新的分段文件。首个文件名形如 `标题-时间戳.flv`，后续分段会命名为 `标题-时间戳-1.flv`、`标题-时间戳-2.flv`。如果启用了 `CONVERT_FLV_TO_MP4`，每个录制分段在完成时都会自动加入转换队列，并由后台任务异步转换为 MP4（转换行为受 `DELETE_FLV_AFTER_CONVERT` 控制，转换任务可通过 `/convert/tasks` 查询）。
+4. 数据写入到录制文件（扩展名依流格式可能为 `.flv`、`.ts` 或 `.mp4`），保存在配置的输出目录；如果流中途发生直播 PK 等分辨率变更，录制器会自动轮转到新的分段文件。首个文件名形如 `标题-时间戳.ext`，后续分段会命名为 `标题-时间戳-1.ext`、`标题-时间戳-2.ext`。如果启用了 `CONVERT_TO_MP4`，每个可转换分段在完成时都会自动加入转换队列，并由后台任务异步转换为 MP4（转换行为受 `DELETE_SOURCE_AFTER_CONVERT` 控制，转换任务可通过 `/convert/tasks` 查询）。
 
 ### 关键特性
 
@@ -577,7 +587,7 @@ Content-Type: application/json
 - **定期刷盘**: 每 5 秒自动刷新写入缓冲，防止数据丢失
 - **低资源占用**: 设计注重低内存和低 CPU 使用，适合树莓派等资源受限设备
 - **文件管理**: 支持列出、预览、下载（可转换格式）、批量删除文件及删除目录，详见 `internal/controllers/file/file.go`
-- **自动转换**: 如果启用 `CONVERT_FLV_TO_MP4`，录制完成时会自动将 FLV 转为 MP4；可通过 `DELETE_FLV_AFTER_CONVERT` 控制是否删除原始 FLV。已修复部分不支持的编解码器导致转换失败的问题，并具备 FFmpeg 任务冷却机制避免卡死失败任务
+- **自动转换**: 如果启用 `CONVERT_TO_MP4`，录制完成时会自动将可转换源文件（例如 FLV、TS）转为 MP4；可通过 `DELETE_SOURCE_AFTER_CONVERT` 控制是否删除原始源文件。已修复部分不支持的编解码器导致转换失败的问题，并具备 FFmpeg 任务冷却机制避免卡死失败任务
 - **在线播放**: 支持在浏览器中直接播放已转换的 MP4 视频，提供原生 HTML5 video 标签体验，支持暂停/快进/全屏等操作
 - **实时修复（Realtime Fixer）**: 在流式写入场景下逐个修复 FLV Tag 的时间戳并输出，包含重复 Tag 去重（可查询去重统计），并通过内存池、去重缓存与周期清理来保持低延迟与低内存占用，适合边录制边推送或实时下载的场景。
 - **函数式编程工具**: 提供 [`fp`](pkg/fp/) 包含便捷的 maps 和 slices 操作函数
