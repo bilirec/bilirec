@@ -574,7 +574,7 @@ Content-Type: application/json
 1. 通过 [`bilibili.Client`](internal/modules/bilibili/bilibili.go) 获取直播流地址（默认自动选择可用 profile，也可按需指定 `stream_profile`）
 2. 使用 [`stream.Service`](internal/services/stream/stream.go) 读取流数据
 3. [`recorder.Service`](internal/services/recorder/recorder.go) 管理录制任务（自动重连与恢复）
-4. 数据写入到录制文件（扩展名依流格式可能为 `.flv`、`.ts` 或 `.mp4`），保存在配置的输出目录；如果流中途发生直播 PK 等分辨率变更，录制器会自动轮转到新的分段文件。首个文件名形如 `标题-时间戳.ext`，后续分段会命名为 `标题-时间戳-1.ext`、`标题-时间戳-2.ext`。如果启用了 `CONVERT_TO_MP4`，每个可转换分段在完成时都会自动加入转换队列，并由后台任务异步转换为 MP4（转换行为受 `DELETE_SOURCE_AFTER_CONVERT` 控制，转换任务可通过 `/convert/tasks` 查询）。
+4. 数据写入到录制文件（扩展名依流格式可能为 `.flv`、`.ts` 或 `.fmp4`），保存在配置的输出目录；如果流中途发生直播 PK 等分辨率变更，录制器会自动轮转到新的分段文件。首个文件名形如 `标题-时间戳.ext`，后续分段会命名为 `标题-时间戳-1.ext`、`标题-时间戳-2.ext`。如果启用了 `CONVERT_TO_MP4`，每个可转换分段在完成时都会自动加入转换队列，并由后台任务异步转换/封装为 `.mp4` 文件（转换行为受 `DELETE_SOURCE_AFTER_CONVERT` 控制，转换任务可通过 `/convert/tasks` 查询）。
 
 ### 关键特性
 
