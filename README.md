@@ -574,12 +574,12 @@ Content-Type: application/json
 1. 通过 [`bilibili.Client`](internal/modules/bilibili/bilibili.go) 获取直播流地址（默认自动选择可用 profile，也可按需指定 `stream_profile`）
 2. 使用 [`stream.Service`](internal/services/stream/stream.go) 读取流数据
 3. [`recorder.Service`](internal/services/recorder/recorder.go) 管理录制任务（自动重连与恢复）
-4. 数据写入到录制文件（扩展名依流格式可能为 `.flv`、`.ts` 或 `.fmp4`），保存在配置的输出目录；如果流中途发生直播 PK 等分辨率变更，录制器会自动轮转到新的分段文件。首个文件名形如 `标题-时间戳.ext`，后续分段会命名为 `标题-时间戳-1.ext`、`标题-时间戳-2.ext`。如果启用了 `CONVERT_TO_MP4`，每个可转换分段在完成时都会自动加入转换队列，并由后台任务异步转换/封装为 `.mp4` 文件（转换行为受 `DELETE_SOURCE_AFTER_CONVERT` 控制，转换任务可通过 `/convert/tasks` 查询）。
+4. 数据写入到录制文件（扩展名依流格式可能为 `.flv`、`.ts` 或 `.fmp4`），保存在配置的输出目录；**HTTP-FLV 格式**：当检测到直播 PK 等 FLV 文件头变更时（分辨率切换），录制器会自动轮转到新的分段文件；**HLS-TS / HLS-fMP4 格式**：不执行文件轮转，直播 PK 等不连续性由 HLS 播放列表层自然处理，录制器仅在流中断时重连并继续写入同一文件。首个文件名形如 `标题-时间戳.ext`，后续分段（HTTP-FLV 轮转后）会命名为 `标题-时间戳-1.ext`、`标题-时间戳-2.ext`。如果启用了 `CONVERT_TO_MP4`，每个可转换分段在完成时都会自动加入转换队列，并由后台任务异步转换/封装为 `.mp4` 文件（转换行为受 `DELETE_SOURCE_AFTER_CONVERT` 控制，转换任务可通过 `/convert/tasks` 查询）。
 
 ### 关键特性
 
 - **自动恢复**: 当流中断时自动重连，详见 [`recorder.Service`](internal/services/recorder/recorder.go)
-- **自动分段轮转**: 当检测到直播 PK 等分辨率变更时，自动切换到新的录制文件，并为新分段重新写入 FLV 文件头，降低直播中途切换画质导致输出文件异常的风险
+- **自动分段轮转（HTTP-FLV）**: 仅适用于 HTTP-FLV 格式；当检测到 FLV 文件头变更（直播 PK 等分辨率切换）时，自动轮转到新的分段文件并重写文件头，降低画质切换导致输出异常的风险。HLS-TS / HLS-fMP4 格式不使用文件轮转，不连续性由 HLS 播放列表层自然处理
 - **自动录制**: 为订阅的直播间配置自动开播录制，后台定期检查直播间状态并自动启动录制，详见 [`subcheck.Service`](internal/services/subcheck/check.go)
 - **实时通知**: 通过 Web Push 推送直播开播通知和自动录制状态，详见 [`notify.Service`](internal/services/notify/notify.go)
 - **缓冲池**: 使用 [`pool.BufferPool`](pkg/pool/pool.go) 减少内存分配
