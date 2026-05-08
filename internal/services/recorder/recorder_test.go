@@ -70,7 +70,7 @@ func TestFlvRecord(t *testing.T) {
 func TestTsRecord(t *testing.T) {
 
 	// Use a room that Bilibili serves via HLS-TS (streamInfo.Format == "ts").
-	const room = 24160384
+	const room = 479592
 
 	var recorderService *recorder.Service
 

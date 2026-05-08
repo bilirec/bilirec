@@ -98,9 +98,7 @@ func resolveSegmentURL(m3u8URL, segmentURI string) (string, error) {
 // The polling interval is derived from the first #EXTINF duration seen
 // (interval = duration/2), falling back to 1 second. This ensures each
 // segment is fetched well before Bilibili prunes it from the playlist window.
-func (r *Service) ReadHlsStream(m3u8URL string, ctx context.Context) (<-chan []byte, error) {
-	client := resty.New()
-
+func (r *Service) ReadHlsStream(m3u8URL string, client *resty.Client, ctx context.Context) (<-chan []byte, error) {
 	// Fetch the initial playlist to verify reachability and derive poll interval.
 	resp, err := client.R().SetContext(ctx).Get(m3u8URL)
 	if err != nil {

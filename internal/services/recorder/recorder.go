@@ -170,12 +170,7 @@ func (r *Service) Start(roomId int, options ...RecordStartOption) error {
 			urlPreview,
 		)
 
-		fetchCtx, fetchCancel := ctx, func() {}
-		if streamInfo.Format != "flv" {
-			fetchCtx, fetchCancel = context.WithTimeout(ctx, 3*time.Second)
-		}
-		resp, err := r.bilic.FetchLiveStreamUrlWithCtx(streamInfo.URL, fetchCtx)
-		fetchCancel()
+		resp, err := r.bilic.FetchLiveStreamUrlWithCtx(streamInfo.URL, ctx)
 
 		if err != nil {
 			l.Errorf("cannot fetch url: %v, will try next url (protocol=%s, format=%s, codec=%s, qn=%d, url=%s)",
@@ -213,7 +208,7 @@ func (r *Service) Start(roomId int, options ...RecordStartOption) error {
 		switch streamInfo.Format {
 		case "ts":
 			resp.RawBody().Close()
-			hlsCh, hlsErr := r.st.ReadHlsStream(streamInfo.URL, ctx)
+			hlsCh, hlsErr := r.st.ReadHlsStream(streamInfo.URL, r.bilic.NewLiveHlsClient(), ctx)
 			if hlsErr != nil {
 				l.Errorf("cannot start HLS stream: %v, will try next url", hlsErr)
 				continue
@@ -222,7 +217,7 @@ func (r *Service) Start(roomId int, options ...RecordStartOption) error {
 			strategy = rs.NewHlsTsStrategy()
 		case "fmp4":
 			resp.RawBody().Close()
-			hlsCh, hlsErr := r.st.ReadHlsStream(streamInfo.URL, ctx)
+			hlsCh, hlsErr := r.st.ReadHlsStream(streamInfo.URL, r.bilic.NewLiveHlsClient(), ctx)
 			if hlsErr != nil {
 				l.Errorf("cannot start HLS stream: %v, will try next url", hlsErr)
 				continue
