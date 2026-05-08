@@ -102,7 +102,7 @@ func normalizeTfdtBox(data []byte, start, end int, trackID uint32, bases map[uin
 		}
 		value := binary.BigEndian.Uint64(data[start+12 : start+20])
 		base, exists := bases[trackID]
-		if !exists {
+		if !exists || value < base {
 			bases[trackID] = value
 			base = value
 		}
@@ -112,7 +112,7 @@ func normalizeTfdtBox(data []byte, start, end int, trackID uint32, bases map[uin
 
 	value := uint64(binary.BigEndian.Uint32(data[start+12 : start+16]))
 	base, exists := bases[trackID]
-	if !exists {
+	if !exists || value < base {
 		bases[trackID] = value
 		base = value
 	}

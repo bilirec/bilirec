@@ -69,7 +69,7 @@ func (p *TsContinuityFixerProcessor) Process(_ context.Context, log *logrus.Entr
 		}
 
 		// Check discontinuity_indicator in the adaptation field header.
-		if adaptationFieldControl == 0x3 || adaptationFieldControl == 0x2 {
+		if adaptationFieldControl == 0x3 {
 			if len(pkt) > 5 && pkt[4] > 0 { // adaptation field length > 0
 				if pkt[5]&0x80 != 0 { // discontinuity_indicator set
 					// Intentional discontinuity — update lastCC but don't patch.
