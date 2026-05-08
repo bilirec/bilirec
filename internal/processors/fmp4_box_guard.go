@@ -2,7 +2,6 @@ package processors
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/eric2788/bilirec/pkg/pipeline"
 	"github.com/sirupsen/logrus"
@@ -22,6 +21,8 @@ import (
 // Additionally, when a new init segment ("ftyp") arrives after at least one
 // media segment has been written, the processor signals a discontinuity by
 // resetting the shared tfdt bases map via the pointer passed at construction.
+// "styp" is treated as a media-fragment prefix (styp+moof+mdat) and does NOT
+// trigger a discontinuity reset — only "ftyp" does.
 type Fmp4BoxGuardProcessor struct {
 	seenMedia bool
 	bases     *map[uint32]uint64
@@ -50,13 +51,16 @@ func (p *Fmp4BoxGuardProcessor) Process(_ context.Context, log *logrus.Entry, da
 
 	boxType := string(data[4:8])
 	switch boxType {
-	case "ftyp", "styp":
+	case "ftyp":
 		// Init segment — if we already saw media, it's a discontinuity
 		if p.seenMedia {
 			log.Warnf("fmp4-box-guard: new init segment after media — stream discontinuity, resetting")
 			*p.bases = make(map[uint32]uint64)
 		}
-	case "moof":
+	case "styp", "moof":
+		// styp is a media-fragment prefix (styp+moof+mdat); moof is a plain
+		// media fragment. Both indicate media data — mark seenMedia but do
+		// NOT treat as an init/discontinuity.
 		p.seenMedia = true
 	default:
 		log.Warnf("fmp4-box-guard: unexpected leading box %q (%d B), dropping", boxType, len(data))
@@ -67,7 +71,7 @@ func (p *Fmp4BoxGuardProcessor) Process(_ context.Context, log *logrus.Entry, da
 	_, _, _, ok := readBoxHeader(data, 0)
 	if !ok {
 		log.Warnf("fmp4-box-guard: malformed box header (size overflows segment buffer), dropping")
-		return nil, fmt.Errorf("fmp4-box-guard: malformed box header")
+		return nil, nil
 	}
 
 	return data, nil
