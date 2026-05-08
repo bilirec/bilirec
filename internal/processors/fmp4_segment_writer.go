@@ -12,7 +12,8 @@ import (
 )
 
 // Fmp4SegmentWriterProcessor appends complete HLS fMP4 segments to a single
-// .mp4 file. Each Process() call receives one full segment:
+// fragmented MP4 source file (typically using the .fmp4 extension). Each
+// Process() call receives one full segment:
 //   - Init segment:  bytes 4-8 == "ftyp"  (ftyp+moov boxes)
 //   - Media segment: bytes 4-8 == "moof"  (moof+mdat boxes)
 //
