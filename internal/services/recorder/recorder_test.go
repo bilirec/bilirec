@@ -20,7 +20,11 @@ import (
 
 func TestFlvRecord(t *testing.T) {
 
-	const room = 24160384
+	if testing.Short() {
+		return
+	}
+
+	const room = 1883358196
 
 	var recorderService *recorder.Service
 
@@ -69,8 +73,12 @@ func TestFlvRecord(t *testing.T) {
 
 func TestTsRecord(t *testing.T) {
 
+	if testing.Short() {
+		return
+	}
+
 	// Use a room that Bilibili serves via HLS-TS (streamInfo.Format == "ts").
-	const room = 479592
+	const room = 1883358196
 
 	var recorderService *recorder.Service
 
@@ -119,8 +127,12 @@ func TestTsRecord(t *testing.T) {
 
 func TestFmp4Record(t *testing.T) {
 
+	if testing.Short() {
+		return
+	}
+
 	// Use a room that Bilibili serves via HLS-fMP4 (streamInfo.Format == "fmp4").
-	const room = 24160384
+	const room = 1883358196
 
 	var recorderService *recorder.Service
 

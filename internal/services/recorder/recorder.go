@@ -19,6 +19,7 @@ import (
 	"github.com/eric2788/bilirec/pkg/ds"
 	"github.com/eric2788/bilirec/pkg/pipeline"
 	"github.com/eric2788/bilirec/utils"
+	"github.com/go-resty/resty/v2"
 	"github.com/puzpuzpuz/xsync/v4"
 	"github.com/sirupsen/logrus"
 	"go.uber.org/fx"
@@ -170,7 +171,15 @@ func (r *Service) Start(roomId int, options ...RecordStartOption) error {
 			urlPreview,
 		)
 
-		resp, err := r.bilic.FetchLiveStreamUrlWithCtx(streamInfo.URL, ctx)
+		var resp *resty.Response
+		var err error
+
+		switch streamInfo.Format {
+		case "ts", "fmp4":
+			resp, err = r.bilic.FetchM3u8UrlWithCtx(streamInfo.URL, ctx)
+		default: // "flv" and any unknown format
+			resp, err = r.bilic.FetchLiveStreamUrlWithCtx(streamInfo.URL, ctx)
+		}
 
 		if err != nil {
 			l.Errorf("cannot fetch url: %v, will try next url (protocol=%s, format=%s, codec=%s, qn=%d, url=%s)",
@@ -206,7 +215,7 @@ func (r *Service) Start(roomId int, options ...RecordStartOption) error {
 		var strategy rs.StreamRecordStrategy
 
 		switch streamInfo.Format {
-		case "ts":
+		case "ts", "fmp4":
 			resp.RawBody().Close()
 			hlsCh, hlsErr := r.st.ReadHlsStream(finalURL, r.bilic.NewLiveHlsClient(), ctx)
 			if hlsErr != nil {
@@ -214,16 +223,11 @@ func (r *Service) Start(roomId int, options ...RecordStartOption) error {
 				continue
 			}
 			ch = hlsCh
-			strategy = rs.NewHlsTsStrategy()
-		case "fmp4":
-			resp.RawBody().Close()
-			hlsCh, hlsErr := r.st.ReadHlsStream(finalURL, r.bilic.NewLiveHlsClient(), ctx)
-			if hlsErr != nil {
-				l.Errorf("cannot start HLS stream: %v, will try next url", hlsErr)
-				continue
-			}
-			ch = hlsCh
-			strategy = rs.NewHlsFmp4Strategy()
+			strategy = utils.TernaryFunc(
+				streamInfo.Format == "ts",
+				func() rs.StreamRecordStrategy { return rs.NewHlsTsStrategy() },
+				func() rs.StreamRecordStrategy { return rs.NewHlsFmp4Strategy() },
+			)
 		default: // "flv" and any unknown format
 			flvCh, flvErr := r.st.ReadFlvStream(resp, ctx)
 			if flvErr != nil {

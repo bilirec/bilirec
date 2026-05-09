@@ -218,3 +218,12 @@ func (c *Client) FetchLiveStreamUrlWithCtx(url string, ctx context.Context) (*re
 		return req.SetContext(ctx).Get(url)
 	})
 }
+
+func (c *Client) FetchM3u8UrlWithCtx(url string, ctx context.Context) (*resty.Response, error) {
+	if _, ok := ctx.Deadline(); !ok {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, 3*time.Second)
+		defer cancel()
+	}
+	return c.liveClient.R().SetContext(ctx).Get(url)
+}

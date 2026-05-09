@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"go.uber.org/fx"
 
@@ -79,7 +80,12 @@ func (c *Client) withLiveStreamClient() *resty.Client {
 }
 
 func (c *Client) NewLiveHlsClient() *resty.Client {
-	client := configureLiveClient(resty.New().SetRedirectPolicy(resty.FlexibleRedirectPolicy(10)), "*/*")
+	client := configureLiveClient(resty.New().
+		SetRedirectPolicy(resty.FlexibleRedirectPolicy(10)).
+		SetTimeout(5*time.Second).
+		SetCloseConnection(true),
+		"*/*",
+	)
 	syncCookieToClient(client, c.GetCookies())
 	ensureBuvid3Cookie(client)
 	return client
