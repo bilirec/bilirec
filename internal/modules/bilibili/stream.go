@@ -225,5 +225,5 @@ func (c *Client) FetchM3u8UrlWithCtx(url string, ctx context.Context) (*resty.Re
 		ctx, cancel = context.WithTimeout(ctx, 3*time.Second)
 		defer cancel()
 	}
-	return c.liveClient.R().SetContext(ctx).Get(url)
+	return c.NewLiveHlsClient().R().SetContext(ctx).Get(url)
 }
