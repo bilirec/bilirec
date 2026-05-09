@@ -143,3 +143,33 @@ func TestNormalizeFragmentTimestamps_Version0(t *testing.T) {
 		t.Fatalf("expected second tfdt to become 600, got %d", got2)
 	}
 }
+
+func BenchmarkNormalizeFragmentTimestamps_Version1(b *testing.B) {
+	bases := map[uint32]uint64{1: 90000}
+	base := makeMoof(1, 1, 180000)
+	work := make([]byte, len(base))
+
+	b.ReportAllocs()
+	b.SetBytes(int64(len(base)))
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		copy(work, base)
+		_ = NormalizeFragmentTimestamps(work, bases)
+	}
+}
+
+func BenchmarkNormalizeFragmentTimestamps_Version0(b *testing.B) {
+	bases := map[uint32]uint64{2: 1000}
+	base := makeMoof(2, 0, 1600)
+	work := make([]byte, len(base))
+
+	b.ReportAllocs()
+	b.SetBytes(int64(len(base)))
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		copy(work, base)
+		_ = NormalizeFragmentTimestamps(work, bases)
+	}
+}

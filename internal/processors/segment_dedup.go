@@ -15,7 +15,16 @@ import (
 //
 // Only consecutive duplicates are caught; non-consecutive repeats are allowed
 // (e.g. a legitimate loop in very short test streams).
+//
+// Two-phase approach:
+//   - Phase 1: quick fingerprint (length + first 8 + last 8 bytes). Unique
+//     segments almost always differ here; SHA-256 is skipped entirely.
+//   - Phase 2: full SHA-256, only reached when the fingerprint matches
+//     (indicating a likely consecutive duplicate).
 type SegmentDedupProcessor struct {
+	lastLen  int
+	lastHead [8]byte
+	lastTail [8]byte
 	lastHash [32]byte
 	hasLast  bool
 }
@@ -28,9 +37,41 @@ func NewSegmentDedup() *pipeline.ProcessorInfo[[]byte] {
 }
 
 func (p *SegmentDedupProcessor) Open(_ context.Context, _ *logrus.Entry) error {
-	p.lastHash = [32]byte{}
-	p.hasLast = false
+	*p = SegmentDedupProcessor{}
 	return nil
+}
+
+// fingerprintMatches returns true when length and boundary bytes of data match
+// the stored fingerprint, making a full SHA-256 check worthwhile.
+func (p *SegmentDedupProcessor) fingerprintMatches(data []byte) bool {
+	n := len(data)
+	if n != p.lastLen {
+		return false
+	}
+	headLen := min(n, 8)
+	for i := 0; i < headLen; i++ {
+		if data[i] != p.lastHead[i] {
+			return false
+		}
+	}
+	tailLen := min(n, 8)
+	for i := 0; i < tailLen; i++ {
+		if data[n-tailLen+i] != p.lastTail[i] {
+			return false
+		}
+	}
+	return true
+}
+
+// updateFingerprint stores the length and boundary bytes of data.
+func (p *SegmentDedupProcessor) updateFingerprint(data []byte) {
+	n := len(data)
+	p.lastLen = n
+	headLen := min(n, 8)
+	copy(p.lastHead[:], data[:headLen])
+	tailLen := min(n, 8)
+	copy(p.lastTail[:], data[n-tailLen:])
+	p.hasLast = true
 }
 
 // Process returns (nil, nil) for a duplicate segment, signalling downstream
@@ -39,13 +80,22 @@ func (p *SegmentDedupProcessor) Process(_ context.Context, log *logrus.Entry, da
 	if len(data) == 0 {
 		return data, nil
 	}
+
+	// Phase 1: quick fingerprint — skip SHA-256 for the common case where
+	// consecutive segments differ in length or boundary bytes.
+	if p.hasLast && !p.fingerprintMatches(data) {
+		p.updateFingerprint(data)
+		return data, nil
+	}
+
+	// Phase 2: full SHA-256 — only reached when fingerprint matches.
 	sum := sha256.Sum256(data)
 	if p.hasLast && sum == p.lastHash {
 		log.Warnf("segment-dedup: dropping duplicate segment (%d B)", len(data))
 		return nil, nil
 	}
 	p.lastHash = sum
-	p.hasLast = true
+	p.updateFingerprint(data)
 	return data, nil
 }
 

@@ -78,3 +78,48 @@ func TestTsContinuityFixer_RespectsDiscontinuityIndicator(t *testing.T) {
 		t.Fatalf("unexpected CC after discontinuity baseline: got=%d want=4", got)
 	}
 }
+
+func buildTSSegment(packetCount int, pidCount int) []byte {
+	if pidCount <= 0 {
+		pidCount = 1
+	}
+	segment := make([]byte, 0, packetCount*testTsPacketSize)
+
+	for i := 0; i < packetCount; i++ {
+		pid := uint16(100 + (i % pidCount))
+		cc := uint8(i % 16)
+		segment = append(segment, makeTSPacket(pid, 0x1, cc, false)...)
+	}
+
+	return segment
+}
+
+func BenchmarkTsContinuityFixer_FixSegment_200Packets(b *testing.B) {
+	fixer := NewTsContinuityFixer()
+	base := buildTSSegment(200, 16)
+	work := make([]byte, len(base))
+
+	b.ReportAllocs()
+	b.SetBytes(int64(len(base)))
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		copy(work, base)
+		_ = fixer.FixSegment(work)
+	}
+}
+
+func BenchmarkTsContinuityFixer_FixSegment_1200Packets(b *testing.B) {
+	fixer := NewTsContinuityFixer()
+	base := buildTSSegment(1200, 64)
+	work := make([]byte, len(base))
+
+	b.ReportAllocs()
+	b.SetBytes(int64(len(base)))
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		copy(work, base)
+		_ = fixer.FixSegment(work)
+	}
+}

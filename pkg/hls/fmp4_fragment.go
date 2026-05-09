@@ -2,12 +2,19 @@ package hls
 
 import "encoding/binary"
 
-func ReadBoxHeader(data []byte, offset int) (size int, boxType string, headerLen int, ok bool) {
+const (
+	boxTypeMoof = 0x6d6f6f66 // "moof"
+	boxTypeTraf = 0x74726166 // "traf"
+	boxTypeTfhd = 0x74666864 // "tfhd"
+	boxTypeTfdt = 0x74666474 // "tfdt"
+)
+
+func readBoxHeaderCode(data []byte, offset int) (size int, boxType uint32, headerLen int, ok bool) {
 	if offset < 0 || offset+8 > len(data) {
-		return 0, "", 0, false
+		return 0, 0, 0, false
 	}
 	size32 := binary.BigEndian.Uint32(data[offset : offset+4])
-	boxType = string(data[offset+4 : offset+8])
+	boxType = binary.BigEndian.Uint32(data[offset+4 : offset+8])
 	headerLen = 8
 
 	switch size32 {
@@ -15,11 +22,11 @@ func ReadBoxHeader(data []byte, offset int) (size int, boxType string, headerLen
 		size = len(data) - offset
 	case 1:
 		if offset+16 > len(data) {
-			return 0, "", 0, false
+			return 0, 0, 0, false
 		}
 		size64 := binary.BigEndian.Uint64(data[offset+8 : offset+16])
 		if size64 > uint64(len(data)-offset) {
-			return 0, "", 0, false
+			return 0, 0, 0, false
 		}
 		headerLen = 16
 		size = int(size64)
@@ -28,8 +35,19 @@ func ReadBoxHeader(data []byte, offset int) (size int, boxType string, headerLen
 	}
 
 	if size < headerLen || offset+size > len(data) {
+		return 0, 0, 0, false
+	}
+	return size, boxType, headerLen, true
+}
+
+func ReadBoxHeader(data []byte, offset int) (size int, boxType string, headerLen int, ok bool) {
+	size, boxTypeCode, headerLen, ok := readBoxHeaderCode(data, offset)
+	if !ok {
 		return 0, "", 0, false
 	}
+	b := [4]byte{}
+	binary.BigEndian.PutUint32(b[:], boxTypeCode)
+	boxType = string(b[:])
 	return size, boxType, headerLen, true
 }
 
@@ -79,12 +97,12 @@ func NormalizeTrafTfdt(data []byte, trafStart, trafEnd int, bases map[uint32]uin
 	trackID := uint32(0)
 
 	for off := trafStart + 8; off < trafEnd; {
-		size, typ, _, ok := ReadBoxHeader(data, off)
+		size, typ, _, ok := readBoxHeaderCode(data, off)
 		if !ok {
 			break
 		}
 		boxEnd := off + size
-		if typ == "tfhd" {
+		if typ == boxTypeTfhd {
 			if id, found := TfhdTrackID(data, off, boxEnd); found {
 				trackID = id
 				break
@@ -99,12 +117,12 @@ func NormalizeTrafTfdt(data []byte, trafStart, trafEnd int, bases map[uint32]uin
 
 	normalized := 0
 	for off := trafStart + 8; off < trafEnd; {
-		size, typ, _, ok := ReadBoxHeader(data, off)
+		size, typ, _, ok := readBoxHeaderCode(data, off)
 		if !ok {
 			break
 		}
 		boxEnd := off + size
-		if typ == "tfdt" && NormalizeTfdtBox(data, off, boxEnd, trackID, bases) {
+		if typ == boxTypeTfdt && NormalizeTfdtBox(data, off, boxEnd, trackID, bases) {
 			normalized++
 		}
 		off = boxEnd
@@ -116,20 +134,20 @@ func NormalizeTrafTfdt(data []byte, trafStart, trafEnd int, bases map[uint32]uin
 func NormalizeFragmentTimestamps(data []byte, bases map[uint32]uint64) int {
 	total := 0
 	for off := 0; off < len(data); {
-		size, typ, _, ok := ReadBoxHeader(data, off)
+		size, typ, _, ok := readBoxHeaderCode(data, off)
 		if !ok {
 			break
 		}
 		boxEnd := off + size
 
-		if typ == "moof" {
+		if typ == boxTypeMoof {
 			for child := off + 8; child < boxEnd; {
-				childSize, childType, _, childOK := ReadBoxHeader(data, child)
+				childSize, childType, _, childOK := readBoxHeaderCode(data, child)
 				if !childOK {
 					break
 				}
 				childEnd := child + childSize
-				if childType == "traf" {
+				if childType == boxTypeTraf {
 					total += NormalizeTrafTfdt(data, child, childEnd, bases)
 				}
 				child = childEnd

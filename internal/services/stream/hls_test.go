@@ -1,9 +1,29 @@
 package stream
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 )
+
+func buildPlaylistBody(segCount int, withMap bool) string {
+	lines := make([]string, 0, segCount*2+4)
+	lines = append(lines,
+		"#EXTM3U",
+		"#EXT-X-VERSION:3",
+		"#EXT-X-MEDIA-SEQUENCE:1000",
+	)
+	if withMap {
+		lines = append(lines, "#EXT-X-MAP:URI=\"init.mp4\"")
+	}
+	for i := 0; i < segCount; i++ {
+		lines = append(lines,
+			"#EXTINF:2.0,",
+			fmt.Sprintf("seg-%d.ts", 1000+i),
+		)
+	}
+	return strings.Join(lines, "\n")
+}
 
 func TestParseM3u8_ValidPlaylist(t *testing.T) {
 	body := strings.Join([]string{
@@ -142,5 +162,56 @@ func TestShouldResetSequenceOnRollback(t *testing.T) {
 				t.Fatalf("shouldResetSequenceOnRollback(%d, %d, %d, %d)=%v want=%v", tt.prevBase, tt.baseSeq, tt.segCount, tt.nextSeq, got, tt.want)
 			}
 		})
+	}
+}
+
+func BenchmarkParseM3u8_SmallWindow(b *testing.B) {
+	body := []byte(buildPlaylistBody(6, false))
+	b.ReportAllocs()
+	b.SetBytes(int64(len(body)))
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		pl, err := parseM3u8Bytes(body)
+		if err != nil {
+			b.Fatalf("parseM3u8 failed: %v", err)
+		}
+		if len(pl.segments) != 6 {
+			b.Fatalf("unexpected segment count: got=%d want=6", len(pl.segments))
+		}
+	}
+}
+
+func BenchmarkParseM3u8_MapWindow(b *testing.B) {
+	body := []byte(buildPlaylistBody(20, true))
+	b.ReportAllocs()
+	b.SetBytes(int64(len(body)))
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		pl, err := parseM3u8Bytes(body)
+		if err != nil {
+			b.Fatalf("parseM3u8 failed: %v", err)
+		}
+		if pl.mapURI == "" {
+			b.Fatal("expected map URI")
+		}
+	}
+}
+
+func BenchmarkParseM3u8_FromBodyBytes(b *testing.B) {
+	bodyBytes := []byte(buildPlaylistBody(20, true))
+	b.ReportAllocs()
+	b.SetBytes(int64(len(bodyBytes)))
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		pl, err := parseM3u8(string(bodyBytes))
+		if err != nil {
+			b.Fatalf("parseM3u8 failed: %v", err)
+		}
+		if len(pl.segments) != 20 {
+			b.Fatalf("unexpected segment count: got=%d want=20", len(pl.segments))
+		}
 	}
 }

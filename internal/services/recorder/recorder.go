@@ -197,6 +197,16 @@ func (r *Service) Start(roomId int, options ...RecordStartOption) error {
 				urlPreview,
 			)
 			continue
+		} else if resp.StatusCode() != 200 {
+			l.Errorf("non-200 response: %d, will try next url (protocol=%s, format=%s, codec=%s, qn=%d, url=%s)",
+				resp.StatusCode(),
+				streamInfo.Protocol,
+				streamInfo.Format,
+				streamInfo.Codec,
+				streamInfo.Qn,
+				urlPreview,
+			)
+			continue
 		}
 
 		finalURL := ""

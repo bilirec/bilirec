@@ -13,7 +13,8 @@ const (
 // packets in place so each payload-bearing packet continues from the previous
 // one modulo 16.
 type TsContinuityFixer struct {
-	lastCC map[uint16]uint8 // PID -> last continuity counter
+	lastCC [8192]uint8
+	seen   [8192]bool
 }
 
 type TsContinuityFixResult struct {
@@ -27,7 +28,9 @@ func NewTsContinuityFixer() *TsContinuityFixer {
 }
 
 func (f *TsContinuityFixer) Reset() {
-	f.lastCC = make(map[uint16]uint8)
+	for i := range f.seen {
+		f.seen[i] = false
+	}
 }
 
 // FixSegment rewrites continuity counters in place and returns patch stats.
@@ -58,12 +61,13 @@ func (f *TsContinuityFixer) FixSegment(data []byte) TsContinuityFixResult {
 			if len(pkt) > 5 && pkt[4] > 0 {
 				if pkt[5]&0x80 != 0 {
 					f.lastCC[pid] = cc
+					f.seen[pid] = true
 					continue
 				}
 			}
 		}
 
-		expected, seen := f.lastCC[pid]
+		expected, seen := f.lastCC[pid], f.seen[pid]
 		if seen {
 			want := (expected + 1) & 0xF
 			if cc != want {
@@ -73,6 +77,7 @@ func (f *TsContinuityFixer) FixSegment(data []byte) TsContinuityFixResult {
 			}
 		}
 		f.lastCC[pid] = cc
+		f.seen[pid] = true
 	}
 
 	return TsContinuityFixResult{Patched: patched}
