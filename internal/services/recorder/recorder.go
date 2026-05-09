@@ -208,7 +208,7 @@ func (r *Service) Start(roomId int, options ...RecordStartOption) error {
 		switch streamInfo.Format {
 		case "ts":
 			resp.RawBody().Close()
-			hlsCh, hlsErr := r.st.ReadHlsStream(streamInfo.URL, r.bilic.NewLiveHlsClient(), ctx)
+			hlsCh, hlsErr := r.st.ReadHlsStream(finalURL, r.bilic.NewLiveHlsClient(), ctx)
 			if hlsErr != nil {
 				l.Errorf("cannot start HLS stream: %v, will try next url", hlsErr)
 				continue
@@ -217,7 +217,7 @@ func (r *Service) Start(roomId int, options ...RecordStartOption) error {
 			strategy = rs.NewHlsTsStrategy()
 		case "fmp4":
 			resp.RawBody().Close()
-			hlsCh, hlsErr := r.st.ReadHlsStream(streamInfo.URL, r.bilic.NewLiveHlsClient(), ctx)
+			hlsCh, hlsErr := r.st.ReadHlsStream(finalURL, r.bilic.NewLiveHlsClient(), ctx)
 			if hlsErr != nil {
 				l.Errorf("cannot start HLS stream: %v, will try next url", hlsErr)
 				continue
