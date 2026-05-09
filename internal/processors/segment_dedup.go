@@ -3,7 +3,6 @@ package processors
 import (
 	"context"
 	"crypto/sha256"
-	"encoding/hex"
 
 	"github.com/eric2788/bilirec/pkg/pipeline"
 	"github.com/sirupsen/logrus"
@@ -17,7 +16,8 @@ import (
 // Only consecutive duplicates are caught; non-consecutive repeats are allowed
 // (e.g. a legitimate loop in very short test streams).
 type SegmentDedupProcessor struct {
-	lastHash string
+	lastHash [32]byte
+	hasLast  bool
 }
 
 func NewSegmentDedup() *pipeline.ProcessorInfo[[]byte] {
@@ -28,7 +28,8 @@ func NewSegmentDedup() *pipeline.ProcessorInfo[[]byte] {
 }
 
 func (p *SegmentDedupProcessor) Open(_ context.Context, _ *logrus.Entry) error {
-	p.lastHash = ""
+	p.lastHash = [32]byte{}
+	p.hasLast = false
 	return nil
 }
 
@@ -39,12 +40,12 @@ func (p *SegmentDedupProcessor) Process(_ context.Context, log *logrus.Entry, da
 		return data, nil
 	}
 	sum := sha256.Sum256(data)
-	h := hex.EncodeToString(sum[:])
-	if h == p.lastHash {
+	if p.hasLast && sum == p.lastHash {
 		log.Warnf("segment-dedup: dropping duplicate segment (%d B)", len(data))
 		return nil, nil
 	}
-	p.lastHash = h
+	p.lastHash = sum
+	p.hasLast = true
 	return data, nil
 }
 

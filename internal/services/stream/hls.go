@@ -103,6 +103,25 @@ func resolveSegmentURL(m3u8URL, segmentURI string) (string, error) {
 	return base.ResolveReference(ref).String(), nil
 }
 
+func shouldResetSequenceOnRollback(prevBaseSeq int64, baseSeq int64, segCount int, nextSeq int64) bool {
+	if segCount <= 0 {
+		return false
+	}
+	if baseSeq >= nextSeq {
+		return false
+	}
+	// If nextSeq still falls inside the current window, we have overlap and should keep going.
+	windowEndExclusive := baseSeq + int64(segCount)
+	if nextSeq < windowEndExclusive {
+		return false
+	}
+
+	// Only treat as rollback when sequence numbers themselves moved backward.
+	// If baseSeq keeps increasing (or stays the same), being at/after window tail is
+	// normal live polling behavior (no new segment yet), not a discontinuity.
+	return baseSeq < prevBaseSeq
+}
+
 // ReadHlsStream polls an HLS m3u8 playlist and delivers each new segment as a
 // complete []byte to the returned channel. One send = one full TS or fMP4
 // segment, ready to be written to disk.
@@ -165,6 +184,7 @@ func (r *Service) ReadHlsStream(m3u8URL string, client *resty.Client, ctx contex
 		ticker := time.NewTicker(pollInterval)
 		defer ticker.Stop()
 		consecutivePlaylistFailures := 0
+		prevBaseSeq := mediaSeq
 
 		for {
 			select {
@@ -206,6 +226,11 @@ func (r *Service) ReadHlsStream(m3u8URL string, client *resty.Client, ctx contex
 					lost := baseSeq - nextSeq
 					logger.Warnf("hls: sequence gap detected, likely missed %d segment(s) (nextSeq=%d, baseSeq=%d)", lost, nextSeq, baseSeq)
 					nextSeq = baseSeq
+				}
+				if shouldResetSequenceOnRollback(prevBaseSeq, baseSeq, len(segs), nextSeq) {
+					logger.Warnf("hls: sequence rollback/discontinuity detected (nextSeq=%d, baseSeq=%d, window=%d), resetting nextSeq", nextSeq, baseSeq, len(segs))
+					nextSeq = baseSeq
+					mapSent = false
 				}
 
 				if pl.mapURI != currentMapURI {
@@ -275,6 +300,8 @@ func (r *Service) ReadHlsStream(m3u8URL string, client *resty.Client, ctx contex
 						return
 					}
 				}
+
+				prevBaseSeq = baseSeq
 			}
 		}
 	}()

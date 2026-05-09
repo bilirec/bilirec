@@ -62,9 +62,9 @@ func (p *TsContinuityFixerProcessor) Process(_ context.Context, log *logrus.Entr
 		adaptationFieldControl := (header >> 4) & 0x3
 		cc := uint8(header & 0xF)
 
-		// Packets with no payload (adaptation_field_control == 0b10) do not
-		// increment the CC; skip them.
-		if adaptationFieldControl == 0x2 {
+		// Only packets carrying payload can advance continuity counter.
+		// 0b00 is reserved/invalid and 0b10 has adaptation field only.
+		if adaptationFieldControl == 0x0 || adaptationFieldControl == 0x2 {
 			continue
 		}
 

@@ -75,3 +75,72 @@ func TestParseM3u8_ScannerErrorOnLongLine(t *testing.T) {
 		t.Fatal("expected parseM3u8 to return scanner error for oversized line")
 	}
 }
+
+func TestShouldResetSequenceOnRollback(t *testing.T) {
+	tests := []struct {
+		name     string
+		prevBase int64
+		baseSeq  int64
+		segCount int
+		nextSeq  int64
+		want     bool
+	}{
+		{
+			name:     "no segments no reset",
+			prevBase: 100,
+			baseSeq:  100,
+			segCount: 0,
+			nextSeq:  120,
+			want:     false,
+		},
+		{
+			name:     "base ahead of next no rollback",
+			prevBase: 90,
+			baseSeq:  120,
+			segCount: 4,
+			nextSeq:  100,
+			want:     false,
+		},
+		{
+			name:     "rollback with overlap should not reset",
+			prevBase: 110,
+			baseSeq:  95,
+			segCount: 10,
+			nextSeq:  100,
+			want:     false,
+		},
+		{
+			name:     "rollback with full window behind should reset",
+			prevBase: 120,
+			baseSeq:  95,
+			segCount: 5,
+			nextSeq:  100,
+			want:     true,
+		},
+		{
+			name:     "live edge boundary without rollback should not reset",
+			prevBase: 199,
+			baseSeq:  200,
+			segCount: 3,
+			nextSeq:  203,
+			want:     false,
+		},
+		{
+			name:     "window fully behind but base still advancing should not reset",
+			prevBase: 7,
+			baseSeq:  8,
+			segCount: 3,
+			nextSeq:  11,
+			want:     false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := shouldResetSequenceOnRollback(tt.prevBase, tt.baseSeq, tt.segCount, tt.nextSeq)
+			if got != tt.want {
+				t.Fatalf("shouldResetSequenceOnRollback(%d, %d, %d, %d)=%v want=%v", tt.prevBase, tt.baseSeq, tt.segCount, tt.nextSeq, got, tt.want)
+			}
+		})
+	}
+}
