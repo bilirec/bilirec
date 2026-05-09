@@ -122,7 +122,7 @@ func TestGetStreamUrlsV2(t *testing.T) {
 	app.RequireStart()
 	defer app.RequireStop()
 
-	urls, err := client.GetStreamURLsV2(8222458)
+	urls, err := client.GetStreamURLsV2(22908869)
 	if err != nil {
 		if bilibili.IsErrRoomNotFound(err) {
 			t.Skip("room not found, skipped")

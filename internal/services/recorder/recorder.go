@@ -8,18 +8,19 @@ import (
 	"path/filepath"
 	"runtime"
 	"runtime/debug"
+	"sort"
 	"sync"
 	"time"
 
 	"github.com/eric2788/bilirec/internal/modules/bilibili"
 	"github.com/eric2788/bilirec/internal/modules/config"
-	"github.com/eric2788/bilirec/internal/processors"
+	rs "github.com/eric2788/bilirec/internal/record_strategies"
 	"github.com/eric2788/bilirec/internal/services/convert"
 	"github.com/eric2788/bilirec/internal/services/stream"
 	"github.com/eric2788/bilirec/pkg/ds"
-	"github.com/eric2788/bilirec/pkg/flv"
 	"github.com/eric2788/bilirec/pkg/pipeline"
 	"github.com/eric2788/bilirec/utils"
+	"github.com/go-resty/resty/v2"
 	"github.com/puzpuzpuz/xsync/v4"
 	"github.com/sirupsen/logrus"
 	"go.uber.org/fx"
@@ -45,6 +46,7 @@ var ErrStreamURLsUnreachable = errors.New("all stream urls are unreachable")
 var ErrRoomBanned = errors.New("the room is banned")
 var ErrRoomEncrypted = errors.New("the room is encrypted")
 var ErrInsufficientDiskSpace = errors.New("insufficient disk space")
+var ErrInvalidStreamProfile = errors.New("invalid stream profile")
 
 type Service struct {
 	st           *stream.Service
@@ -91,7 +93,21 @@ func NewService(
 	return s
 }
 
-func (r *Service) Start(roomId int, duration ...time.Duration) error {
+func (r *Service) Start(roomId int, options ...RecordStartOption) error {
+	startOptions := newRecordStartOptions()
+	for _, option := range options {
+		if option != nil {
+			option(&startOptions)
+		}
+	}
+
+	if startOptions.hasStreamProfile {
+		switch startOptions.streamProfile {
+		case bilibili.ProfileHTTPFLV, bilibili.ProfileHLSTS, bilibili.ProfileHLSFMP4:
+		default:
+			return ErrInvalidStreamProfile
+		}
+	}
 
 	l := logger.WithField("room", roomId)
 
@@ -126,15 +142,23 @@ func (r *Service) Start(roomId int, duration ...time.Duration) error {
 		return ErrStreamNotLive
 	}
 
-	streams, err := r.bilic.GetStreamURLsV2(roomId,
-		bilibili.WithProfiles(bilibili.ProfileHTTPFLV), // force http-flv for recording
-	)
+	var streams []bilibili.StreamURLInfo
+	if startOptions.hasStreamProfile {
+		streams, err = r.bilic.GetStreamURLsV2(roomId, bilibili.WithProfiles(startOptions.streamProfile))
+	} else {
+		streams, err = r.bilic.GetStreamURLsV2(roomId)
+	}
 
 	if err != nil {
 		return err
 	} else if len(streams) == 0 {
 		return ErrEmptyStreamURLs
 	}
+
+	// Prefer higher quality stream candidates first.
+	sort.SliceStable(streams, func(i, j int) bool {
+		return streams[i].Qn > streams[j].Qn
+	})
 
 	now := time.Now()
 	ctx, cancel := context.WithCancel(r.ctx)
@@ -153,7 +177,16 @@ func (r *Service) Start(roomId int, duration ...time.Duration) error {
 			urlPreview,
 		)
 
-		resp, err := r.bilic.FetchLiveStreamUrlWithCtx(streamInfo.URL, ctx)
+		var resp *resty.Response
+		var err error
+
+		switch streamInfo.Format {
+		case "ts", "fmp4":
+			resp, err = r.bilic.FetchM3u8UrlWithCtx(streamInfo.URL, ctx)
+		default: // "flv" and any unknown format
+			resp, err = r.bilic.FetchLiveStreamUrlWithCtx(streamInfo.URL, ctx)
+		}
+
 		if err != nil {
 			l.Errorf("cannot fetch url: %v, will try next url (protocol=%s, format=%s, codec=%s, qn=%d, url=%s)",
 				err,
@@ -184,16 +217,37 @@ func (r *Service) Start(roomId int, duration ...time.Duration) error {
 			utils.TruncateString(finalURL, 160),
 		)
 
-		ch, err := r.st.ReadStream(resp, ctx)
-		if err != nil {
-			l.Errorf("cannot capture url stream: %v, will try next url", err)
-			continue
+		var ch <-chan []byte
+		var strategy rs.StreamRecordStrategy
+
+		switch streamInfo.Format {
+		case "ts", "fmp4":
+			resp.RawBody().Close()
+			hlsCh, hlsErr := r.st.ReadHlsStream(finalURL, r.bilic.NewLiveHlsClient(), ctx)
+			if hlsErr != nil {
+				l.Errorf("cannot start HLS stream: %v, will try next url", hlsErr)
+				continue
+			}
+			ch = hlsCh
+			strategy = utils.TernaryFunc(
+				streamInfo.Format == "ts",
+				func() rs.StreamRecordStrategy { return rs.NewHlsTsStrategy() },
+				func() rs.StreamRecordStrategy { return rs.NewHlsFmp4Strategy() },
+			)
+		default: // "flv" and any unknown format
+			flvCh, flvErr := r.st.ReadFlvStream(resp, ctx)
+			if flvErr != nil {
+				l.Errorf("cannot capture url stream: %v, will try next url", flvErr)
+				continue
+			}
+			ch = flvCh
+			strategy = rs.NewFlvStrategy()
 		}
 
 		// resolve effective max duration: explicit arg > system default
 		var maxDuration time.Duration
-		if len(duration) > 0 {
-			maxDuration = duration[0]
+		if startOptions.hasDuration {
+			maxDuration = startOptions.duration
 		} else {
 			maxDuration = time.Duration(r.cfg.MaxRecordingHours) * time.Hour
 		}
@@ -206,7 +260,7 @@ func (r *Service) Start(roomId int, duration ...time.Duration) error {
 			maxDuration: maxDuration,
 		}
 		info.SetOutputPath("") // initialize output path to empty string to avoid potential nil pointer dereference in finalize()
-		return r.prepare(roomId, ch, ctx, info)
+		return r.prepare(roomId, ch, strategy, ctx, info)
 	}
 	cancel()
 	l.Warn("no more url left")
@@ -232,7 +286,7 @@ func (r *Service) Stop(roomId int) bool {
 	return hasRecording
 }
 
-func (r *Service) prepare(roomId int, ch <-chan []byte, ctx context.Context, info *Info) error {
+func (r *Service) prepare(roomId int, ch <-chan []byte, strategy rs.StreamRecordStrategy, ctx context.Context, info *Info) error {
 
 	info.status.Store(recordingPtr)
 	r.recording.Store(roomId, info)
@@ -240,7 +294,7 @@ func (r *Service) prepare(roomId int, ch <-chan []byte, ctx context.Context, inf
 	r.wg.Go(func() {
 		defer r.recover(roomId)
 		defer info.cancel()
-		err := r.rotate(roomId, ch, info, ctx)
+		err := r.rotate(roomId, ch, strategy, info, ctx)
 		if err != nil {
 			logger.Errorf("error rotating recording: %v", err)
 		}
@@ -250,37 +304,24 @@ func (r *Service) prepare(roomId int, ch <-chan []byte, ctx context.Context, inf
 	return nil
 }
 
-func (r *Service) rotate(roomId int, ch <-chan []byte, info *Info, ctx context.Context) error {
+func (r *Service) rotate(roomId int, ch <-chan []byte, strategy rs.StreamRecordStrategy, info *Info, ctx context.Context) error {
 	l := logger.WithField("room", roomId)
-	segment := 0
-	// Keep one fixer instance across rotation so partial/raw alignment state is preserved.
-	sharedFixer := flv.NewRealtimeFixer()
-	defer sharedFixer.Close()
-	// videoHdr and audioHdr are nil for segment 0; populated from FlvHeaderChangedError on rotation.
-	var videoHdr, audioHdr []byte
-	for {
+	defer strategy.Close()
 
-		outputPath, err := r.rotateFilePath(info, segment)
+	segment := 0
+	state := &rs.RotationState{Data: map[string][]byte{}}
+
+	for {
+		outputPath, err := r.rotateFilePath(info, segment, strategy.FileExtension())
 		if err != nil {
 			return fmt.Errorf("cannot prepare file path: %v", err)
-		} else {
-			info.SetOutputPath(outputPath)
 		}
+		info.SetOutputPath(outputPath)
 
-		pipe := pipeline.New(
-			// fix FLV stream (shared fixer across segments)
-			processors.NewFlvStreamFixerWithFixer(sharedFixer),
-			// detect FLV header changes (e.g. due to stream quality changes) and trigger pipe rotation
-			processors.NewFlvHeaderSplitDetectorSeeded(videoHdr),
-			// emit FLV file header once per segment, with optional video/audio sequence-header tags
-			processors.NewFlvHeaderWriter(videoHdr, audioHdr),
-			// write to file with buffered writer, flushes every 5 seconds then writes to disk
-			processors.NewBufferedStreamWriter(
-				info.OutputPath(),
-				processors.WithBufferSize(config.ReadOnly.LiveStreamWriterBufferSize()),
-				processors.WithSDCardProtection(config.ReadOnly.SkipSmallFlush()),
-			),
-		)
+		pipe, err := strategy.BuildPipeline(ctx, outputPath, state)
+		if err != nil {
+			return fmt.Errorf("cannot build pipeline: %v", err)
+		}
 
 		startCtx, startCancel := context.WithTimeout(ctx, 10*time.Second)
 		if err := pipe.Open(startCtx); err != nil {
@@ -294,30 +335,28 @@ func (r *Service) rotate(roomId int, ch <-chan []byte, info *Info, ctx context.C
 
 		err = r.rev(roomId, ch, info, ctx, pipe)
 		if err != nil {
-			var headerChanged *flv.FlvHeaderChangedError
-			if errors.As(err, &headerChanged) {
-				l.Info("rotating file due to video header change detected in stream")
-				videoHdr = headerChanged.VideoHeaderTag
-				audioHdr = headerChanged.AudioHeaderTag
-				// Before starting a new segment, reset the fixer's timestamp tracking
-				// so the new segment's timestamps start from 0 instead of continuing
-				// from the previous segment's time range.
-				sharedFixer.ResetTimestampStore()
+			handle := strategy.HandleErr(err)
+			switch handle.Action {
+			case rs.ErrActionRotate:
+				l.Info("rotating file due to strategy error handling")
+				if handle.State == nil {
+					state = &rs.RotationState{Data: map[string][]byte{}}
+				} else {
+					state = handle.State
+				}
 				segment++
 				continue
-			} else if err == processors.ErrNotFlvFile {
-				l.Warn("stream format invalid, aborting recording")
-				// Wait before aborting to prevent rapid reconnection loops (e.g. when stream URL
-				// briefly returns garbage before stabilizing). This mirrors the original 5-second
-				// buffer introduced in d8425df.
-				timer := time.NewTimer(5 * time.Second)
-				select {
-				case <-timer.C:
-				case <-ctx.Done():
-					timer.Stop()
+			case rs.ErrActionAbort:
+				l.Warnf("strategy requested abort due to stream error: %v", err)
+				if handle.AbortDelay > 0 {
+					timer := time.NewTimer(handle.AbortDelay)
+					select {
+					case <-timer.C:
+					case <-ctx.Done():
+						timer.Stop()
+					}
 				}
-				break
-			} else {
+			default:
 				l.Errorf("error writing data to file: %v", err)
 			}
 		}
@@ -390,15 +429,15 @@ func (r *Service) checkRecordingDurationPeriodically(roomId int, ctx context.Con
 // rather than appending to the same file. Multiple files per session is expected.
 func (r *Service) recover(roomId int) {
 	l := logger.WithField("room", roomId)
-	l.Infof("trying to recover stream capture...")
 	info, ok := r.recording.Load(roomId)
 	if !ok {
-		l.Infof("recording stopped manually, skipped.")
+		l.Debugf("recording not found, skip recovery")
 		return
 	} else if status := info.status.Load(); status == recoveringPtr {
 		l.Infof("stream is recovering, skipped.")
 		return
 	}
+	l.Infof("trying to recover stream capture...")
 
 	info.status.Store(recoveringPtr)
 	attempt := 1
@@ -478,13 +517,19 @@ func (r *Service) finalize(roomId int, outputPath string) {
 		return
 	}
 
-	if !r.cfg.ConvertFLVToMp4 {
-		logger.Debug("no need to convert flv to mp4, skipped")
+	if !r.cfg.ConvertToMp4 {
+		logger.Debug("no need to convert source to mp4, skipped")
+		return
+	}
+
+	// Skip files that are already in the final .mp4 format.
+	if filepath.Ext(outputPath) == ".mp4" {
+		logger.Debugf("skipping finalize conversion for already-final mp4 file: %s", outputPath)
 		return
 	}
 
 	// process finalization via convert service
-	if queue, err := r.cv.Enqueue(outputPath, "mp4", r.cfg.DeleteFlvAfterConvert); err != nil {
+	if queue, err := r.cv.Enqueue(outputPath, "mp4", r.cfg.DeleteSourceAfterConvert); err != nil {
 		logger.Errorf("failed to enqueue conversion for room %d: %v", roomId, err)
 		logger.Warnf("you may need to convert mp4 manually for room: %d", roomId)
 	} else {
@@ -530,15 +575,15 @@ func (r *Service) backgroundMaintenance(ctx context.Context) {
 }
 
 // the time should be the time you start the record, not live start
-func (r *Service) rotateFilePath(info *Info, segment int) (string, error) {
+func (r *Service) rotateFilePath(info *Info, segment int, ext string) (string, error) {
 	dirPath := fmt.Sprintf("%s/%s-%d", r.cfg.OutputDir, info.room.Uname, info.room.RoomID)
 	if err := os.MkdirAll(dirPath, 0755); err != nil {
 		return "", err
 	}
 	safeTitle := utils.TruncateString(utils.SanitizeFilename(info.room.Title), 20)
 	if segment == 0 {
-		return fmt.Sprintf("%s/%s-%s.flv", dirPath, safeTitle, info.startTime.Format("20060102_150405")), nil
+		return fmt.Sprintf("%s/%s-%s%s", dirPath, safeTitle, info.startTime.Format("20060102_150405"), ext), nil
 	} else {
-		return fmt.Sprintf("%s/%s-%s-%d.flv", dirPath, safeTitle, info.startTime.Format("20060102_150405"), segment), nil
+		return fmt.Sprintf("%s/%s-%s-%d%s", dirPath, safeTitle, info.startTime.Format("20060102_150405"), segment, ext), nil
 	}
 }

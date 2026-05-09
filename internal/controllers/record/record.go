@@ -2,6 +2,7 @@ package record
 
 import (
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/eric2788/bilirec/internal/modules/bilibili"
@@ -35,6 +36,7 @@ func NewController(app *fiber.App, service *recorder.Service) *Controller {
 // @Produce json
 // @Param roomID path int true "Room ID"
 // @Param duration_minutes query int false "Recording duration in minutes. 0 = unlimited, >0 = stop after N minutes, omit = system default (MAX_RECORDING_HOURS)"
+// @Param stream_profile query string false "Preferred stream profile: http-flv | hls-ts | hls-fmp4"
 // @Success 200 "Recording started successfully"
 // @Failure 400 {string} string "Invalid room ID"
 // @Failure 403 {string} string "Forbidden"
@@ -51,14 +53,24 @@ func (r *Controller) startRecording(ctx fiber.Ctx) error {
 	const notProvided = -1
 	durationMinutes := fiber.Query(ctx, "duration_minutes", notProvided)
 
-	var startArgs []time.Duration
+	var startArgs []recorder.RecordStartOption
 	switch {
 	case durationMinutes == 0:
-		startArgs = []time.Duration{0} // unlimited
+		startArgs = []recorder.RecordStartOption{recorder.WithDuration(0)} // unlimited
 	case durationMinutes > 0:
-		startArgs = []time.Duration{time.Duration(durationMinutes) * time.Minute}
+		startArgs = []recorder.RecordStartOption{recorder.WithDuration(time.Duration(durationMinutes) * time.Minute)}
 	}
 	// durationMinutes == -1 (not provided): pass no args → system default
+
+	streamProfileRaw := strings.TrimSpace(fiber.Query(ctx, "stream_profile", ""))
+	if streamProfileRaw != "" {
+		switch bilibili.StreamProfile(streamProfileRaw) {
+		case bilibili.ProfileHTTPFLV, bilibili.ProfileHLSTS, bilibili.ProfileHLSFMP4:
+			startArgs = append(startArgs, recorder.WithStreamProfile(bilibili.StreamProfile(streamProfileRaw)))
+		default:
+			return fiber.NewError(fiber.StatusBadRequest, "無效的串流格式，僅支援 http-flv / hls-ts / hls-fmp4")
+		}
+	}
 
 	err = r.service.Start(roomId, startArgs...)
 	if err != nil {
@@ -80,6 +92,8 @@ func (r *Controller) startRecording(ctx fiber.Ctx) error {
 			return fiber.NewError(fiber.StatusTooManyRequests, "已達到最大同時錄製數")
 		case recorder.ErrInsufficientDiskSpace:
 			return fiber.NewError(fiber.StatusInsufficientStorage, "磁碟空間低於設定值")
+		case recorder.ErrInvalidStreamProfile:
+			return fiber.NewError(fiber.StatusBadRequest, "無效的串流格式")
 		default:
 			return fiber.ErrInternalServerError
 		}

@@ -4,7 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
+	"strings"
+	"time"
 
 	"go.uber.org/fx"
 
@@ -20,6 +23,10 @@ var logger = logrus.WithField("module", "bilibili")
 var (
 	ErrRoomNotFound = errors.New("room not found")
 )
+
+const liveReferer = "https://live.bilibili.com/"
+const liveOrigin = "https://live.bilibili.com"
+const liveUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0"
 
 type Client struct {
 	*bili.Client
@@ -60,24 +67,58 @@ func provider(cfg *config.Config, ls fx.Lifecycle) *Client {
 }
 
 func (c *Client) withLiveClient() *resty.Client {
-	return resty.New().
-		SetRedirectPolicy(resty.NoRedirectPolicy()).
-		SetHeader("Accept", "application/json").
-		SetHeader("Accept-Language", "zh-CN,zh;q=0.9").
-		SetHeader("Origin", "https://live.bilibili.com").
-		SetHeader("Referer", "https://live.bilibili.com/").
-		SetHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0")
+	return configureLiveClient(resty.New().SetRedirectPolicy(resty.NoRedirectPolicy()), "application/json")
 }
 
 func (c *Client) withLiveStreamClient() *resty.Client {
-	return resty.New().
+	return configureLiveClient(
+		resty.New().
+			SetRedirectPolicy(resty.FlexibleRedirectPolicy(10)).
+			SetDoNotParseResponse(true),
+		"*/*",
+	)
+}
+
+func (c *Client) NewLiveHlsClient() *resty.Client {
+	client := configureLiveClient(resty.New().
 		SetRedirectPolicy(resty.FlexibleRedirectPolicy(10)).
-		SetDoNotParseResponse(true).
-		SetHeader("Accept", "*/*").
+		SetTimeout(5*time.Second).
+		SetCloseConnection(true),
+		"*/*",
+	)
+	syncCookieToClient(client, c.GetCookies())
+	ensureBuvid3Cookie(client)
+	return client
+}
+
+func configureLiveClient(client *resty.Client, accept string) *resty.Client {
+	return client.
+		SetHeader("Accept", accept).
 		SetHeader("Accept-Language", "zh-CN,zh;q=0.9").
-		SetHeader("Origin", "https://live.bilibili.com").
-		SetHeader("Referer", "https://live.bilibili.com/").
-		SetHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0")
+		SetHeader("Origin", liveOrigin).
+		SetHeader("Referer", liveReferer).
+		SetHeader("User-Agent", liveUserAgent)
+}
+
+func ensureBuvid3Cookie(client *resty.Client) {
+	for _, cookie := range client.Cookies {
+		if cookie.Name == "buvid3" && cookie.Value != "" {
+			return
+		}
+	}
+
+	uuid, err := utils.NewUUIDv4()
+	if err != nil {
+		logger.Warnf("cannot generate buvid3 cookie: %v", err)
+		return
+	}
+
+	client.Cookies = append(client.Cookies, &http.Cookie{
+		Name:   "buvid3",
+		Value:  strings.ToUpper(uuid) + "infoc",
+		Domain: ".bilibili.com",
+		Path:   "/",
+	})
 }
 
 var Module = fx.Module("bilibili",

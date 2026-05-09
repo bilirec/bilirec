@@ -20,7 +20,11 @@ import (
 
 func TestFlvRecord(t *testing.T) {
 
-	const room = 1777483153
+	if testing.Short() {
+		t.Skip("skipping TestFlvRecord in short mode")
+	}
+
+	const room = 22908869
 
 	var recorderService *recorder.Service
 
@@ -42,7 +46,7 @@ func TestFlvRecord(t *testing.T) {
 	runtime.ReadMemStats(&m1)
 
 	t.Log("start it manually")
-	err := recorderService.Start(room)
+	err := recorderService.Start(room, recorder.WithStreamProfile(bilibili.ProfileHTTPFLV))
 	if err != nil {
 		if err == recorder.ErrStreamNotLive {
 			t.Skip(err)
@@ -50,7 +54,115 @@ func TestFlvRecord(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	<-time.After(15 * time.Second)
+	<-time.After(30 * time.Second)
+
+	runtime.ReadMemStats(&m2)
+
+	t.Log("stop it manually")
+	t.Logf("stop success: %v", recorderService.Stop(room))
+
+	<-time.After(5 * time.Second)
+	runtime.ReadMemStats(&m3)
+
+	t.Logf("memory before start: %.2f MB", float64(m1.Alloc/1024/1024))
+	t.Logf("memory before stop: %.2f MB", float64(m2.Alloc/1024/1024))
+	t.Logf("memory after stop: %.2f MB", float64(m3.Alloc/1024/1024))
+	t.Logf("growth during recording: %.2f MB", float64((m2.Alloc-m1.Alloc)/1024/1024))
+	t.Logf("growth after stop: %.2f MB", float64((m3.Alloc-m2.Alloc)/1024/1024))
+}
+
+func TestTsRecord(t *testing.T) {
+
+	if testing.Short() {
+		t.Skip("skipping TestTsRecord in short mode")
+	}
+
+	// Use a room that Bilibili serves via HLS-TS (streamInfo.Format == "ts").
+	const room = 22908869
+
+	var recorderService *recorder.Service
+
+	app := fxtest.New(t,
+		config.Module,
+		bilibili.Module,
+		fx.Provide(path.NewService),
+		fx.Provide(stream.NewService),
+		fx.Provide(convert.NewService),
+		fx.Provide(recorder.NewService),
+		fx.Populate(&recorderService),
+	)
+
+	app.RequireStart()
+	defer app.RequireStop()
+
+	var m1, m2, m3 runtime.MemStats
+	runtime.GC()
+	runtime.ReadMemStats(&m1)
+
+	t.Log("start it manually")
+	err := recorderService.Start(room, recorder.WithStreamProfile(bilibili.ProfileHLSTS))
+	if err != nil {
+		if err == recorder.ErrStreamNotLive {
+			t.Skip(err)
+		}
+		t.Fatal(err)
+	}
+
+	<-time.After(30 * time.Second)
+
+	runtime.ReadMemStats(&m2)
+
+	t.Log("stop it manually")
+	t.Logf("stop success: %v", recorderService.Stop(room))
+
+	<-time.After(5 * time.Second)
+	runtime.ReadMemStats(&m3)
+
+	t.Logf("memory before start: %.2f MB", float64(m1.Alloc/1024/1024))
+	t.Logf("memory before stop: %.2f MB", float64(m2.Alloc/1024/1024))
+	t.Logf("memory after stop: %.2f MB", float64(m3.Alloc/1024/1024))
+	t.Logf("growth during recording: %.2f MB", float64((m2.Alloc-m1.Alloc)/1024/1024))
+	t.Logf("growth after stop: %.2f MB", float64((m3.Alloc-m2.Alloc)/1024/1024))
+}
+
+func TestFmp4Record(t *testing.T) {
+
+	if testing.Short() {
+		t.Skip("skipping TestFmp4Record in short mode")
+	}
+
+	// Use a room that Bilibili serves via HLS-fMP4 (streamInfo.Format == "fmp4").
+	const room = 22908869
+
+	var recorderService *recorder.Service
+
+	app := fxtest.New(t,
+		config.Module,
+		bilibili.Module,
+		fx.Provide(path.NewService),
+		fx.Provide(stream.NewService),
+		fx.Provide(convert.NewService),
+		fx.Provide(recorder.NewService),
+		fx.Populate(&recorderService),
+	)
+
+	app.RequireStart()
+	defer app.RequireStop()
+
+	var m1, m2, m3 runtime.MemStats
+	runtime.GC()
+	runtime.ReadMemStats(&m1)
+
+	t.Log("start it manually")
+	err := recorderService.Start(room, recorder.WithStreamProfile(bilibili.ProfileHLSFMP4))
+	if err != nil {
+		if err == recorder.ErrStreamNotLive {
+			t.Skip(err)
+		}
+		t.Fatal(err)
+	}
+
+	<-time.After(30 * time.Second)
 
 	runtime.ReadMemStats(&m2)
 
@@ -90,7 +202,7 @@ func TestFlvRecord_AutoStopAfterDuration(t *testing.T) {
 	defer app.RequireStop()
 
 	t.Logf("starting recording with duration limit: %v", recordDuration)
-	err := recorderService.Start(room, recordDuration)
+	err := recorderService.Start(room, recorder.WithDuration(recordDuration))
 	if err != nil {
 		if err == recorder.ErrStreamNotLive {
 			t.Skip(err)
