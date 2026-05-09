@@ -2,13 +2,13 @@ package bilibili_test
 
 import (
 	"os"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/eric2788/bilirec/internal/modules/bilibili"
 	"github.com/eric2788/bilirec/internal/modules/config"
+	"github.com/eric2788/bilirec/internal/testutil"
 	"github.com/go-resty/resty/v2"
 	"go.uber.org/fx"
 	"go.uber.org/fx/fxtest"
@@ -145,12 +145,7 @@ func TestGetStreamUrlsV2WithProfiles(t *testing.T) {
 	app.RequireStart()
 	defer app.RequireStop()
 
-	roomID := 1770864917
-	if raw := os.Getenv("BILIBILI_TEST_ROOM_ID"); raw != "" {
-		if id, err := strconv.Atoi(raw); err == nil && id > 0 {
-			roomID = id
-		}
-	}
+	roomID := testutil.LiveRoomID(t)
 
 	t.Run("http-flv profile", func(t *testing.T) {
 		urls, err := client.GetStreamURLsV2(roomID,

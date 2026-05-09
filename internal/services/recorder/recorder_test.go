@@ -14,6 +14,7 @@ import (
 	"github.com/eric2788/bilirec/internal/services/path"
 	"github.com/eric2788/bilirec/internal/services/recorder"
 	"github.com/eric2788/bilirec/internal/services/stream"
+	"github.com/eric2788/bilirec/internal/testutil"
 	"go.uber.org/fx"
 	"go.uber.org/fx/fxtest"
 )
@@ -24,7 +25,7 @@ func TestFlvRecord(t *testing.T) {
 		t.Skip("skipping TestFlvRecord in short mode")
 	}
 
-	const room = 22908869
+	room := testutil.LiveRoomID(t)
 
 	var recorderService *recorder.Service
 
@@ -77,8 +78,7 @@ func TestTsRecord(t *testing.T) {
 		t.Skip("skipping TestTsRecord in short mode")
 	}
 
-	// Use a room that Bilibili serves via HLS-TS (streamInfo.Format == "ts").
-	const room = 22908869
+	room := testutil.LiveRoomID(t)
 
 	var recorderService *recorder.Service
 
@@ -131,8 +131,7 @@ func TestFmp4Record(t *testing.T) {
 		t.Skip("skipping TestFmp4Record in short mode")
 	}
 
-	// Use a room that Bilibili serves via HLS-fMP4 (streamInfo.Format == "fmp4").
-	const room = 22908869
+	room := testutil.LiveRoomID(t)
 
 	var recorderService *recorder.Service
 
@@ -181,7 +180,7 @@ func TestFmp4Record(t *testing.T) {
 
 func TestFlvRecord_AutoStopAfterDuration(t *testing.T) {
 
-	const room = 1844041783
+	room := testutil.LiveRoomID(t)
 	const recordDuration = 60 * time.Second
 	const pollInterval = 2 * time.Second
 	const tolerance = 20 * time.Second // allow extra time for stop to propagate

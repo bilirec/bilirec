@@ -10,26 +10,11 @@ import (
 	"github.com/eric2788/bilirec/internal/modules/config"
 	"github.com/eric2788/bilirec/internal/services/room"
 	"github.com/eric2788/bilirec/internal/services/subscribe"
+	"github.com/eric2788/bilirec/internal/testutil"
 	"github.com/sirupsen/logrus"
 	"go.uber.org/fx"
 	"go.uber.org/fx/fxtest"
 )
-
-var testRoomIDs = []int{
-	1740570024, 1746703849, 1750976883, 1817612638, 1901320728,
-	1908320745, 1929633038, 22150848, 1880711533, 2712573,
-	1792593743, 1758144136, 1861306691, 30646111, 25191163,
-	1817656604, 1935933756, 1814196999, 1731715643, 1935932996,
-	1780363604, 1791981879, 1793683231, 1938419607, 1964697471,
-	32324812, 1975553420, 1741665248, 1814408095, 1892451653,
-	30825092, 1869215690, 1819589148, 1746177378, 23293581,
-	1861780230, 1869214619, 1931554655, 1829747272, 1935930495,
-	31020316, 1935938617, 27780132,
-}
-
-func getTestRoomID(index int) int {
-	return testRoomIDs[index%len(testRoomIDs)]
-}
 
 func init() {
 	logrus.SetLevel(logrus.DebugLevel)
@@ -65,7 +50,7 @@ func TestPubsub_Subscribe(t *testing.T) {
 		_ = svc.Unsubscribe(rid)
 	}
 
-	testRoomID := getTestRoomID(0)
+	testRoomID := testutil.LiveRoomID(t)
 	err := svc.Subscribe(testRoomID)
 	if err != nil {
 		t.Fatalf("first subscribe failed: %v", err)
@@ -88,7 +73,7 @@ func TestPubsub_Subscribe(t *testing.T) {
 
 func TestPubsub_Unsubscribe(t *testing.T) {
 	svc := newSubscribeService(t)
-	testRoomID := getTestRoomID(1)
+	testRoomID := testutil.LiveRoomID(t)
 
 	err := svc.Unsubscribe(testRoomID)
 	if err != subscribe.ErrRoomNotSubscribed {
@@ -112,7 +97,7 @@ func TestPubsub_Unsubscribe(t *testing.T) {
 
 func TestPubsub_IsSubscribed(t *testing.T) {
 	svc := newSubscribeService(t)
-	testRoomID := getTestRoomID(2)
+	testRoomID := testutil.LiveRoomID(t)
 
 	isSubscribed, err := svc.IsSubscribed(testRoomID)
 	if err != nil {
@@ -166,7 +151,7 @@ func TestPubsub_ListSubscribedRooms(t *testing.T) {
 		t.Fatalf("expected empty list after cleanup, got %d rooms", len(rooms))
 	}
 
-	testRooms := []int{getTestRoomID(3), getTestRoomID(4), getTestRoomID(5)}
+	testRooms := testutil.LiveRoomIDs(t, 3)
 	for _, roomID := range testRooms {
 		if err := svc.Subscribe(roomID); err != nil {
 			t.Fatalf("subscribe %d failed: %v", roomID, err)
@@ -211,8 +196,9 @@ func TestMemoryLeak_SubscribeUnsubscribeCycle(t *testing.T) {
 	runtime.ReadMemStats(&m1)
 
 	const iterations = 200
+	roomIDs := testutil.LiveRoomIDs(t, iterations)
 	for i := 0; i < iterations; i++ {
-		roomID := getTestRoomID(i)
+		roomID := roomIDs[i]
 		if err := svc.Subscribe(roomID); err != nil {
 			t.Fatalf("subscribe failed: %v", err)
 		}
@@ -273,13 +259,14 @@ func TestMemoryLeak_ListCycle(t *testing.T) {
 func TestConcurrency_SubscribeAndListIsolated(t *testing.T) {
 	svc := newSubscribeService(t)
 	done := make(chan bool, 20)
+	roomIDs := testutil.LiveRoomIDs(t, 40)
 
 	for i := 0; i < 10; i++ {
 		go func(id int) {
 			defer func() { done <- true }()
 			for j := 0; j < 10; j++ {
 				roomIndex := (id * 4) + (j % 4)
-				roomID := getTestRoomID(roomIndex)
+				roomID := roomIDs[roomIndex%len(roomIDs)]
 				_ = svc.Subscribe(roomID)
 				time.Sleep(1 * time.Millisecond)
 			}
