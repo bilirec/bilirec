@@ -1,10 +1,8 @@
-package processors
+package hls
 
 import (
 	"encoding/binary"
 	"testing"
-
-	"github.com/eric2788/bilirec/pkg/hls"
 )
 
 func box(typ string, payload []byte) []byte {
@@ -49,21 +47,21 @@ func makeMoof(trackID uint32, tfdtVersion byte, decodeTime uint64) []byte {
 
 func firstTfdtValue(segment []byte) (uint64, bool) {
 	for off := 0; off < len(segment); {
-		size, typ, _, ok := hls.ReadBoxHeader(segment, off)
+		size, typ, _, ok := ReadBoxHeader(segment, off)
 		if !ok {
 			return 0, false
 		}
 		boxEnd := off + size
 		if typ == "moof" {
 			for child := off + 8; child < boxEnd; {
-				childSize, childType, _, childOK := hls.ReadBoxHeader(segment, child)
+				childSize, childType, _, childOK := ReadBoxHeader(segment, child)
 				if !childOK {
 					return 0, false
 				}
 				childEnd := child + childSize
 				if childType == "traf" {
 					for inner := child + 8; inner < childEnd; {
-						innerSize, innerType, _, innerOK := hls.ReadBoxHeader(segment, inner)
+						innerSize, innerType, _, innerOK := ReadBoxHeader(segment, inner)
 						if !innerOK {
 							return 0, false
 						}
@@ -90,7 +88,7 @@ func TestNormalizeFragmentTimestamps_Version1(t *testing.T) {
 	bases := map[uint32]uint64{}
 
 	seg1 := makeMoof(1, 1, 90000)
-	changed1 := hls.NormalizeFragmentTimestamps(seg1, bases)
+	changed1 := NormalizeFragmentTimestamps(seg1, bases)
 	if changed1 != 1 {
 		t.Fatalf("expected one tfdt normalized in seg1, got %d", changed1)
 	}
@@ -103,7 +101,7 @@ func TestNormalizeFragmentTimestamps_Version1(t *testing.T) {
 	}
 
 	seg2 := makeMoof(1, 1, 180000)
-	changed2 := hls.NormalizeFragmentTimestamps(seg2, bases)
+	changed2 := NormalizeFragmentTimestamps(seg2, bases)
 	if changed2 != 1 {
 		t.Fatalf("expected one tfdt normalized in seg2, got %d", changed2)
 	}
@@ -120,7 +118,7 @@ func TestNormalizeFragmentTimestamps_Version0(t *testing.T) {
 	bases := map[uint32]uint64{}
 
 	seg1 := makeMoof(2, 0, 1000)
-	changed1 := hls.NormalizeFragmentTimestamps(seg1, bases)
+	changed1 := NormalizeFragmentTimestamps(seg1, bases)
 	if changed1 != 1 {
 		t.Fatalf("expected one tfdt normalized in seg1, got %d", changed1)
 	}
@@ -133,7 +131,7 @@ func TestNormalizeFragmentTimestamps_Version0(t *testing.T) {
 	}
 
 	seg2 := makeMoof(2, 0, 1600)
-	changed2 := hls.NormalizeFragmentTimestamps(seg2, bases)
+	changed2 := NormalizeFragmentTimestamps(seg2, bases)
 	if changed2 != 1 {
 		t.Fatalf("expected one tfdt normalized in seg2, got %d", changed2)
 	}

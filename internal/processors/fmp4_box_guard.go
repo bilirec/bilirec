@@ -3,6 +3,7 @@ package processors
 import (
 	"context"
 
+	"github.com/eric2788/bilirec/pkg/hls"
 	"github.com/eric2788/bilirec/pkg/pipeline"
 	"github.com/sirupsen/logrus"
 )
@@ -68,7 +69,7 @@ func (p *Fmp4BoxGuardProcessor) Process(_ context.Context, log *logrus.Entry, da
 	}
 
 	// Validate that the declared box size doesn't exceed the segment buffer.
-	_, _, _, ok := readBoxHeader(data, 0)
+	_, _, _, ok := hls.ReadBoxHeader(data, 0)
 	if !ok {
 		log.Warnf("fmp4-box-guard: malformed box header (size overflows segment buffer), dropping")
 		return nil, nil
