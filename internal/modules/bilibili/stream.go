@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/eric2788/bilirec/pkg/fp"
@@ -189,6 +190,9 @@ func (c *Client) GetStreamURLsV2(roomID int, opts ...GetStreamURLsOption) ([]Str
 	streamInfos := make([]StreamURLInfo, 0)
 	for _, stream := range sr.Data.PlayurlInfo.Playurl.Streams {
 		for _, format := range stream.Formats {
+			if !containFormat(options.profiles, format.FormatName) {
+				continue
+			}
 			for _, codec := range format.Codecs {
 				for _, urlInfo := range codec.UrlInfos {
 					streamInfos = append(streamInfos, StreamURLInfo{
@@ -226,4 +230,19 @@ func (c *Client) FetchM3u8UrlWithCtx(url string, ctx context.Context) (*resty.Re
 		defer cancel()
 	}
 	return c.NewLiveHlsClient().R().SetContext(ctx).Get(url)
+}
+
+func containFormat(profiles []StreamProfile, format string) bool {
+	return slices.ContainsFunc(profiles, func(profile StreamProfile) bool {
+		switch format {
+		case "flv":
+			return profile == ProfileHTTPFLV
+		case "ts":
+			return profile == ProfileHLSTS
+		case "fmp4":
+			return profile == ProfileHLSFMP4
+		default:
+			return false
+		}
+	})
 }
