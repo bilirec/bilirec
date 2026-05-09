@@ -24,7 +24,7 @@ func TestFlvRecord(t *testing.T) {
 		t.Skip("skipping TestFlvRecord in short mode")
 	}
 
-	const room = 1883358196
+	const room = 22908869
 
 	var recorderService *recorder.Service
 
@@ -78,7 +78,7 @@ func TestTsRecord(t *testing.T) {
 	}
 
 	// Use a room that Bilibili serves via HLS-TS (streamInfo.Format == "ts").
-	const room = 1883358196
+	const room = 22908869
 
 	var recorderService *recorder.Service
 
@@ -132,7 +132,7 @@ func TestFmp4Record(t *testing.T) {
 	}
 
 	// Use a room that Bilibili serves via HLS-fMP4 (streamInfo.Format == "fmp4").
-	const room = 1883358196
+	const room = 22908869
 
 	var recorderService *recorder.Service
 

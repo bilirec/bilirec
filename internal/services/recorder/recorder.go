@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"runtime/debug"
+	"sort"
 	"sync"
 	"time"
 
@@ -153,6 +154,11 @@ func (r *Service) Start(roomId int, options ...RecordStartOption) error {
 	} else if len(streams) == 0 {
 		return ErrEmptyStreamURLs
 	}
+
+	// Prefer higher quality stream candidates first.
+	sort.SliceStable(streams, func(i, j int) bool {
+		return streams[i].Qn > streams[j].Qn
+	})
 
 	now := time.Now()
 	ctx, cancel := context.WithCancel(r.ctx)
