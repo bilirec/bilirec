@@ -39,7 +39,7 @@ func (p *SegmentDedupProcessor) Process(_ context.Context, log *logrus.Entry, da
 		return data, nil
 	}
 	sum := sha256.Sum256(data)
-	h := hex.EncodeToString(sum[:8]) // first 8 bytes of SHA-256 — enough for dedup
+	h := hex.EncodeToString(sum[:])
 	if h == p.lastHash {
 		log.Warnf("segment-dedup: dropping duplicate segment (%d B)", len(data))
 		return nil, nil

@@ -51,13 +51,19 @@ func parseAttributeURI(line string) string {
 
 // parseM3u8 parses a media m3u8 playlist body and returns the media sequence
 // base number and the list of segments in the playlist window.
-func parseM3u8(body string) (playlist hlsPlaylist) {
+func parseM3u8(body string) (playlist *hlsPlaylist, err error) {
+	playlist = &hlsPlaylist{}
 	scanner := bufio.NewScanner(strings.NewReader(body))
 	var currentDuration float64
+	lineNo := 0
 	for scanner.Scan() {
+		lineNo++
 		line := strings.TrimSpace(scanner.Text())
 		if after, ok := strings.CutPrefix(line, "#EXT-X-MEDIA-SEQUENCE:"); ok {
-			seq, _ := strconv.ParseInt(after, 10, 64)
+			seq, parseErr := strconv.ParseInt(strings.TrimSpace(after), 10, 64)
+			if parseErr != nil {
+				return playlist, fmt.Errorf("hls: invalid EXT-X-MEDIA-SEQUENCE on line %d: %w", lineNo, parseErr)
+			}
 			playlist.mediaSeq = seq
 		} else if afterMap, okMap := strings.CutPrefix(line, "#EXT-X-MAP:"); okMap {
 			playlist.mapURI = parseAttributeURI(afterMap)
@@ -65,13 +71,19 @@ func parseM3u8(body string) (playlist hlsPlaylist) {
 			// #EXTINF:<duration>[,<title>]
 			raw := after0
 			raw = strings.Split(raw, ",")[0]
-			currentDuration, _ = strconv.ParseFloat(raw, 64)
+			currentDuration, err = strconv.ParseFloat(strings.TrimSpace(raw), 64)
+			if err != nil {
+				return playlist, fmt.Errorf("hls: invalid EXTINF duration on line %d: %w", lineNo, err)
+			}
 		} else if line != "" && !strings.HasPrefix(line, "#") {
 			playlist.segments = append(playlist.segments, hlsSegment{uri: line, duration: currentDuration})
 			currentDuration = 0
 		}
 	}
-	return
+	if err = scanner.Err(); err != nil {
+		return nil, fmt.Errorf("hls: m3u8 scan error: %w", err)
+	}
+	return playlist, nil
 }
 
 // resolveSegmentURL resolves a (possibly relative) segment URI against the
@@ -99,16 +111,26 @@ func resolveSegmentURL(m3u8URL, segmentURI string) (string, error) {
 // (interval = duration/2), falling back to 1 second. This ensures each
 // segment is fetched well before Bilibili prunes it from the playlist window.
 func (r *Service) ReadHlsStream(m3u8URL string, client *resty.Client, ctx context.Context) (<-chan []byte, error) {
-	// Fetch the initial playlist to verify reachability and derive poll interval.
-	resp, err := client.R().SetContext(ctx).Get(m3u8URL)
-	if err != nil {
-		return nil, fmt.Errorf("hls: cannot fetch initial m3u8: %w", err)
-	}
-	if resp.StatusCode() != 200 {
-		return nil, fmt.Errorf("hls: m3u8 returned status %d", resp.StatusCode())
+	fetchPlaylist := func() (*hlsPlaylist, error) {
+		resp, err := client.R().SetContext(ctx).Get(m3u8URL)
+		if err != nil {
+			return nil, fmt.Errorf("fetch m3u8: %w", err)
+		}
+		if resp.StatusCode() != 200 {
+			return nil, fmt.Errorf("m3u8 status %d", resp.StatusCode())
+		}
+		pl, err := parseM3u8(string(resp.Body()))
+		if err != nil {
+			return nil, fmt.Errorf("parse m3u8: %w", err)
+		}
+		return pl, nil
 	}
 
-	pl := parseM3u8(string(resp.Body()))
+	// Fetch the initial playlist to verify reachability and derive poll interval.
+	pl, err := fetchPlaylist()
+	if err != nil {
+		return nil, fmt.Errorf("hls: cannot parse initial m3u8: %w", err)
+	}
 	mediaSeq, segs := pl.mediaSeq, pl.segments
 
 	// Derive poll interval from first segment duration.
@@ -142,27 +164,49 @@ func (r *Service) ReadHlsStream(m3u8URL string, client *resty.Client, ctx contex
 		defer close(ch)
 		ticker := time.NewTicker(pollInterval)
 		defer ticker.Stop()
+		consecutivePlaylistFailures := 0
 
 		for {
 			select {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				resp, err := client.R().SetContext(ctx).Get(m3u8URL)
+				pl, err := fetchPlaylist()
 				if err != nil {
-					if isCanceled(err, ctx) {
+					if isCanceled(err, ctx) || ctx.Err() == context.Canceled {
 						return
 					}
-					logger.Warnf("hls: m3u8 fetch error: %v", err)
-					continue
-				}
-				if resp.StatusCode() != 200 {
-					logger.Warnf("hls: m3u8 status %d", resp.StatusCode())
-					continue
+					consecutivePlaylistFailures++
+					logger.Warnf("hls: playlist fetch/parse failed (attempt=%d): %v", consecutivePlaylistFailures, err)
+
+					// Retry once immediately to reduce the chance of missing short HLS windows.
+					pl, err = fetchPlaylist()
+					if err != nil {
+						if isCanceled(err, ctx) || ctx.Err() == context.Canceled {
+							return
+						}
+						consecutivePlaylistFailures++
+						logger.Warnf("hls: immediate playlist retry failed (attempt=%d): %v", consecutivePlaylistFailures, err)
+						if consecutivePlaylistFailures >= 3 {
+							logger.Warnf("hls: consecutive playlist failures reached %d", consecutivePlaylistFailures)
+						}
+						continue
+					}
+
+					logger.Warn("hls: playlist recovered by immediate retry")
 				}
 
-				pl := parseM3u8(string(resp.Body()))
+				if consecutivePlaylistFailures > 0 {
+					logger.Infof("hls: playlist fetch/parse recovered after %d failure(s)", consecutivePlaylistFailures)
+				}
+				consecutivePlaylistFailures = 0
+
 				baseSeq, segs := pl.mediaSeq, pl.segments
+				if baseSeq > nextSeq {
+					lost := baseSeq - nextSeq
+					logger.Warnf("hls: sequence gap detected, likely missed %d segment(s) (nextSeq=%d, baseSeq=%d)", lost, nextSeq, baseSeq)
+					nextSeq = baseSeq
+				}
 
 				if pl.mapURI != currentMapURI {
 					currentMapURI = pl.mapURI
