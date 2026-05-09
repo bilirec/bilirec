@@ -2,6 +2,7 @@ package pipeline
 
 import (
 	"context"
+	"sync/atomic"
 	"time"
 
 	"github.com/sirupsen/logrus"
@@ -10,6 +11,8 @@ import (
 var logger = logrus.WithField("pkg", "pipeline")
 
 type Pipe[T any] struct {
+	closable   atomic.Bool
+	opened     atomic.Int32
 	processors []*ProcessorInfo[T]
 }
 
@@ -41,20 +44,49 @@ func (p *Pipe[T]) Process(ctx context.Context, item T) (T, error) {
 }
 
 func (p *Pipe[T]) Open(ctx context.Context) error {
+	var opened int32
 	for _, processor := range p.processors {
 		if err := processor.processor.Open(ctx, processor.logger); err != nil {
+			if opened > 0 {
+				p.closable.Store(true)
+				p.opened.Store(opened)
+				p.closeOpened(int(opened))
+			}
 			return err
 		}
+		opened++
+	}
+	if opened > 0 {
+		p.opened.Store(opened)
+		p.closable.Store(true)
 	}
 	return nil
 }
 
 func (p *Pipe[T]) Close() {
-	for _, processor := range p.processors {
+	if !p.closable.Load() {
+		return
+	}
+	p.closeOpened(int(p.opened.Load()))
+}
+
+func (p *Pipe[T]) closeOpened(count int) {
+	if count <= 0 {
+		p.opened.Store(0)
+		p.closable.Store(false)
+		return
+	}
+	if count > len(p.processors) {
+		count = len(p.processors)
+	}
+	for i := count - 1; i >= 0; i-- {
+		processor := p.processors[i]
 		if err := processor.close(); err != nil {
 			processor.logger.Errorf("error closing processor: %v", err)
 		}
 	}
+	p.opened.Store(0)
+	p.closable.Store(false)
 }
 
 func (p *Pipe[T]) process(ctx context.Context, tp *ProcessorInfo[T], item T) (T, error) {
