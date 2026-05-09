@@ -65,11 +65,21 @@ docker run -d \
   bilirec:latest
 ```
 
-如果你有可用的镜像仓库（例如 GHCR 或 Docker Hub），也可以直接拉取并运行镜像（示例）：
+你也可以直接從 Docker Hub 拉取并运行镜像：
 
 ```bash
 docker pull eric1008818/bilirec:latest # 最新测试版本请用 :edge
-docker run -d --name bilirec -p 8080:8080 eric1008818/bilirec:latest
+docker run -d \
+  --name bilirec \
+  -p 8080:8080 \
+  -e PORT=8080 \
+  -e FRONTEND_URL=http://localhost:8080 \
+  -v /path/to/records:/app/records \
+  -v /path/to/secrets:/app/secrets \
+  -v /path/to/database:/app/database \
+  # 可选：启用 CloudConvert（替换为你的 API key）
+  -e CLOUDCONVERT_API_KEY=your_api_key \
+  eric1008818/bilirec:latest
 ```
 
 ## 配置
@@ -111,7 +121,7 @@ docker run -d --name bilirec -p 8080:8080 eric1008818/bilirec:latest
 | `DOWNLOAD_BUFFER_SIZE` | 文件下载 / 导出时使用的缓冲区大小（字节） | `5242880` (5 MB) |
 | `STREAM_WRITER_BUFFER_SIZE` | 流写入器（写入文件）缓冲区大小（字节） | `1048576` (1 MB) |
 | `LIVE_STREAM_WRITER_BUFFER_SIZE` | 实时流写入缓冲区（用于直播录制或实时下载，字节） | `5242880` (5 MB) |
-| `SKIP_SMALL_FLUSH` | 启用 microSD 磨损保护：若录制总写入量低于缓冲区大小，关闭时跳过 flush，避免写入小块数据 | `false` |
+| `SKIP_SMALL_FLUSH` | 启用 microSD 磨损保护：若录制总写入量低于缓冲区大小则跳过 flush，避免写入小块数据 | `false` |
 | `MIN_DISK_SPACE_BYTES` | 录制所需的最小磁盘空间（字节），低于此值将拒绝新录制任务 | `5368709120` (5 GB) |
 
 ### 示例配置
@@ -211,9 +221,9 @@ Content-Type: application/json
   | 值 | 说明 |
   | -- | ---- |
   | 不传 | 自动选择可用流（默认行为） |
-  | `http-flv` | 优先录制 HTTP-FLV |
-  | `hls-ts` | 优先录制 HLS-TS |
-  | `hls-fmp4` | 优先录制 HLS-fMP4 |
+  | `http-flv` | 仅使用 HTTP-FLV 录制 |
+  | `hls-ts` | 仅使用 HLS-TS 录制 |
+  | `hls-fmp4` | 仅使用 HLS-fMP4 录制 |
 
 - **停止录制**
 
@@ -245,7 +255,7 @@ Content-Type: application/json
   }
   ```
 
-  `output_path` 表示当前正在写入的录制文件路径。如果直播过程中发生直播 PK 等分辨率变更，录制器会自动轮转到新的分段文件，后续分段文件名会追加 `-1`、`-2` 等后缀。
+  `output_path` 表示当前正在写入的录制文件路径。如果使用FLV流录制直播过程中发生直播 PK 等分辨率变更，录制器会自动轮转到新的分段文件，后续分段文件名会追加 `-1`、`-2` 等后缀。
 
 - **列出所有录制任务**
 
@@ -288,7 +298,7 @@ Content-Type: application/json
   GET /files/download/*
   ```
 
-  下载接口直接返回存储的文件，**不再支持**通过查询参数进行即时格式转换（此前的 `?format=...` 参数已移除）。
+  下载接口直接返回存储的文件。
   若要将录制的源文件（如 FLV/TS）转为 MP4，请启用 `CONVERT_TO_MP4`：在录制完成时，recorder 会将可转换文件加入转换队列，由后台任务异步转换为 MP4（转换行为受 `DELETE_SOURCE_AFTER_CONVERT` 控制）。
   当同时设置了 `CLOUDCONVERT_API_KEY` 且文件大小 >= `CLOUDCONVERT_THRESHOLD`（默认 1 GB）时，系统会优先使用 CloudConvert（异步任务，可通过 `/convert/tasks` 查询转换状态）；否则由本地 ffmpeg 后台任务处理。
 
@@ -345,19 +355,19 @@ Content-Type: application/json
   ```
 
   **注意**：
-  - 只支持已为 MP4 的文件（来源可为原生 fMP4 录制，或启用 `CONVERT_TO_MP4` 后转换得到）
+  - 只支持 MP4 的文件（可启用 `CONVERT_TO_MP4` 后转换得到）
   - 无法播放正在进行中的录制文件
   - 支持浏览器的 Range 请求（可快进/快退）
 
 #### 转换任务
 
-- **列出进行中的转换任务**（需要认证，返回任务信息）
+- **列出进行中的转换任务**
 
   ```http
   GET /convert/tasks
   ```
 
-- **取消转换任务**（需要认证）
+- **取消转换任务**
 
   ```http
   DELETE /convert/tasks/:task_id
@@ -485,6 +495,9 @@ Content-Type: application/json
   | `-1` | 无限录制，不自动停止 |
   | `N`（正整数） | N 分钟后自动停止 |
 
+  > ![NOTE]
+  > 如果你想让这个录制时长套用到手动触发的录制任务，请自行在调用 `/record/:roomID/start` 时传入相同的 `duration_minutes` 参数；否则手动录制将不受此配置影响，仍然使用系统预设或你在启动录制时指定的时长。
+
 #### 实时通知
 
 - **获取 Web Push 公钥**
@@ -558,6 +571,7 @@ Content-Type: application/json
 │   ├── db/                           # 数据库抽象层
 │   ├── ds/                           # 数据结构
 │   ├── flv/                          # FLV 格式处理
+│   ├── hls/                          # HLS 格式处理
 │   ├── fp/                           # 函数式编程工具（maps、slices）
 │   ├── monitor/                      # 监控与统计
 │   ├── pipeline/                     # 流处理管道
@@ -574,7 +588,13 @@ Content-Type: application/json
 1. 通过 [`bilibili.Client`](internal/modules/bilibili/bilibili.go) 获取直播流地址（默认自动选择可用 profile，也可按需指定 `stream_profile`）
 2. 使用 [`stream.Service`](internal/services/stream/stream.go) 读取流数据
 3. [`recorder.Service`](internal/services/recorder/recorder.go) 管理录制任务（自动重连与恢复）
-4. 数据写入到录制文件（扩展名依流格式可能为 `.flv`、`.ts` 或 `.fmp4`），保存在配置的输出目录；**HTTP-FLV 格式**：当检测到直播 PK 等 FLV 文件头变更时（分辨率切换），录制器会自动轮转到新的分段文件；**HLS-TS / HLS-fMP4 格式**：不执行文件轮转，直播 PK 等不连续性由 HLS 播放列表层自然处理，录制器仅在流中断时重连并继续写入同一文件。首个文件名形如 `标题-时间戳.ext`，后续分段（HTTP-FLV 轮转后）会命名为 `标题-时间戳-1.ext`、`标题-时间戳-2.ext`。如果启用了 `CONVERT_TO_MP4`，每个可转换分段在完成时都会自动加入转换队列，并由后台任务异步转换/封装为 `.mp4` 文件（转换行为受 `DELETE_SOURCE_AFTER_CONVERT` 控制，转换任务可通过 `/convert/tasks` 查询）。
+4. 数据写入到录制文件（扩展名依流格式可能为 `.flv`、`.ts` 或 `.fmp4`），保存在配置的输出目录:
+
+- **HTTP-FLV 格式**： 当检测到直播 PK 等 FLV 文件头变更时（分辨率切换）录制器会自动轮转到新的分段文件；
+
+- **HLS-TS / HLS-fMP4 格式**: 不执行文件轮转，直播 PK 等不连续性由 HLS播放列表层自然处理，录制器仅在流中断时重连并继续写入同一文件。
+
+首个文件名形如 `标题-时间戳.ext`，后续分段（HTTP-FLV 轮转后）会命名为 `标题-时间戳-1.ext`、`标题-时间戳-2.ext`。如果启用了 `CONVERT_TO_MP4`，每个可转换分段在完成时都会自动加入转换队列，并由后台任务异步转换/封装为 `.mp4` 文件（转换行为受 `DELETE_SOURCE_AFTER_CONVERT` 控制，转换任务可通过 `/convert/tasks` 查询）。
 
 ### 关键特性
 
@@ -584,7 +604,7 @@ Content-Type: application/json
 - **实时通知**: 通过 Web Push 推送直播开播通知和自动录制状态，详见 [`notify.Service`](internal/services/notify/notify.go)
 - **缓冲池**: 使用 [`pool.BufferPool`](pkg/pool/pool.go) 减少内存分配
 - **SWR 缓存**: 房间信息缓存采用 Stale-While-Revalidate 策略（[`pkg/swr`](pkg/swr/)），结合 singleflight 去重，缓存命中时立即返回旧数据并在后台异步刷新，软 TTL 5 分钟、硬 TTL 30 分钟，有效降低 Bilibili API 请求压力
-- **定期刷盘**: 每 5 秒自动刷新写入缓冲，防止数据丢失
+- **定期刷盘**: 每 30 秒自动同步写入文件，防止数据丢失
 - **低资源占用**: 设计注重低内存和低 CPU 使用，适合树莓派等资源受限设备
 - **文件管理**: 支持列出、预览、下载（可转换格式）、批量删除文件及删除目录，详见 `internal/controllers/file/file.go`
 - **自动转换**: 如果启用 `CONVERT_TO_MP4`，录制完成时会自动将可转换源文件（例如 FLV、TS）转为 MP4；可通过 `DELETE_SOURCE_AFTER_CONVERT` 控制是否删除原始源文件。已修复部分不支持的编解码器导致转换失败的问题，并具备 FFmpeg 任务冷却机制避免卡死失败任务
