@@ -7,6 +7,7 @@ const (
 	defaultCloudConvertMaxConcurrentDownloads = 1
 	defaultFFmpegCheckIntervalSecs            = 60
 	defaultFFmpegMaxConcurrentTasks           = 1
+	defaultLiveStreamWriterSyncPeriodSecs     = 45
 )
 
 // for global readonly access
@@ -28,6 +29,13 @@ func (g *GlobalReadOnly) DownloadWriterBufferSize() int {
 
 func (g *GlobalReadOnly) LiveStreamWriterBufferSize() int {
 	return g.config.liveStreamWriterBufferSize
+}
+
+func (g *GlobalReadOnly) LiveStreamWriterSyncPeriodSecs() int {
+	if g.config.liveStreamWriterSyncPeriod <= 0 {
+		return defaultLiveStreamWriterSyncPeriodSecs
+	}
+	return g.config.liveStreamWriterSyncPeriod
 }
 
 func (g *GlobalReadOnly) SkipSmallFlush() bool {
@@ -86,5 +94,8 @@ func (g *GlobalReadOnly) Validate() {
 	}
 	if g.config.FFmpegMaxConcurrentTasks <= 0 {
 		logger.Warnf("FFMPEG_MAX_CONCURRENT_TASKS is invalid (%d), using default %d", g.config.FFmpegMaxConcurrentTasks, defaultFFmpegMaxConcurrentTasks)
+	}
+	if g.config.liveStreamWriterSyncPeriod <= 0 {
+		logger.Warnf("LIVE_STREAM_WRITER_SYNC_PERIOD_SECS is invalid (%d), using default %d seconds", g.config.liveStreamWriterSyncPeriod, defaultLiveStreamWriterSyncPeriodSecs)
 	}
 }

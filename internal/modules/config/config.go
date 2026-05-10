@@ -27,8 +27,8 @@ type Config struct {
 
 	ConvertToMp4             bool
 	DeleteSourceAfterConvert bool
-	CloudConvertThreshold int64
-	CloudConvertApiKey    string
+	CloudConvertThreshold    int64
+	CloudConvertApiKey       string
 
 	BackendHost        string
 	FrontendURL        *url.URL
@@ -56,6 +56,7 @@ type Config struct {
 	downloadBufferSize         int
 	streamWriterBufferSize     int
 	liveStreamWriterBufferSize int
+	liveStreamWriterSyncPeriod int
 	skipSmallFlush             bool
 }
 
@@ -127,7 +128,8 @@ func provider(lc fx.Lifecycle) (*Config, error) {
 		downloadBufferSize:         utils.MustAtoi(utils.EmptyOrElse(os.Getenv("DOWNLOAD_BUFFER_SIZE"), "5242880")),           // default 5MB
 		streamWriterBufferSize:     utils.MustAtoi(utils.EmptyOrElse(os.Getenv("STREAM_WRITER_BUFFER_SIZE"), "1048576")),      // default 1MB
 		liveStreamWriterBufferSize: utils.MustAtoi(utils.EmptyOrElse(os.Getenv("LIVE_STREAM_WRITER_BUFFER_SIZE"), "5242880")), // 5MB: optimal for 1080p30fps (4.5Mbps = 2.81MB/5s)
-		skipSmallFlush:             os.Getenv("SKIP_SMALL_FLUSH") == "true",                                                   // drop write if total written < buffer size, for microSD card protection                                       // whether to drop the stream if the buffer size is not met, to reduce SD card wear on low bitrate streams
+		liveStreamWriterSyncPeriod: utils.MustAtoi(utils.EmptyOrElse(os.Getenv("LIVE_STREAM_WRITER_SYNC_PERIOD_SECS"), "45")),
+		skipSmallFlush:             os.Getenv("SKIP_SMALL_FLUSH") == "true", // drop write if total written < buffer size, for microSD card protection                                       // whether to drop the stream if the buffer size is not met, to reduce SD card wear on low bitrate streams
 	}
 
 	ReadOnly = &GlobalReadOnly{config: c}

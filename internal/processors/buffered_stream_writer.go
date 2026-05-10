@@ -22,6 +22,7 @@ type BufferedStreamWriterProcessor struct {
 	file             *os.File
 	path             string
 	bufferSize       int
+	syncPeriod       time.Duration
 	sdcardProtection bool
 	writer           *bufio.Writer
 	logger           *logrus.Entry
@@ -38,6 +39,7 @@ func NewBufferedStreamWriter(path string, opts ...BufferedStreamWriterOptions) *
 	processor := &BufferedStreamWriterProcessor{
 		path:             path,
 		bufferSize:       1 * 1024 * 1024, // default 1MB
+		syncPeriod:       45 * time.Second,
 		sdcardProtection: false,
 	}
 	processor.applyOptions(opts...)
@@ -91,7 +93,7 @@ func (w *BufferedStreamWriterProcessor) Close() error {
 
 func (w *BufferedStreamWriterProcessor) writePeriodically(ctx context.Context) {
 	flushTicker := time.NewTicker(5 * time.Second)
-	syncTicker := time.NewTicker(45 * time.Second)
+	syncTicker := time.NewTicker(w.syncPeriod)
 	defer w.wait.Done()
 	defer flushTicker.Stop()
 	defer syncTicker.Stop()
@@ -145,5 +147,13 @@ func WithSDCardProtection(enabled bool) BufferedStreamWriterOptions {
 func WithBufferSize(size int) BufferedStreamWriterOptions {
 	return func(p *BufferedStreamWriterProcessor) {
 		p.bufferSize = size
+	}
+}
+
+func WithSyncPeriod(period time.Duration) BufferedStreamWriterOptions {
+	return func(p *BufferedStreamWriterProcessor) {
+		if period > 0 {
+			p.syncPeriod = period
+		}
 	}
 }

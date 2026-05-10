@@ -121,6 +121,7 @@ docker run -d \
 | `DOWNLOAD_BUFFER_SIZE` | 文件下载 / 导出时使用的缓冲区大小（字节） | `5242880` (5 MB) |
 | `STREAM_WRITER_BUFFER_SIZE` | 流写入器（写入文件）缓冲区大小（字节） | `1048576` (1 MB) |
 | `LIVE_STREAM_WRITER_BUFFER_SIZE` | 实时流写入缓冲区（用于直播录制或实时下载，字节） | `5242880` (5 MB) |
+| `LIVE_STREAM_WRITER_SYNC_PERIOD_SECS` | 实时流写入器执行 `sync` 的周期（秒） | `45` |
 | `SKIP_SMALL_FLUSH` | 启用 microSD 磨损保护：若录制总写入量低于缓冲区大小则跳过 flush，避免写入小块数据 | `false` |
 | `MIN_DISK_SPACE_BYTES` | 录制所需的最小磁盘空间（字节），低于此值将拒绝新录制任务 | `5368709120` (5 GB) |
 
@@ -154,6 +155,7 @@ export UPLOAD_BUFFER_SIZE=5242880
 export DOWNLOAD_BUFFER_SIZE=5242880
 export STREAM_WRITER_BUFFER_SIZE=1048576
 export LIVE_STREAM_WRITER_BUFFER_SIZE=5242880
+export LIVE_STREAM_WRITER_SYNC_PERIOD_SECS=45
 export SKIP_SMALL_FLUSH=false
 export JWT_SECRET=bilirec_secret
 export DEBUG=false
