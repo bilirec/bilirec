@@ -233,7 +233,68 @@ func (r *Service) Start(roomId int, options ...RecordStartOption) error {
 		switch streamInfo.Format {
 		case "ts", "fmp4":
 			resp.RawBody().Close()
-			hlsCh, hlsErr := r.st.ReadHlsStream(finalURL, r.bilic.NewLiveHlsClient(), ctx)
+			initialURL := finalURL
+
+			profile := utils.Ternary(
+				streamInfo.Format == "ts",
+				bilibili.ProfileHLSTS,
+				bilibili.ProfileHLSFMP4,
+			)
+
+			fetchM3u8URL := func() (string, error) {
+				if initialURL != "" {
+					url := initialURL
+					initialURL = ""
+					return url, nil
+				}
+
+				latestStreams, fetchErr := r.bilic.GetStreamURLsV2(roomId, bilibili.WithProfiles(profile))
+				if fetchErr != nil {
+					return "", fetchErr
+				} else if len(latestStreams) == 0 {
+					return "", nil
+				}
+
+				tryResolve := func(candidate bilibili.StreamURLInfo) (string, bool) {
+					m3u8Resp, fetchErr := r.bilic.FetchM3u8UrlWithCtx(candidate.URL, ctx)
+					if fetchErr != nil {
+						return "", false
+					}
+					if body := m3u8Resp.RawBody(); body != nil {
+						defer body.Close()
+					}
+					if m3u8Resp.StatusCode() != 200 {
+						return "", false
+					}
+
+					if m3u8Resp.RawResponse != nil && m3u8Resp.RawResponse.Request != nil && m3u8Resp.RawResponse.Request.URL != nil {
+						return m3u8Resp.RawResponse.Request.URL.String(), true
+					}
+					return candidate.URL, true
+				}
+
+				for _, candidate := range latestStreams {
+					if candidate.Format != streamInfo.Format || candidate.Protocol != streamInfo.Protocol || candidate.Codec != streamInfo.Codec {
+						continue
+					}
+					if refreshedURL, ok := tryResolve(candidate); ok {
+						return refreshedURL, nil
+					}
+				}
+
+				for _, candidate := range latestStreams {
+					if candidate.Format != streamInfo.Format {
+						continue
+					}
+					if refreshedURL, ok := tryResolve(candidate); ok {
+						return refreshedURL, nil
+					}
+				}
+
+				return "", nil
+			}
+
+			hlsCh, hlsErr := r.st.ReadHlsStream(fetchM3u8URL, r.bilic.NewLiveHlsClient(), ctx)
 			if hlsErr != nil {
 				l.Errorf("cannot start HLS stream: %v, will try next url", hlsErr)
 				continue

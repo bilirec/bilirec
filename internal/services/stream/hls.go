@@ -37,23 +37,22 @@ var (
 	extXMediaSequencePrefix = []byte("#EXT-X-MEDIA-SEQUENCE:")
 	extXMapPrefix           = []byte("#EXT-X-MAP:")
 	extInfPrefix            = []byte("#EXTINF:")
+
+	ErrM3u8Expired = errors.New("hls: m3u8 playlist expired")
+	ErrNoM3u8URL   = errors.New("hls: no m3u8 url available")
 )
 
-func parseAttributeURI(line string) string {
-	const key = "URI=\""
-	idx := strings.Index(line, key)
-	if idx < 0 {
-		return ""
+func isM3u8URLExpiredStatus(status int) bool {
+	switch status {
+	case 401, 403, 404, 410:
+		return true
+	default:
+		return false
 	}
-	start := idx + len(key)
-	if start >= len(line) {
-		return ""
-	}
-	endRel := strings.IndexByte(line[start:], '"')
-	if endRel < 0 {
-		return ""
-	}
-	return line[start : start+endRel]
+}
+
+func isM3u8URLExpiredErr(err error) bool {
+	return errors.Is(err, ErrM3u8Expired)
 }
 
 func parseAttributeURIBytes(line []byte) string {
@@ -184,10 +183,45 @@ func shouldResetSequenceOnRollback(prevBaseSeq int64, baseSeq int64, segCount in
 // The polling interval is derived from the first #EXTINF duration seen
 // (interval = duration/2), falling back to 1 second. This ensures each
 // segment is fetched well before Bilibili prunes it from the playlist window.
-func (r *Service) ReadHlsStream(m3u8URL string, client *resty.Client, ctx context.Context) (<-chan []byte, error) {
-	resolver, err := newHlsURLResolver(m3u8URL)
-	if err != nil {
-		return nil, fmt.Errorf("hls: invalid m3u8 URL: %w", err)
+func (r *Service) ReadHlsStream(fetchM3u8URL func() (string, error), client *resty.Client, ctx context.Context) (<-chan []byte, error) {
+	var (
+		m3u8URL       string
+		resolver      *hlsURLResolver
+		currentMapURI string
+		mapSent       bool
+	)
+
+	refreshM3u8URL := func(reason string) error {
+		nextURL, err := fetchM3u8URL()
+		if err != nil {
+			return fmt.Errorf("hls: cannot fetch m3u8 URL (%s): %w", reason, err)
+		}
+		nextURL = strings.TrimSpace(nextURL)
+		if nextURL == "" {
+			return ErrNoM3u8URL
+		}
+
+		nextResolver, err := newHlsURLResolver(nextURL)
+		if err != nil {
+			return fmt.Errorf("hls: invalid m3u8 URL after refresh (%s): %w", reason, err)
+		}
+
+		if m3u8URL != "" && m3u8URL != nextURL {
+			logger.Warnf("hls: refreshed m3u8 URL due to %s", reason)
+		}
+
+		m3u8URL = nextURL
+		resolver = nextResolver
+		currentMapURI = ""
+		mapSent = false
+		return nil
+	}
+
+	if err := refreshM3u8URL("initial"); err != nil {
+		if errors.Is(err, ErrNoM3u8URL) {
+			return nil, ErrNoM3u8URL
+		}
+		return nil, fmt.Errorf("hls: cannot fetch initial m3u8 URL: %w", err)
 	}
 
 	fetchPlaylist := func() (*hlsPlaylist, error) {
@@ -195,7 +229,9 @@ func (r *Service) ReadHlsStream(m3u8URL string, client *resty.Client, ctx contex
 		if err != nil {
 			return nil, fmt.Errorf("fetch m3u8: %w", err)
 		}
-		if resp.StatusCode() != 200 {
+		if isM3u8URLExpiredStatus(resp.StatusCode()) {
+			return nil, fmt.Errorf("%w (status=%d)", ErrM3u8Expired, resp.StatusCode())
+		} else if resp.StatusCode() != 200 {
 			return nil, fmt.Errorf("m3u8 status %d", resp.StatusCode())
 		}
 		pl, err := parseM3u8Bytes(resp.Body())
@@ -205,9 +241,33 @@ func (r *Service) ReadHlsStream(m3u8URL string, client *resty.Client, ctx contex
 		return pl, nil
 	}
 
+	fetchPlaylistWithRefresh := func() (*hlsPlaylist, error) {
+		for {
+			pl, err := fetchPlaylist()
+			if err == nil {
+				return pl, nil
+			}
+			if isCanceled(err, ctx) || ctx.Err() == context.Canceled {
+				return nil, err
+			}
+			if !isM3u8URLExpiredErr(err) {
+				return nil, err
+			}
+
+			refreshErr := refreshM3u8URL(err.Error())
+			if refreshErr != nil {
+				return nil, refreshErr
+			}
+			logger.Warn("hls: refreshed m3u8 URL after playlist expiration, retrying playlist fetch")
+		}
+	}
+
 	// Fetch the initial playlist to verify reachability and derive poll interval.
-	pl, err := fetchPlaylist()
+	pl, err := fetchPlaylistWithRefresh()
 	if err != nil {
+		if errors.Is(err, ErrNoM3u8URL) {
+			return nil, ErrNoM3u8URL
+		}
 		return nil, fmt.Errorf("hls: cannot parse initial m3u8: %w", err)
 	}
 	mediaSeq, segs := pl.mediaSeq, pl.segments
@@ -235,8 +295,8 @@ func (r *Service) ReadHlsStream(m3u8URL string, client *resty.Client, ctx contex
 	if pl.mapURI != "" {
 		nextSeq = mediaSeq
 	}
-	currentMapURI := pl.mapURI
-	mapSent := false
+	currentMapURI = pl.mapURI
+	mapSent = false
 
 	ch := make(chan []byte, 5)
 	go func() {
@@ -251,8 +311,12 @@ func (r *Service) ReadHlsStream(m3u8URL string, client *resty.Client, ctx contex
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				pl, err := fetchPlaylist()
+				pl, err := fetchPlaylistWithRefresh()
 				if err != nil {
+					if errors.Is(err, ErrNoM3u8URL) {
+						logger.Infof("hls: no m3u8 URL available anymore, stream likely ended")
+						return
+					}
 					if isCanceled(err, ctx) || ctx.Err() == context.Canceled {
 						return
 					}
@@ -260,8 +324,12 @@ func (r *Service) ReadHlsStream(m3u8URL string, client *resty.Client, ctx contex
 					logger.Warnf("hls: playlist fetch/parse failed (attempt=%d): %v", consecutivePlaylistFailures, err)
 
 					// Retry once immediately to reduce the chance of missing short HLS windows.
-					pl, err = fetchPlaylist()
+					pl, err = fetchPlaylistWithRefresh()
 					if err != nil {
+						if errors.Is(err, ErrNoM3u8URL) {
+							logger.Infof("hls: no m3u8 URL available anymore, stream likely ended")
+							return
+						}
 						if isCanceled(err, ctx) || ctx.Err() == context.Canceled {
 							return
 						}
@@ -269,6 +337,7 @@ func (r *Service) ReadHlsStream(m3u8URL string, client *resty.Client, ctx contex
 						logger.Warnf("hls: immediate playlist retry failed (attempt=%d): %v", consecutivePlaylistFailures, err)
 						if consecutivePlaylistFailures >= 3 {
 							logger.Warnf("hls: consecutive playlist failures reached %d", consecutivePlaylistFailures)
+							return
 						}
 						continue
 					}

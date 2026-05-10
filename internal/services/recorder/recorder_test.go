@@ -15,6 +15,7 @@ import (
 	"github.com/eric2788/bilirec/internal/services/recorder"
 	"github.com/eric2788/bilirec/internal/services/stream"
 	"github.com/eric2788/bilirec/internal/testutil"
+	"github.com/sirupsen/logrus"
 	"go.uber.org/fx"
 	"go.uber.org/fx/fxtest"
 )
@@ -102,8 +103,13 @@ func TestTsRecord(t *testing.T) {
 	t.Log("start it manually")
 	err := recorderService.Start(room, recorder.WithStreamProfile(bilibili.ProfileHLSTS))
 	if err != nil {
-		if err == recorder.ErrStreamNotLive {
-			t.Skip(err)
+		switch err {
+		case recorder.ErrStreamNotLive:
+			t.Skip("Stream not live")
+		case recorder.ErrEmptyStreamURLs:
+			t.Skip("No stream URLs available")
+		case recorder.ErrStreamURLsUnreachable:
+			t.Skip("Stream URLs unreachable")
 		}
 		t.Fatal(err)
 	}
@@ -155,8 +161,13 @@ func TestFmp4Record(t *testing.T) {
 	t.Log("start it manually")
 	err := recorderService.Start(room, recorder.WithStreamProfile(bilibili.ProfileHLSFMP4))
 	if err != nil {
-		if err == recorder.ErrStreamNotLive {
-			t.Skip(err)
+		switch err {
+		case recorder.ErrStreamNotLive:
+			t.Skip("Stream not live")
+		case recorder.ErrEmptyStreamURLs:
+			t.Skip("No stream URLs available")
+		case recorder.ErrStreamURLsUnreachable:
+			t.Skip("Stream URLs unreachable")
 		}
 		t.Fatal(err)
 	}
@@ -203,8 +214,13 @@ func TestFlvRecord_AutoStopAfterDuration(t *testing.T) {
 	t.Logf("starting recording with duration limit: %v", recordDuration)
 	err := recorderService.Start(room, recorder.WithDuration(recordDuration))
 	if err != nil {
-		if err == recorder.ErrStreamNotLive {
-			t.Skip(err)
+		switch err {
+		case recorder.ErrStreamNotLive:
+			t.Skip("Stream not live")
+		case recorder.ErrEmptyStreamURLs:
+			t.Skip("No stream URLs available")
+		case recorder.ErrStreamURLsUnreachable:
+			t.Skip("Stream URLs unreachable")
 		}
 		t.Fatal(err)
 	}
@@ -302,4 +318,5 @@ func init() {
 	if os.Getenv("CI") != "" {
 		os.Setenv("ANONYMOUS_LOGIN", "true")
 	}
+	logrus.SetLevel(logrus.DebugLevel)
 }

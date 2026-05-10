@@ -94,6 +94,8 @@ func (r *Controller) startRecording(ctx fiber.Ctx) error {
 			return fiber.NewError(fiber.StatusInsufficientStorage, "磁碟空間低於設定值")
 		case recorder.ErrInvalidStreamProfile:
 			return fiber.NewError(fiber.StatusBadRequest, "無效的串流格式")
+		case recorder.ErrStreamURLsUnreachable, recorder.ErrEmptyStreamURLs:
+			return fiber.NewError(fiber.StatusGone, "無法連接到視頻流 URL")
 		default:
 			return fiber.ErrInternalServerError
 		}
