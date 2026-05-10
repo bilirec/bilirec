@@ -22,12 +22,15 @@ import (
 // seek behaviour because ffmpeg rebuilds the container metadata for random
 // access.
 type Fmp4SegmentWriterProcessor struct {
-	mu     sync.Mutex
-	path   string
-	file   *os.File
-	logger *logrus.Entry
-	syncer *periodicFileSync
-	bases  *map[uint32]uint64
+	mu                     sync.Mutex
+	path                   string
+	file                   *os.File
+	logger                 *logrus.Entry
+	syncer                 *periodicFileSync
+	bases                  *map[uint32]uint64
+	segmentCount           uint64
+	normalizedSegmentCount uint64
+	normalizedTfdtTotal    uint64
 }
 
 func NewFmp4SegmentWriter(path string, bases *map[uint32]uint64) *pipeline.ProcessorInfo[[]byte] {
@@ -54,12 +57,25 @@ func (p *Fmp4SegmentWriterProcessor) Process(ctx context.Context, log *logrus.En
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	p.segmentCount++
+	segmentNo := p.segmentCount
 	if len(data) >= 8 {
 		boxType := string(data[4:8])
-		log.Debugf("fmp4 segment: box=%s size=%d", boxType, len(data))
+		if segmentNo <= 3 || boxType == "ftyp" || segmentNo%60 == 0 {
+			log.Debugf("fmp4 segment: box=%s size=%d seg=%d", boxType, len(data), segmentNo)
+		}
 	}
 	if normalized := hls.NormalizeFragmentTimestamps(data, *p.bases); normalized > 0 {
-		log.Debugf("fmp4 segment: normalized tfdt boxes=%d", normalized)
+		p.normalizedSegmentCount++
+		p.normalizedTfdtTotal += uint64(normalized)
+		if segmentNo <= 3 || normalized >= 16 {
+			log.Debugf("fmp4 segment: normalized tfdt boxes=%d seg=%d", normalized, segmentNo)
+		} else if segmentNo%60 == 0 {
+			avg := float64(p.normalizedTfdtTotal) / float64(p.normalizedSegmentCount)
+			log.Debugf("fmp4 segment: normalized tfdt summary seg=%d normalized-segments=%d total-boxes=%d avg=%.2f", segmentNo, p.normalizedSegmentCount, p.normalizedTfdtTotal, avg)
+		}
+	} else if segmentNo%60 == 0 {
+		log.Debugf("fmp4 segment: normalized tfdt summary seg=%d normalized-segments=%d total-boxes=%d", segmentNo, p.normalizedSegmentCount, p.normalizedTfdtTotal)
 	}
 	_, err := p.file.Write(data)
 	return data, err

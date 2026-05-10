@@ -458,7 +458,7 @@ func (r *Service) recover(roomId int) {
 			l.Info("start live stream recovery: success")
 			return
 		}
-		l.Errorf("recovery attempt #%d failed: %v", attempt, err)
+
 		switch err {
 		case ErrMaxConcurrentRecordingsReached:
 			l.Infof("stop recovery due to: %v", err)
@@ -488,11 +488,12 @@ func (r *Service) recover(roomId int) {
 				l.Infof("maximum recovery attempts reached (%d), will not recover", r.cfg.MaxRecoveryAttempts)
 				r.Stop(roomId)
 				return
+			} else {
+				l.Warnf("recovery attempt #%d failed: %v", attempt, err)
+				l.Infof("will retry stream recovery in 15 seconds...")
 			}
 
-			l.Infof("will retry stream recovery in 15 seconds...")
 			timer := time.NewTimer(15 * time.Second)
-
 			select {
 			case <-timer.C:
 				attempt++

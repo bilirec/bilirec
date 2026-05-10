@@ -46,8 +46,10 @@ func (p *TsContinuityFixerProcessor) Process(_ context.Context, log *logrus.Entr
 	}
 
 	result := p.fixer.FixSegment(data)
-	if result.Patched > 0 {
+	if result.Patched > 3 {
 		log.Debugf("ts-continuity-fixer: patched %d packets in segment (%d B)", result.Patched, len(data))
+	} else if result.Patched > 10 {
+		log.Warnf("ts-continuity-fixer: patched %d packets in segment (%d B) - this may indicate a problem with the source segments", result.Patched, len(data))
 	}
 	return data, nil
 }

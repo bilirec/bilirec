@@ -136,8 +136,6 @@ func (s *Service) tryStartAllAutoRecordRooms() {
 		isLive := info.LiveStatus == 1
 		currentSessionKey := resolveLiveSessionKey(info)
 
-		logger.Debugf("checking room %d (%s): isLive=%v, key=%s, config=%+v", roomID, info.Uname, isLive, currentSessionKey, cfg)
-
 		if !isLive || currentSessionKey == "" {
 			s.clearSessionState(roomID)
 			continue
