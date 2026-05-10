@@ -14,7 +14,7 @@ import (
 const (
 	// Warn only when periodic flush/sync is abnormally slow to avoid noisy logs.
 	slowFlushWarnThreshold = 100 * time.Millisecond
-	slowSyncWarnThreshold  = 500 * time.Millisecond
+	slowSyncWarnThreshold  = 800 * time.Millisecond
 )
 
 type BufferedStreamWriterProcessor struct {
@@ -91,7 +91,7 @@ func (w *BufferedStreamWriterProcessor) Close() error {
 
 func (w *BufferedStreamWriterProcessor) writePeriodically(ctx context.Context) {
 	flushTicker := time.NewTicker(5 * time.Second)
-	syncTicker := time.NewTicker(30 * time.Second)
+	syncTicker := time.NewTicker(45 * time.Second)
 	defer w.wait.Done()
 	defer flushTicker.Stop()
 	defer syncTicker.Stop()
