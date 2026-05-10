@@ -13,7 +13,7 @@ type Service struct {
 
 func NewService() *Service {
 	return &Service{
-		pool: pool.NewBytesPool(256 * 1024),
+		pool: pool.NewBytesPool(512 * 1024), // 512KB buffer
 	}
 }
 

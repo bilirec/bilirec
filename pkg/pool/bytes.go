@@ -36,6 +36,12 @@ func (p *BytesPool) GetBytesPtr() *[]byte {
 }
 
 func (p *BytesPool) PutBytesPtr(buf *[]byte) {
+	if buf == nil {
+		return
+	}
+	if cap(*buf) != p.BufferSize {
+		return
+	}
 	*buf = (*buf)[:cap(*buf)]
 	p.Pool.Put(buf)
 }

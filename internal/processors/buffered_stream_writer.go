@@ -11,6 +11,12 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+const (
+	// Warn only when periodic flush/sync is abnormally slow to avoid noisy logs.
+	slowFlushWarnThreshold = 100 * time.Millisecond
+	slowSyncWarnThreshold  = 500 * time.Millisecond
+)
+
 type BufferedStreamWriterProcessor struct {
 	mu               sync.Mutex
 	file             *os.File
@@ -20,7 +26,9 @@ type BufferedStreamWriterProcessor struct {
 	writer           *bufio.Writer
 	logger           *logrus.Entry
 
-	syncer       *periodicFileSync
+	ctx          context.Context
+	cancel       context.CancelFunc
+	wait         sync.WaitGroup
 	bytesWritten int64
 }
 
@@ -48,7 +56,10 @@ func (w *BufferedStreamWriterProcessor) Open(ctx context.Context, log *logrus.En
 	w.file = file
 	w.writer = bufio.NewWriterSize(file, w.bufferSize)
 	w.logger = log.WithField("file", file.Name())
-	w.syncer = startPeriodicFileSync(&w.mu, w.file, w.logger, 30*time.Second)
+
+	w.ctx, w.cancel = context.WithCancel(context.Background())
+	w.wait.Add(1)
+	go w.writePeriodically(w.ctx)
 	return nil
 }
 
@@ -61,7 +72,8 @@ func (w *BufferedStreamWriterProcessor) Process(ctx context.Context, log *logrus
 }
 
 func (w *BufferedStreamWriterProcessor) Close() error {
-	w.syncer.Stop()
+	w.cancel()
+	w.wait.Wait()
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	if w.sdcardProtection && w.bytesWritten < int64(w.bufferSize) {
@@ -75,6 +87,47 @@ func (w *BufferedStreamWriterProcessor) Close() error {
 	}
 	w.logger.Debugf("file path: %s, total written %vB", w.path, w.bytesWritten)
 	return w.file.Close()
+}
+
+func (w *BufferedStreamWriterProcessor) writePeriodically(ctx context.Context) {
+	flushTicker := time.NewTicker(5 * time.Second)
+	syncTicker := time.NewTicker(30 * time.Second)
+	defer w.wait.Done()
+	defer flushTicker.Stop()
+	defer syncTicker.Stop()
+	for {
+		select {
+		case <-flushTicker.C:
+			w.mu.Lock()
+			flushStart := time.Now()
+			if err := w.writer.Flush(); err != nil {
+				w.logger.Warnf("error flushing writer: %v", err)
+			}
+			if flushCost := time.Since(flushStart); flushCost > slowFlushWarnThreshold {
+				w.logger.Warnf("slow periodic flush: cost=%s", flushCost)
+			}
+			w.mu.Unlock()
+		case <-syncTicker.C:
+			w.mu.Lock()
+			flushStart := time.Now()
+			if err := w.writer.Flush(); err != nil {
+				w.logger.Warnf("error flushing writer: %v", err)
+			}
+			if flushCost := time.Since(flushStart); flushCost > slowFlushWarnThreshold {
+				w.logger.Warnf("slow pre-sync flush: cost=%s", flushCost)
+			}
+			w.mu.Unlock()
+			syncStart := time.Now()
+			if err := w.file.Sync(); err != nil {
+				w.logger.Warnf("error syncing file: %v", err)
+			}
+			if syncCost := time.Since(syncStart); syncCost > slowSyncWarnThreshold {
+				w.logger.Warnf("slow periodic sync: cost=%s", syncCost)
+			}
+		case <-ctx.Done():
+			return
+		}
+	}
 }
 
 func (p *BufferedStreamWriterProcessor) applyOptions(opts ...BufferedStreamWriterOptions) {
