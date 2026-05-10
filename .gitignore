@@ -3,6 +3,7 @@
 **/database/*
 **/docs/*
 **/java-upgrade/*
+dist
 
 *.tmp
 *.zip
