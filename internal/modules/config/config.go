@@ -45,11 +45,12 @@ type Config struct {
 
 	MinDiskSpaceBytes int64
 
-	CloudConvertCheckIntervalSecs      int
-	CloudConvertMaxConcurrentDownloads int
-	FFmpegCheckIntervalSecs            int
-	FFmpegMaxConcurrentTasks           int
-	FFmpegAllowDuringRecording         bool
+	CloudConvertCheckIntervalSecs                 int
+	CloudConvertMaxConcurrentDownloads            int
+	FFmpegCheckIntervalSecs                       int
+	FFmpegMaxConcurrentTasks                      int
+	FFmpegAllowDuringRecording                    bool
+	FFmpegAllowDuringRecordingMaxActiveRecordings int
 
 	// configurable global performances
 	uploadBufferSize               int
@@ -57,6 +58,7 @@ type Config struct {
 	streamWriterBufferSize         int
 	liveStreamWriterBufferSize     int
 	liveStreamWriterSyncPeriod     int
+	liveStreamWriterFlushPeriod    int
 	liveStreamWriterChanBufferSize int
 	liveStreamWriterBytesPoolSize  int
 	skipSmallFlush                 bool
@@ -93,10 +95,17 @@ func provider(lc fx.Lifecycle) (*Config, error) {
 		logrus.SetLevel(logrus.DebugLevel)
 	}
 
+	// Prefer the new max-active-recordings variable name. Fallback to legacy
+	// "...BELOW_ACTIVE_RECORDINGS" for backward compatibility.
+	ffmpegAllowDuringRecordingMaxActives := utils.EmptyOrElse(
+		os.Getenv("FFMPEG_ALLOW_DURING_RECORDING_MAX_ACTIVE_RECORDINGS"),
+		utils.EmptyOrElse(os.Getenv("FFMPEG_ALLOW_DURING_RECORDING_BELOW_ACTIVE_RECORDINGS"), "1"),
+	)
+
 	c := &Config{
 		AnonymousLogin:                     os.Getenv("ANONYMOUS_LOGIN") == "true",
 		Port:                               utils.EmptyOrElse(os.Getenv("PORT"), "8080"),
-		MaxConcurrentRecordings:            utils.MustAtoi(utils.EmptyOrElse(os.Getenv("MAX_CONCURRENT_RECORDINGS"), "2")),
+		MaxConcurrentRecordings:            utils.MustAtoi(utils.EmptyOrElse(os.Getenv("MAX_CONCURRENT_RECORDINGS"), "1")),
 		MaxRecordingHours:                  utils.MustAtoi(utils.EmptyOrElse(os.Getenv("MAX_RECORDING_HOURS"), "5")),
 		MaxRecoveryAttempts:                utils.MustAtoi(utils.EmptyOrElse(os.Getenv("MAX_RECOVERY_ATTEMPTS"), "5")),
 		MaxRetryMinutes:                    utils.MustAtoi(utils.EmptyOrElse(os.Getenv("MAX_RETRY_MINUTES"), "10")),
@@ -124,13 +133,15 @@ func provider(lc fx.Lifecycle) (*Config, error) {
 		FFmpegCheckIntervalSecs:            utils.MustAtoi(utils.EmptyOrElse(os.Getenv("FFMPEG_CHECK_INTERVAL_SECS"), "60")),
 		FFmpegMaxConcurrentTasks:           utils.MustAtoi(utils.EmptyOrElse(os.Getenv("FFMPEG_MAX_CONCURRENT_TASKS"), "1")),
 		FFmpegAllowDuringRecording:         os.Getenv("FFMPEG_ALLOW_DURING_RECORDING") == "true",
+		FFmpegAllowDuringRecordingMaxActiveRecordings: utils.MustAtoi(ffmpegAllowDuringRecordingMaxActives), // <1 = no limit; when >=1, ffmpeg during recording runs only if active recordings <= this value
 
 		// global performance configs
 		uploadBufferSize:               utils.MustAtoi(utils.EmptyOrElse(os.Getenv("UPLOAD_BUFFER_SIZE"), "5242880")),                // default 5MB
 		downloadBufferSize:             utils.MustAtoi(utils.EmptyOrElse(os.Getenv("DOWNLOAD_BUFFER_SIZE"), "5242880")),              // default 5MB
 		streamWriterBufferSize:         utils.MustAtoi(utils.EmptyOrElse(os.Getenv("STREAM_WRITER_BUFFER_SIZE"), "1048576")),         // default 1MB
-		liveStreamWriterBufferSize:     utils.MustAtoi(utils.EmptyOrElse(os.Getenv("LIVE_STREAM_WRITER_BUFFER_SIZE"), "6291456")),    // 6MB: Raspberry Pi 4B default; balances SD wear and memory footprint (1080p30fps = 4.5Mbps ≈ 10.7s)
+		liveStreamWriterBufferSize:     utils.MustAtoi(utils.EmptyOrElse(os.Getenv("LIVE_STREAM_WRITER_BUFFER_SIZE"), "8388608")),    // 8MB: prioritize lower flush frequency for SD card longevity
 		liveStreamWriterSyncPeriod:     utils.MustAtoi(utils.EmptyOrElse(os.Getenv("LIVE_STREAM_WRITER_SYNC_PERIOD_SECS"), "0")),     // 0 = disabled; sync only on Close() to minimize SD card wear
+		liveStreamWriterFlushPeriod:    utils.MustAtoi(utils.EmptyOrElse(os.Getenv("LIVE_STREAM_WRITER_FLUSH_PERIOD_SECS"), "10")),   // default 10s: fewer flush operations, lower SD card wear
 		liveStreamWriterChanBufferSize: utils.MustAtoi(utils.EmptyOrElse(os.Getenv("LIVE_STREAM_WRITER_CHAN_BUFFER_SIZE"), "64")),    // default 64: limits in-flight memory while still tolerating write latency bursts
 		liveStreamWriterBytesPoolSize:  utils.MustAtoi(utils.EmptyOrElse(os.Getenv("LIVE_STREAM_WRITER_BYTES_POOL_SIZE"), "524288")), // 512KB per buffer
 		skipSmallFlush:                 os.Getenv("SKIP_SMALL_FLUSH") != "false",                                                     // enabled by default; skip flush if total written < buffer size, reducing SD card wear on low-bitrate streams

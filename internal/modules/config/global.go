@@ -3,13 +3,15 @@ package config
 var ReadOnly *GlobalReadOnly = nil
 
 const (
-	defaultCloudConvertCheckIntervalSecs      = 180
-	defaultCloudConvertMaxConcurrentDownloads = 1
-	defaultFFmpegCheckIntervalSecs            = 60
-	defaultFFmpegMaxConcurrentTasks           = 1
-	defaultLiveStreamWriterSyncPeriodSecs     = 0 // Disable periodic sync to reduce SD card wear; data syncs only on Close()
-	defaultLiveStreamWriterChanBufferSize     = 64
-	defaultLiveStreamWriterBytesPoolSize      = 512 * 1024 // 512KB per buffer
+	defaultCloudConvertCheckIntervalSecs                 = 180
+	defaultCloudConvertMaxConcurrentDownloads            = 1
+	defaultFFmpegCheckIntervalSecs                       = 60
+	defaultFFmpegMaxConcurrentTasks                      = 1
+	defaultFFmpegAllowDuringRecordingMaxActiveRecordings = 1
+	defaultLiveStreamWriterSyncPeriodSecs                = 0 // Disable periodic sync to reduce SD card wear; data syncs only on Close()
+	defaultLiveStreamWriterFlushPeriodSecs               = 15
+	defaultLiveStreamWriterChanBufferSize                = 64
+	defaultLiveStreamWriterBytesPoolSize                 = 512 * 1024 // 512KB per buffer
 )
 
 // for global readonly access
@@ -38,6 +40,13 @@ func (g *GlobalReadOnly) LiveStreamWriterSyncPeriodSecs() int {
 		return defaultLiveStreamWriterSyncPeriodSecs
 	}
 	return g.config.liveStreamWriterSyncPeriod
+}
+
+func (g *GlobalReadOnly) LiveStreamWriterFlushPeriodSecs() int {
+	if g.config.liveStreamWriterFlushPeriod <= 0 {
+		return defaultLiveStreamWriterFlushPeriodSecs
+	}
+	return g.config.liveStreamWriterFlushPeriod
 }
 
 func (g *GlobalReadOnly) LiveStreamWriterChanBufferSize() int {
@@ -98,6 +107,13 @@ func (g *GlobalReadOnly) FFmpegAllowDuringRecording() bool {
 	return g.config.FFmpegAllowDuringRecording
 }
 
+// FFmpegAllowDuringRecordingMaxActiveRecordings controls when ffmpeg is allowed
+// during active recording, but only when FFMPEG_ALLOW_DURING_RECORDING=true.
+// Returns <1 when threshold is disabled (no active-recordings limit).
+func (g *GlobalReadOnly) FFmpegAllowDuringRecordingMaxActiveRecordings() int {
+	return g.config.FFmpegAllowDuringRecordingMaxActiveRecordings
+}
+
 func (g *GlobalReadOnly) Validate() {
 	if g.config.CloudConvertCheckIntervalSecs <= 0 {
 		logger.Warnf("CLOUDCONVERT_CHECK_INTERVAL_SECS is invalid (%d), using default %d seconds", g.config.CloudConvertCheckIntervalSecs, defaultCloudConvertCheckIntervalSecs)
@@ -111,7 +127,13 @@ func (g *GlobalReadOnly) Validate() {
 	if g.config.FFmpegMaxConcurrentTasks <= 0 {
 		logger.Warnf("FFMPEG_MAX_CONCURRENT_TASKS is invalid (%d), using default %d", g.config.FFmpegMaxConcurrentTasks, defaultFFmpegMaxConcurrentTasks)
 	}
+	if g.config.FFmpegAllowDuringRecordingMaxActiveRecordings < 1 {
+		logger.Debugf("FFMPEG_ALLOW_DURING_RECORDING_MAX_ACTIVE_RECORDINGS is %d, threshold disabled (no active-recordings limit)", g.config.FFmpegAllowDuringRecordingMaxActiveRecordings)
+	}
 	if g.config.liveStreamWriterSyncPeriod <= 0 {
 		logger.Warnf("LIVE_STREAM_WRITER_SYNC_PERIOD_SECS is invalid (%d), using default %d seconds", g.config.liveStreamWriterSyncPeriod, defaultLiveStreamWriterSyncPeriodSecs)
+	}
+	if g.config.liveStreamWriterFlushPeriod <= 0 {
+		logger.Warnf("LIVE_STREAM_WRITER_FLUSH_PERIOD_SECS is invalid (%d), using default %d seconds", g.config.liveStreamWriterFlushPeriod, defaultLiveStreamWriterFlushPeriodSecs)
 	}
 }

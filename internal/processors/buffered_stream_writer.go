@@ -13,11 +13,9 @@ import (
 )
 
 const (
-	// slowFlushWarnThreshold warns when buffered flush takes too long.
-	// For microSD cards: 500ms is appropriate (cards can be slow).
-	// For HDDs: if you enable periodic sync, consider lowering this to 100ms
-	// (HDDs should sync fast; anything slower indicates I/O pressure).
-	slowFlushWarnThreshold = 500 * time.Millisecond
+	// defaultSlowFlushWarnThreshold warns when buffered flush takes too long.
+	// 3s is more suitable for microSD cards under concurrent I/O pressure.
+	defaultSlowFlushWarnThreshold = 3 * time.Second
 
 	// slowSyncWarnThreshold warns when fsync takes too long.
 	// This is only used if periodic sync is enabled (syncPeriod > 0).
@@ -27,6 +25,10 @@ const (
 
 	// Default number of data chunks that can be queued before Process blocks.
 	defaultChanBufferSize = 256
+
+	// defaultFlushPeriod controls how often buffered data is flushed to the OS.
+	// 15s reduces flush frequency to lower SD card wear.
+	defaultFlushPeriod = 15 * time.Second
 )
 
 type BufferedStreamWriterProcessor struct {
@@ -35,6 +37,7 @@ type BufferedStreamWriterProcessor struct {
 	bufferSize       int
 	chanBufferSize   int
 	syncPeriod       time.Duration
+	flushPeriod      time.Duration
 	sdcardProtection bool
 	writer           *bufio.Writer
 	logger           *logrus.Entry
@@ -57,6 +60,7 @@ func NewBufferedStreamWriter(path string, opts ...BufferedStreamWriterOptions) *
 		bufferSize:       1 * 1024 * 1024, // default 1MB
 		chanBufferSize:   defaultChanBufferSize,
 		syncPeriod:       45 * time.Second,
+		flushPeriod:      defaultFlushPeriod,
 		sdcardProtection: false,
 	}
 	processor.applyOptions(opts...)
@@ -142,7 +146,7 @@ func (w *BufferedStreamWriterProcessor) Close() error {
 // When dataCh is closed by Close(), it drains any remaining queued data before returning
 // so Close can perform a final flush+sync safely.
 func (w *BufferedStreamWriterProcessor) writePeriodically() {
-	flushTicker := time.NewTicker(5 * time.Second)
+	flushTicker := time.NewTicker(w.flushPeriod)
 	defer w.wait.Done()
 	defer flushTicker.Stop()
 
@@ -176,7 +180,7 @@ func (w *BufferedStreamWriterProcessor) writePeriodically() {
 			if err := w.writer.Flush(); err != nil {
 				w.logger.Warnf("error flushing writer: %v", err)
 			}
-			if flushCost := time.Since(flushStart); flushCost > slowFlushWarnThreshold {
+			if flushCost := time.Since(flushStart); flushCost > defaultSlowFlushWarnThreshold {
 				w.logger.Warnf("slow periodic flush: cost=%s", flushCost)
 			}
 		}
@@ -232,6 +236,16 @@ func WithBufferSize(size int) BufferedStreamWriterOptions {
 func WithSyncPeriod(period time.Duration) BufferedStreamWriterOptions {
 	return func(p *BufferedStreamWriterProcessor) {
 		p.syncPeriod = period
+	}
+}
+
+// WithFlushPeriod sets how often the buffered writer flushes data to the OS.
+// Larger periods reduce flush frequency and SD card wear.
+func WithFlushPeriod(period time.Duration) BufferedStreamWriterOptions {
+	return func(p *BufferedStreamWriterProcessor) {
+		if period > 0 {
+			p.flushPeriod = period
+		}
 	}
 }
 

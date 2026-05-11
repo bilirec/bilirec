@@ -106,9 +106,17 @@ func (f *ffmpegConvertManager) runTaskPeriodically(ctx context.Context) {
 		select {
 		case <-ticker.C:
 			actives := f.getActives()
-			if actives > 0 && !config.ReadOnly.FFmpegAllowDuringRecording() {
-				f.logger.Debugf("active recordings detected (%d), skipping ffmpeg tasks", actives)
-				continue
+			if actives > 0 {
+				if !config.ReadOnly.FFmpegAllowDuringRecording() {
+					f.logger.Debugf("active recordings detected (%d), skipping ffmpeg tasks", actives)
+					continue
+				}
+
+				maxActives := config.ReadOnly.FFmpegAllowDuringRecordingMaxActiveRecordings()
+				if maxActives >= 1 && actives > maxActives {
+					f.logger.Debugf("active recordings detected (%d), require <= %d to run ffmpeg during recording, skipping tasks", actives, maxActives)
+					continue
+				}
 			}
 
 			list, err := f.ListInProgress()

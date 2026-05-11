@@ -90,7 +90,7 @@ docker run -d \
 | ------- | ---- | ------ |
 | `ANONYMOUS_LOGIN` | 是否使用匿名登录 | `false` |
 | `PORT` | API 服务端口 | `8080` |
-| `MAX_CONCURRENT_RECORDINGS` | 最大同时录制数 | `2` |
+| `MAX_CONCURRENT_RECORDINGS` | 最大同时录制数 | `1` |
 | `MAX_RECORDING_HOURS` | 单次录制最长时间（小时） | `5` |
 | `MAX_RECOVERY_ATTEMPTS` | 单次录制的最大重连尝试次数 | `5` |
 | `MAX_RETRY_MINUTES` | 直播中断后判断是否仍在直播的最长容忍时间（分钟） | `10` |
@@ -117,11 +117,13 @@ docker run -d \
 | `FFMPEG_CHECK_INTERVAL_SECS` | 本地 FFmpeg 转换任务轮询间隔（秒） | `60` |
 | `FFMPEG_MAX_CONCURRENT_TASKS` | 本地 FFmpeg 最大并发转换任务数 | `1` |
 | `FFMPEG_ALLOW_DURING_RECORDING` | 是否允许在录制进行中时执行 FFmpeg 转换任务 | `false` |
+| `FFMPEG_ALLOW_DURING_RECORDING_MAX_ACTIVE_RECORDINGS` | 仅当活跃录制数 `<=` 此值时，才允许在录制中执行 FFmpeg；`<1` 表示不设门槛（仍可通过 `FFMPEG_ALLOW_DURING_RECORDING` 控制） | `1` |
 | `UPLOAD_BUFFER_SIZE` | 上传时或向外部服务（如 CloudConvert）传输文件使用的缓冲区大小（字节） | `5242880` (5 MB) |
 | `DOWNLOAD_BUFFER_SIZE` | 文件下载 / 导出时使用的缓冲区大小（字节） | `5242880` (5 MB) |
 | `STREAM_WRITER_BUFFER_SIZE` | 流写入器（写入文件）缓冲区大小（字节） | `1048576` (1 MB) |
-| `LIVE_STREAM_WRITER_BUFFER_SIZE` | 实时流写入缓冲区（用于直播录制或实时下载，字节）；更大的值减少 flush 频率，降低 SD 卡磨损 | `6291456` (6 MB) |
+| `LIVE_STREAM_WRITER_BUFFER_SIZE` | 实时流写入缓冲区（用于直播录制或实时下载，字节）；更大的值减少 flush 频率，降低 SD 卡磨损 | `8388608` (8 MB) |
 | `LIVE_STREAM_WRITER_SYNC_PERIOD_SECS` | 实时流写入器执行周期性 `sync` 的周期（秒）；设为 0 禁用周期性 sync（仅在 Close 时 sync），大幅减少 SD 卡磨损 | `0` |
+| `LIVE_STREAM_WRITER_FLUSH_PERIOD_SECS` | 实时流写入器执行周期性 `flush` 的周期（秒）；值越大 flush 频率越低，越有利于减少 SD 卡写入频次 | `10` |
 | `LIVE_STREAM_WRITER_CHAN_BUFFER_SIZE` | 实时流写入器通道缓冲区大小（数据块数）；更大的值可容忍写入延迟突变，但会增加内存占用 | `64` |
 | `LIVE_STREAM_WRITER_BYTES_POOL_SIZE` | 实时流写入器内存池的单个缓冲区大小（字节）；应与实际流 chunk 大小相匹配 | `524288` (512 KB) |
 | `SKIP_SMALL_FLUSH` | 启用 microSD 磨损保护：若录制总写入量低于缓冲区大小则跳过 flush，避免写入小块数据（特别是低比特率流） | `true` |
@@ -132,7 +134,7 @@ docker run -d \
 ```bash
 export ANONYMOUS_LOGIN=false
 export PORT=8080
-export MAX_CONCURRENT_RECORDINGS=2
+export MAX_CONCURRENT_RECORDINGS=1
 export MAX_RECORDING_HOURS=10
 export MAX_RECOVERY_ATTEMPTS=5
 export MAX_RETRY_MINUTES=10
@@ -150,14 +152,16 @@ export CLOUDCONVERT_MAX_CONCURRENT_DOWNLOADS=1
 export FFMPEG_CHECK_INTERVAL_SECS=60
 export FFMPEG_MAX_CONCURRENT_TASKS=1
 export FFMPEG_ALLOW_DURING_RECORDING=false
+export FFMPEG_ALLOW_DURING_RECORDING_MAX_ACTIVE_RECORDINGS=1
 export BACKEND_HOST=localhost:8080
 export FRONTEND_URL=http://localhost:8080
 export WEBPUSH_SUBSCRIBER=mailto:webpush@example.com
 export UPLOAD_BUFFER_SIZE=5242880
 export DOWNLOAD_BUFFER_SIZE=5242880
 export STREAM_WRITER_BUFFER_SIZE=1048576
-export LIVE_STREAM_WRITER_BUFFER_SIZE=6291456
+export LIVE_STREAM_WRITER_BUFFER_SIZE=8388608
 export LIVE_STREAM_WRITER_SYNC_PERIOD_SECS=0
+export LIVE_STREAM_WRITER_FLUSH_PERIOD_SECS=10
 export LIVE_STREAM_WRITER_CHAN_BUFFER_SIZE=64
 export LIVE_STREAM_WRITER_BYTES_POOL_SIZE=524288
 export SKIP_SMALL_FLUSH=true
@@ -180,11 +184,12 @@ Bilirec 当前默认配置已针对树莓派 4B + microSD 场景优化，在“�
 | 优化项 | 说明 |
 | ----- | ---- |
 | `LIVE_STREAM_WRITER_SYNC_PERIOD_SECS=0` | **禁用周期性 fsync**（最昂贵的操作），数据仅在录制结束时同步到磁盘，减少 I/O 突峰。权衡：意外断电可能丢失最后一段尚未持久化的数据。 |
-| `LIVE_STREAM_WRITER_BUFFER_SIZE=6291456` (6MB) | 6MB 在 4GB 内存设备上通常比 8MB 更稳，仍能显著降低 flush 频率。@1080p30fps (4.5Mbps) 约每 10.7 秒触发一次满缓冲写入。 |
+| `LIVE_STREAM_WRITER_BUFFER_SIZE=8388608` (8MB) | 8MB 进一步降低 flush 频率，优先降低 SD 卡写入频次。@1080p30fps (4.5Mbps) 约每 14.2 秒触发一次满缓冲写入。 |
+| `LIVE_STREAM_WRITER_FLUSH_PERIOD_SECS=10` | 将周期性 flush 改为 10 秒，优先降低 SD 卡磨损；代价是异常断电时未 flush 数据窗口会略增。 |
 | `LIVE_STREAM_WRITER_CHAN_BUFFER_SIZE=64` | 控制在途内存占用。以 512KB chunk 估算，单录制任务约 32MB 队列数据；比 128（约 64MB）更适合 4GB 设备。 |
 | `SKIP_SMALL_FLUSH=true` | **启用小块跳过保护**，若录制总写入量 < 缓冲区大小则跳过 flush。特别有效于低比特率流（如 240p），防止多次小块写入磨损。 |
 | `LIVE_STREAM_WRITER_BYTES_POOL_SIZE=524288` (512KB) | 与常见 stream chunk 大小一致，减少额外分配与拷贝。 |
-| `MAX_CONCURRENT_RECORDINGS=2` | 比默认放开并发更可控，直接限制 RAM 峰值。 |
+| `MAX_CONCURRENT_RECORDINGS=1` | 保守并发上限，直接限制 RAM 峰值。 |
 
 容器运行时默认值也同步为树莓派 4B 取向：`GOMEMLIMIT=768MiB`、`GOGC=100`。
 
