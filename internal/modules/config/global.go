@@ -7,7 +7,9 @@ const (
 	defaultCloudConvertMaxConcurrentDownloads = 1
 	defaultFFmpegCheckIntervalSecs            = 60
 	defaultFFmpegMaxConcurrentTasks           = 1
-	defaultLiveStreamWriterSyncPeriodSecs     = 45
+	defaultLiveStreamWriterSyncPeriodSecs     = 0 // Disable periodic sync to reduce SD card wear; data syncs only on Close()
+	defaultLiveStreamWriterChanBufferSize     = 256
+	defaultLiveStreamWriterBytesPoolSize      = 256 * 1024 // 256KB per buffer
 )
 
 // for global readonly access
@@ -36,6 +38,20 @@ func (g *GlobalReadOnly) LiveStreamWriterSyncPeriodSecs() int {
 		return defaultLiveStreamWriterSyncPeriodSecs
 	}
 	return g.config.liveStreamWriterSyncPeriod
+}
+
+func (g *GlobalReadOnly) LiveStreamWriterChanBufferSize() int {
+	if g.config.liveStreamWriterChanBufferSize <= 0 {
+		return defaultLiveStreamWriterChanBufferSize
+	}
+	return g.config.liveStreamWriterChanBufferSize
+}
+
+func (g *GlobalReadOnly) LiveStreamWriterBytesPoolSize() int {
+	if g.config.liveStreamWriterBytesPoolSize <= 0 {
+		return defaultLiveStreamWriterBytesPoolSize
+	}
+	return g.config.liveStreamWriterBytesPoolSize
 }
 
 func (g *GlobalReadOnly) SkipSmallFlush() bool {

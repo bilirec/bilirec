@@ -120,9 +120,11 @@ docker run -d \
 | `UPLOAD_BUFFER_SIZE` | 上传时或向外部服务（如 CloudConvert）传输文件使用的缓冲区大小（字节） | `5242880` (5 MB) |
 | `DOWNLOAD_BUFFER_SIZE` | 文件下载 / 导出时使用的缓冲区大小（字节） | `5242880` (5 MB) |
 | `STREAM_WRITER_BUFFER_SIZE` | 流写入器（写入文件）缓冲区大小（字节） | `1048576` (1 MB) |
-| `LIVE_STREAM_WRITER_BUFFER_SIZE` | 实时流写入缓冲区（用于直播录制或实时下载，字节） | `5242880` (5 MB) |
-| `LIVE_STREAM_WRITER_SYNC_PERIOD_SECS` | 实时流写入器执行 `sync` 的周期（秒） | `45` |
-| `SKIP_SMALL_FLUSH` | 启用 microSD 磨损保护：若录制总写入量低于缓冲区大小则跳过 flush，避免写入小块数据 | `false` |
+| `LIVE_STREAM_WRITER_BUFFER_SIZE` | 实时流写入缓冲区（用于直播录制或实时下载，字节）；更大的值减少 flush 频率，降低 SD 卡磨损 | `8388608` (8 MB) |
+| `LIVE_STREAM_WRITER_SYNC_PERIOD_SECS` | 实时流写入器执行周期性 `sync` 的周期（秒）；设为 0 禁用周期性 sync（仅在 Close 时 sync），大幅减少 SD 卡磨损 | `0` |
+| `LIVE_STREAM_WRITER_CHAN_BUFFER_SIZE` | 实时流写入器通道缓冲区大小（数据块数）；更大的值可容忍写入延迟突变，但会增加内存占用 | `128` |
+| `LIVE_STREAM_WRITER_BYTES_POOL_SIZE` | 实时流写入器内存池的单个缓冲区大小（字节）；应与实际流 chunk 大小相匹配 | `524288` (512 KB) |
+| `SKIP_SMALL_FLUSH` | 启用 microSD 磨损保护：若录制总写入量低于缓冲区大小则跳过 flush，避免写入小块数据（特别是低比特率流） | `true` |
 | `MIN_DISK_SPACE_BYTES` | 录制所需的最小磁盘空间（字节），低于此值将拒绝新录制任务 | `5368709120` (5 GB) |
 
 ### 示例配置
@@ -154,9 +156,11 @@ export WEBPUSH_SUBSCRIBER=mailto:webpush@example.com
 export UPLOAD_BUFFER_SIZE=5242880
 export DOWNLOAD_BUFFER_SIZE=5242880
 export STREAM_WRITER_BUFFER_SIZE=1048576
-export LIVE_STREAM_WRITER_BUFFER_SIZE=5242880
-export LIVE_STREAM_WRITER_SYNC_PERIOD_SECS=45
-export SKIP_SMALL_FLUSH=false
+export LIVE_STREAM_WRITER_BUFFER_SIZE=8388608
+export LIVE_STREAM_WRITER_SYNC_PERIOD_SECS=0
+export LIVE_STREAM_WRITER_CHAN_BUFFER_SIZE=128
+export LIVE_STREAM_WRITER_BYTES_POOL_SIZE=524288
+export SKIP_SMALL_FLUSH=true
 export JWT_SECRET=bilirec_secret
 export DEBUG=false
 # 可选：启用 REST API 认证
@@ -168,6 +172,24 @@ export PRODUCTION_MODE=false
 如果你是使用二进制文件，启动服务后会生成 `.env` 文件，里面包含当前的环境变量配置（不包含敏感信息）。你可以编辑这个文件来修改配置，或者直接设置环境变量覆盖。
 
 Web Push 的 VAPID key 会由后端在启动时自动生成并写入 `SECRET_DIR`（默认 `secrets`）下的 `_webpush_public_key` 与 `_webpush_private_key`。后续重启会优先复用已存在的 key。
+
+### SD 卡磨损优化
+
+Bilirec 默认配置已针对 microSD 卡进行了优化，以最小化磨损（适合树莓派等低成本硬件）：
+
+| 优化项 | 说明 |
+| ----- | ---- |
+| `LIVE_STREAM_WRITER_SYNC_PERIOD_SECS=0` | **禁用周期性 fsync**（最昂贵的操作），数据仅在录制结束时同步到磁盘，减少 ~90% 的 I/O 突峰。权衡：意外断电可能丢失最后 ~14 秒数据（对直播可接受）。 |
+| `LIVE_STREAM_WRITER_BUFFER_SIZE=8MB` | **增加缓冲区大小** 从 5MB 到 8MB，使 flush 更少发生。@1080p30fps (4.5Mbps) = ~14.2 秒，足以吸收网络抖动而不触发频繁写入。 |
+| `SKIP_SMALL_FLUSH=true` | **启用小块跳过保护**，若录制总写入量 < 缓冲区大小则跳过 flush。特别有效于低比特率流（如 240p），防止多次小块写入磨损。 |
+| 内存池 (`BYTES_POOL_SIZE`) | 每个 writer 重用预分配的 256KB 缓冲区，减少 GC 压力和堆分配。 |
+
+**注意**：如果你使用高性能存储（NVME/SSD）或需要更高可靠性，可以恢复周期性 sync：
+
+```bash
+export LIVE_STREAM_WRITER_SYNC_PERIOD_SECS=45
+export SKIP_SMALL_FLUSH=false
+```
 
 ## 使用方法
 

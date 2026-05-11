@@ -52,12 +52,14 @@ type Config struct {
 	FFmpegAllowDuringRecording         bool
 
 	// configurable global performances
-	uploadBufferSize           int
-	downloadBufferSize         int
-	streamWriterBufferSize     int
-	liveStreamWriterBufferSize int
-	liveStreamWriterSyncPeriod int
-	skipSmallFlush             bool
+	uploadBufferSize               int
+	downloadBufferSize             int
+	streamWriterBufferSize         int
+	liveStreamWriterBufferSize     int
+	liveStreamWriterSyncPeriod     int
+	liveStreamWriterChanBufferSize int
+	liveStreamWriterBytesPoolSize  int
+	skipSmallFlush                 bool
 }
 
 var logger = logrus.WithField("module", "config")
@@ -124,12 +126,14 @@ func provider(lc fx.Lifecycle) (*Config, error) {
 		FFmpegAllowDuringRecording:         os.Getenv("FFMPEG_ALLOW_DURING_RECORDING") == "true",
 
 		// global performance configs
-		uploadBufferSize:           utils.MustAtoi(utils.EmptyOrElse(os.Getenv("UPLOAD_BUFFER_SIZE"), "5242880")),             // default 5MB
-		downloadBufferSize:         utils.MustAtoi(utils.EmptyOrElse(os.Getenv("DOWNLOAD_BUFFER_SIZE"), "5242880")),           // default 5MB
-		streamWriterBufferSize:     utils.MustAtoi(utils.EmptyOrElse(os.Getenv("STREAM_WRITER_BUFFER_SIZE"), "1048576")),      // default 1MB
-		liveStreamWriterBufferSize: utils.MustAtoi(utils.EmptyOrElse(os.Getenv("LIVE_STREAM_WRITER_BUFFER_SIZE"), "5242880")), // 5MB: optimal for 1080p30fps (4.5Mbps = 2.81MB/5s)
-		liveStreamWriterSyncPeriod: utils.MustAtoi(utils.EmptyOrElse(os.Getenv("LIVE_STREAM_WRITER_SYNC_PERIOD_SECS"), "45")),
-		skipSmallFlush:             os.Getenv("SKIP_SMALL_FLUSH") == "true", // drop write if total written < buffer size, for microSD card protection                                       // whether to drop the stream if the buffer size is not met, to reduce SD card wear on low bitrate streams
+		uploadBufferSize:               utils.MustAtoi(utils.EmptyOrElse(os.Getenv("UPLOAD_BUFFER_SIZE"), "5242880")),                // default 5MB
+		downloadBufferSize:             utils.MustAtoi(utils.EmptyOrElse(os.Getenv("DOWNLOAD_BUFFER_SIZE"), "5242880")),              // default 5MB
+		streamWriterBufferSize:         utils.MustAtoi(utils.EmptyOrElse(os.Getenv("STREAM_WRITER_BUFFER_SIZE"), "1048576")),         // default 1MB
+		liveStreamWriterBufferSize:     utils.MustAtoi(utils.EmptyOrElse(os.Getenv("LIVE_STREAM_WRITER_BUFFER_SIZE"), "8388608")),    // 8MB: balance between SD card wear and TCP backpressure (1080p30fps = 4.5Mbps ≈ 14.2s)
+		liveStreamWriterSyncPeriod:     utils.MustAtoi(utils.EmptyOrElse(os.Getenv("LIVE_STREAM_WRITER_SYNC_PERIOD_SECS"), "0")),     // 0 = disabled; sync only on Close() to minimize SD card wear
+		liveStreamWriterChanBufferSize: utils.MustAtoi(utils.EmptyOrElse(os.Getenv("LIVE_STREAM_WRITER_CHAN_BUFFER_SIZE"), "128")),   // default 128: buffer up to ~1.5s of data at 1080p30fps before blocking TCP receive
+		liveStreamWriterBytesPoolSize:  utils.MustAtoi(utils.EmptyOrElse(os.Getenv("LIVE_STREAM_WRITER_BYTES_POOL_SIZE"), "524288")), // 512KB per buffer
+		skipSmallFlush:                 os.Getenv("SKIP_SMALL_FLUSH") != "false",                                                     // enabled by default; skip flush if total written < buffer size, reducing SD card wear on low-bitrate streams
 	}
 
 	ReadOnly = &GlobalReadOnly{config: c}

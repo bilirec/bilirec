@@ -9,6 +9,7 @@ import (
 	"github.com/eric2788/bilirec/internal/processors"
 	"github.com/eric2788/bilirec/pkg/flv"
 	"github.com/eric2788/bilirec/pkg/pipeline"
+	"github.com/eric2788/bilirec/pkg/pool"
 )
 
 const (
@@ -20,11 +21,13 @@ const (
 // It is a zero-invasion extraction of the logic previously inlined in rotate().
 type FlvStrategy struct {
 	sharedFixer *flv.RealtimeFixer
+	bytesPool   *pool.BytesPool
 }
 
 func NewFlvStrategy() *FlvStrategy {
 	return &FlvStrategy{
 		sharedFixer: flv.NewRealtimeFixer(),
+		bytesPool:   pool.NewBytesPool(config.ReadOnly.LiveStreamWriterBytesPoolSize()),
 	}
 }
 
@@ -42,6 +45,8 @@ func (s *FlvStrategy) BuildPipeline(ctx context.Context, outputPath string, stat
 			outputPath,
 			processors.WithBufferSize(config.ReadOnly.LiveStreamWriterBufferSize()),
 			processors.WithSyncPeriod(time.Duration(config.ReadOnly.LiveStreamWriterSyncPeriodSecs())*time.Second),
+			processors.WithChanBufferSize(config.ReadOnly.LiveStreamWriterChanBufferSize()),
+			processors.WithBytesPool(s.bytesPool),
 			processors.WithSDCardProtection(config.ReadOnly.SkipSmallFlush()),
 		),
 	)
