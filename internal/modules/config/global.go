@@ -8,8 +8,8 @@ const (
 	defaultFFmpegCheckIntervalSecs            = 60
 	defaultFFmpegMaxConcurrentTasks           = 1
 	defaultLiveStreamWriterSyncPeriodSecs     = 0 // Disable periodic sync to reduce SD card wear; data syncs only on Close()
-	defaultLiveStreamWriterChanBufferSize     = 256
-	defaultLiveStreamWriterBytesPoolSize      = 256 * 1024 // 256KB per buffer
+	defaultLiveStreamWriterChanBufferSize     = 64
+	defaultLiveStreamWriterBytesPoolSize      = 512 * 1024 // 512KB per buffer
 )
 
 // for global readonly access
