@@ -35,7 +35,7 @@ func NewController(app *fiber.App, service *recorder.Service) *Controller {
 // @Security BearerAuth
 // @Produce json
 // @Param roomID path int true "Room ID"
-// @Param duration_minutes query int false "Recording duration in minutes. 0 = unlimited, >0 = stop after N minutes, omit = system default (MAX_RECORDING_HOURS)"
+// @Param duration_minutes query int false "Recording duration in minutes. 0 = system default, -1 = unlimited, >0 = stop after N minutes, omit = system default (MAX_RECORDING_HOURS)"
 // @Param stream_profile query string false "Preferred stream profile: http-flv | hls-ts | hls-fmp4"
 // @Success 200 "Recording started successfully"
 // @Failure 400 {string} string "Invalid room ID"
@@ -49,18 +49,18 @@ func (r *Controller) startRecording(ctx fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusBadRequest, "無效的房間 ID")
 	}
 
-	// duration_minutes query param: -1 (sentinel) = not provided → use system default
-	const notProvided = -1
+	// duration_minutes query param: 0 (sentinel) = not provided → use system default
+	const notProvided = 0
 	durationMinutes := fiber.Query(ctx, "duration_minutes", notProvided)
 
 	var startArgs []recorder.RecordStartOption
 	switch {
-	case durationMinutes == 0:
+	case durationMinutes == -1:
 		startArgs = []recorder.RecordStartOption{recorder.WithDuration(0)} // unlimited
 	case durationMinutes > 0:
 		startArgs = []recorder.RecordStartOption{recorder.WithDuration(time.Duration(durationMinutes) * time.Minute)}
 	}
-	// durationMinutes == -1 (not provided): pass no args → system default
+	// durationMinutes == 0 (not provided): pass no args → system default
 
 	streamProfileRaw := strings.TrimSpace(fiber.Query(ctx, "stream_profile", ""))
 	if streamProfileRaw != "" {

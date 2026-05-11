@@ -14,7 +14,7 @@ type Info struct {
 	bytesRead   atomic.Uint64
 	startTime   time.Time
 	outputPath  ds.Atomic[string]
-	maxDuration time.Duration // 0 = unlimited
+	maxDuration time.Duration // internal runtime semantics: 0 = unlimited
 
 	cancel context.CancelFunc
 	room   *bilibili.LiveRoomInfoDetail

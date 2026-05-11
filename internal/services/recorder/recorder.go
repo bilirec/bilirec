@@ -315,7 +315,9 @@ func (r *Service) Start(roomId int, options ...RecordStartOption) error {
 			strategy = rs.NewFlvStrategy()
 		}
 
-		// resolve effective max duration: explicit arg > system default
+		// Resolve runtime max duration for recorder internals.
+		// Internal semantics: 0 duration means unlimited.
+		// API/config sentinel mapping (e.g. 0 default, -1 unlimited) is handled by callers.
 		var maxDuration time.Duration
 		if startOptions.hasDuration {
 			maxDuration = startOptions.duration

@@ -21,6 +21,7 @@ func newRecordStartOptions() RecordStartOptions {
 
 func WithDuration(d time.Duration) RecordStartOption {
 	return func(o *RecordStartOptions) {
+		// Internal recorder semantics: d == 0 means unlimited.
 		o.hasDuration = true
 		o.duration = d
 	}

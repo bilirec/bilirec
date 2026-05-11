@@ -267,7 +267,8 @@ Content-Type: application/json
   | 值 | 说明 |
   | -- | ---- |
   | 不传 | 使用系统预设（`MAX_RECORDING_HOURS`） |
-  | `0` | 无限录制，不自动停止 |
+  | `0` | 使用系统预设（`MAX_RECORDING_HOURS`）（同不传） |
+  | `-1` | 无限录制，不自动停止 |
   | `N`（正整数） | N 分钟后自动停止 |
 
   `stream_profile` 也是**可选** query 参数，用于优先指定录制流格式：
