@@ -2,9 +2,12 @@ package record_strategies
 
 import (
 	"context"
+	"sync"
 	"time"
 
+	"github.com/eric2788/bilirec/internal/modules/config"
 	"github.com/eric2788/bilirec/pkg/pipeline"
+	"github.com/eric2788/bilirec/pkg/pool"
 )
 
 // RotationState carries format-specific state across segment rotations.
@@ -51,4 +54,17 @@ type StreamRecordStrategy interface {
 	BuildPipeline(ctx context.Context, outputPath string, state *RotationState) (*pipeline.Pipe[[]byte], error)
 	HandleErr(err error) ErrHandleResult
 	Close() error
+}
+
+var (
+	initPoolOnce    sync.Once
+	writerBytesPool *pool.BytesPool
+)
+
+// getWriterBytesPool returns the writer bytes pool, initializing it on first call
+func getWriterBytesPool() *pool.BytesPool {
+	initPoolOnce.Do(func() {
+		writerBytesPool = pool.NewBytesPool(config.ReadOnly.LiveStreamWriterBytesPoolSize())
+	})
+	return writerBytesPool
 }

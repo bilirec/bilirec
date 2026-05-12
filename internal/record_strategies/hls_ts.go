@@ -2,7 +2,9 @@ package record_strategies
 
 import (
 	"context"
+	"time"
 
+	"github.com/eric2788/bilirec/internal/modules/config"
 	"github.com/eric2788/bilirec/internal/processors"
 	"github.com/eric2788/bilirec/pkg/pipeline"
 )
@@ -10,10 +12,12 @@ import (
 // HlsTsStrategy handles HLS MPEG-TS byte streams.
 // Each []byte received from ReadHlsStream is a complete .ts segment.
 // Conversion to .mp4 is handled by the recorder's finalize() like FLV.
-type HlsTsStrategy struct{}
+type HlsTsStrategy struct {
+}
 
 func NewHlsTsStrategy() *HlsTsStrategy {
 	return &HlsTsStrategy{}
+
 }
 
 func (s *HlsTsStrategy) FileExtension() string { return ".ts" }
@@ -22,7 +26,15 @@ func (s *HlsTsStrategy) BuildPipeline(ctx context.Context, outputPath string, st
 	pipe := pipeline.New(
 		processors.NewSegmentDedup(),
 		processors.NewTsContinuityFixer(),
-		processors.NewTsSegmentWriter(outputPath),
+		processors.NewBufferedStreamWriter(
+			outputPath,
+			processors.WithBufferSize(config.ReadOnly.LiveStreamWriterBufferSize()),
+			processors.WithSyncPeriod(time.Duration(config.ReadOnly.LiveStreamWriterSyncPeriodSecs())*time.Second),
+			processors.WithFlushPeriod(time.Duration(config.ReadOnly.LiveStreamWriterFlushPeriodSecs())*time.Second),
+			processors.WithChanBufferSize(config.ReadOnly.LiveStreamWriterChanBufferSize()),
+			processors.WithBytesPool(getWriterBytesPool()),
+			processors.WithSDCardProtection(config.ReadOnly.SkipSmallFlush()),
+		),
 	)
 	return pipe, nil
 }

@@ -2,7 +2,9 @@ package record_strategies
 
 import (
 	"context"
+	"time"
 
+	"github.com/eric2788/bilirec/internal/modules/config"
 	"github.com/eric2788/bilirec/internal/processors"
 	"github.com/eric2788/bilirec/pkg/pipeline"
 )
@@ -14,20 +16,32 @@ import (
 //
 // Appending all segments in order produces a valid fragmented MP4 source file
 // (.fmp4), which can then be remuxed to seek-friendly .mp4 in finalize flow.
-type HlsFmp4Strategy struct{}
+type HlsFmp4Strategy struct {
+	bases map[uint32]uint64
+}
 
 func NewHlsFmp4Strategy() *HlsFmp4Strategy {
-	return &HlsFmp4Strategy{}
+	return &HlsFmp4Strategy{
+		bases: make(map[uint32]uint64),
+	}
 }
 
 func (s *HlsFmp4Strategy) FileExtension() string { return ".fmp4" }
 
 func (s *HlsFmp4Strategy) BuildPipeline(ctx context.Context, outputPath string, state *RotationState) (*pipeline.Pipe[[]byte], error) {
-	bases := make(map[uint32]uint64)
 	pipe := pipeline.New(
 		processors.NewSegmentDedup(),
-		processors.NewFmp4BoxGuard(&bases),
-		processors.NewFmp4SegmentWriter(outputPath, &bases),
+		processors.NewFmp4BoxGuard(&s.bases),
+		processors.NewFmp4TimestampNormalizer(&s.bases),
+		processors.NewBufferedStreamWriter(
+			outputPath,
+			processors.WithBufferSize(config.ReadOnly.LiveStreamWriterBufferSize()),
+			processors.WithSyncPeriod(time.Duration(config.ReadOnly.LiveStreamWriterSyncPeriodSecs())*time.Second),
+			processors.WithFlushPeriod(time.Duration(config.ReadOnly.LiveStreamWriterFlushPeriodSecs())*time.Second),
+			processors.WithChanBufferSize(config.ReadOnly.LiveStreamWriterChanBufferSize()),
+			processors.WithBytesPool(getWriterBytesPool()),
+			processors.WithSDCardProtection(config.ReadOnly.SkipSmallFlush()),
+		),
 	)
 	return pipe, nil
 }
