@@ -20,7 +20,6 @@ import (
 	"github.com/eric2788/bilirec/pkg/ds"
 	"github.com/eric2788/bilirec/pkg/pipeline"
 	"github.com/eric2788/bilirec/utils"
-	"github.com/go-resty/resty/v2"
 	"github.com/puzpuzpuz/xsync/v4"
 	"github.com/sirupsen/logrus"
 	"go.uber.org/fx"
@@ -177,63 +176,22 @@ func (r *Service) Start(roomId int, options ...RecordStartOption) error {
 			urlPreview,
 		)
 
-		var resp *resty.Response
-		var err error
-
-		switch streamInfo.Format {
-		case "ts", "fmp4":
-			resp, err = r.bilic.FetchM3u8UrlWithCtx(streamInfo.URL, ctx)
-		default: // "flv" and any unknown format
-			resp, err = r.bilic.FetchLiveStreamUrlWithCtx(streamInfo.URL, ctx)
-		}
-
-		if err != nil {
-			l.Errorf("cannot fetch url: %v, will try next url (protocol=%s, format=%s, codec=%s, qn=%d, url=%s)",
-				err,
-				streamInfo.Protocol,
-				streamInfo.Format,
-				streamInfo.Codec,
-				streamInfo.Qn,
-				urlPreview,
-			)
-			continue
-		} else if resp.StatusCode() != 200 {
-			l.Errorf("non-200 response: %d, will try next url (protocol=%s, format=%s, codec=%s, qn=%d, url=%s)",
-				resp.StatusCode(),
-				streamInfo.Protocol,
-				streamInfo.Format,
-				streamInfo.Codec,
-				streamInfo.Qn,
-				urlPreview,
-			)
-			continue
-		}
-
-		finalURL := ""
-		if resp.RawResponse != nil && resp.RawResponse.Request != nil && resp.RawResponse.Request.URL != nil {
-			finalURL = resp.RawResponse.Request.URL.String()
-		}
-
-		l.Debugf("stream response [%d/%d]: status=%d, content-type=%s, protocol=%s, format=%s, codec=%s, qn=%d, req=%s, final=%s",
-			idx+1,
-			len(streams),
-			resp.StatusCode(),
-			resp.Header().Get("Content-Type"),
-			streamInfo.Protocol,
-			streamInfo.Format,
-			streamInfo.Codec,
-			streamInfo.Qn,
-			urlPreview,
-			utils.TruncateString(finalURL, 160),
-		)
-
 		var ch <-chan []byte
 		var strategy rs.StreamRecordStrategy
 
 		switch streamInfo.Format {
 		case "ts", "fmp4":
-			resp.RawBody().Close()
-			initialURL := finalURL
+			l.Debugf("stream response [%d/%d]: protocol=%s, format=%s, codec=%s, qn=%d, req=%s",
+				idx+1,
+				len(streams),
+				streamInfo.Protocol,
+				streamInfo.Format,
+				streamInfo.Codec,
+				streamInfo.Qn,
+				urlPreview,
+			)
+
+			initialURL := streamInfo.URL
 
 			profile := utils.Ternary(
 				streamInfo.Format == "ts",
@@ -256,7 +214,13 @@ func (r *Service) Start(roomId int, options ...RecordStartOption) error {
 				}
 
 				tryResolve := func(candidate bilibili.StreamURLInfo) (string, bool) {
-					m3u8Resp, fetchErr := r.bilic.FetchM3u8UrlWithCtx(candidate.URL, ctx)
+					fetchCtx := ctx
+					if _, ok := fetchCtx.Deadline(); !ok {
+						var cancel context.CancelFunc
+						fetchCtx, cancel = context.WithTimeout(fetchCtx, 3*time.Second)
+						defer cancel()
+					}
+					m3u8Resp, fetchErr := r.bilic.GetLiveHlsPlaylistClient().R().SetContext(fetchCtx).Get(candidate.URL)
 					if fetchErr != nil {
 						return "", false
 					}
@@ -294,7 +258,7 @@ func (r *Service) Start(roomId int, options ...RecordStartOption) error {
 				return "", nil
 			}
 
-			hlsCh, hlsErr := r.st.ReadHlsStream(fetchM3u8URL, r.bilic.NewLiveHlsClient(), ctx)
+			hlsCh, hlsErr := r.st.ReadHlsStream(fetchM3u8URL, r.bilic.GetLiveHlsPlaylistClient(), r.bilic.GetLiveHlsSegmentClient(), ctx)
 			if hlsErr != nil {
 				l.Errorf("cannot start HLS stream: %v, will try next url", hlsErr)
 				continue
@@ -306,6 +270,47 @@ func (r *Service) Start(roomId int, options ...RecordStartOption) error {
 				func() rs.StreamRecordStrategy { return rs.NewHlsFmp4Strategy() },
 			)
 		default: // "flv" and any unknown format
+			resp, err := r.bilic.FetchLiveStreamUrlWithCtx(streamInfo.URL, ctx)
+			if err != nil {
+				l.Errorf("cannot fetch url: %v, will try next url (protocol=%s, format=%s, codec=%s, qn=%d, url=%s)",
+					err,
+					streamInfo.Protocol,
+					streamInfo.Format,
+					streamInfo.Codec,
+					streamInfo.Qn,
+					urlPreview,
+				)
+				continue
+			} else if resp.StatusCode() != 200 {
+				l.Errorf("non-200 response: %d, will try next url (protocol=%s, format=%s, codec=%s, qn=%d, url=%s)",
+					resp.StatusCode(),
+					streamInfo.Protocol,
+					streamInfo.Format,
+					streamInfo.Codec,
+					streamInfo.Qn,
+					urlPreview,
+				)
+				continue
+			}
+
+			finalURL := ""
+			if resp.RawResponse != nil && resp.RawResponse.Request != nil && resp.RawResponse.Request.URL != nil {
+				finalURL = resp.RawResponse.Request.URL.String()
+			}
+
+			l.Debugf("stream response [%d/%d]: status=%d, content-type=%s, protocol=%s, format=%s, codec=%s, qn=%d, req=%s, final=%s",
+				idx+1,
+				len(streams),
+				resp.StatusCode(),
+				resp.Header().Get("Content-Type"),
+				streamInfo.Protocol,
+				streamInfo.Format,
+				streamInfo.Codec,
+				streamInfo.Qn,
+				urlPreview,
+				utils.TruncateString(finalURL, 160),
+			)
+
 			flvCh, flvErr := r.st.ReadFlvStream(resp, ctx)
 			if flvErr != nil {
 				l.Errorf("cannot capture url stream: %v, will try next url", flvErr)

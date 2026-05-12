@@ -183,7 +183,10 @@ func shouldResetSequenceOnRollback(prevBaseSeq int64, baseSeq int64, segCount in
 // The polling interval is derived from the first #EXTINF duration seen
 // (interval = duration/2), falling back to 1 second. This ensures each
 // segment is fetched well before Bilibili prunes it from the playlist window.
-func (r *Service) ReadHlsStream(fetchM3u8URL func() (string, error), client *resty.Client, ctx context.Context) (<-chan []byte, error) {
+//
+// playlistClient should have a short timeout for m3u8 fetches.
+// segmentClient should have a longer timeout for segment and map downloads.
+func (r *Service) ReadHlsStream(fetchM3u8URL func() (string, error), playlistClient, segmentClient *resty.Client, ctx context.Context) (<-chan []byte, error) {
 	var (
 		m3u8URL       string
 		resolver      *hlsURLResolver
@@ -225,7 +228,7 @@ func (r *Service) ReadHlsStream(fetchM3u8URL func() (string, error), client *res
 	}
 
 	fetchPlaylist := func() (*hlsPlaylist, error) {
-		resp, err := client.R().SetContext(ctx).Get(m3u8URL)
+		resp, err := playlistClient.R().SetContext(ctx).Get(m3u8URL)
 		if err != nil {
 			return nil, fmt.Errorf("fetch m3u8: %w", err)
 		}
@@ -380,7 +383,7 @@ func (r *Service) ReadHlsStream(fetchM3u8URL func() (string, error), client *res
 							continue
 						}
 
-						mapResp, err := client.R().SetContext(ctx).Get(mapURL)
+						mapResp, err := segmentClient.R().SetContext(ctx).Get(mapURL)
 						if err != nil {
 							if isCanceled(err, ctx) {
 								return
@@ -407,7 +410,7 @@ func (r *Service) ReadHlsStream(fetchM3u8URL func() (string, error), client *res
 						continue
 					}
 
-					segResp, err := client.R().SetContext(ctx).Get(segURL)
+					segResp, err := segmentClient.R().SetContext(ctx).Get(segURL)
 					if err != nil {
 						if isCanceled(err, ctx) {
 							return

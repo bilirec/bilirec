@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
-	"time"
+	"sync"
 
 	"go.uber.org/fx"
 
@@ -37,6 +37,12 @@ type Client struct {
 
 	cookiePath       string
 	refreshTokenPath string
+
+	// optional client
+	hlsPlaylistClientOnce sync.Once
+	liveHlsPlaylistClient *resty.Client
+	hlsSegmentClientOnce  sync.Once
+	liveHlsSegmentClient  *resty.Client
 }
 
 func provider(cfg *config.Config, ls fx.Lifecycle) *Client {
@@ -77,18 +83,6 @@ func (c *Client) withLiveStreamClient() *resty.Client {
 			SetDoNotParseResponse(true),
 		"*/*",
 	)
-}
-
-func (c *Client) NewLiveHlsClient() *resty.Client {
-	client := configureLiveClient(resty.New().
-		SetRedirectPolicy(resty.FlexibleRedirectPolicy(10)).
-		SetTimeout(5*time.Second).
-		SetCloseConnection(true),
-		"*/*",
-	)
-	syncCookieToClient(client, c.GetCookies())
-	ensureBuvid3Cookie(client)
-	return client
 }
 
 func configureLiveClient(client *resty.Client, accept string) *resty.Client {

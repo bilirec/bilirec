@@ -1,7 +1,6 @@
 package bilibili
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"slices"
@@ -9,7 +8,6 @@ import (
 
 	"github.com/eric2788/bilirec/pkg/fp"
 	"github.com/eric2788/bilirec/utils"
-	"github.com/go-resty/resty/v2"
 )
 
 type (
@@ -210,28 +208,6 @@ func (c *Client) GetStreamURLsV2(roomID int, opts ...GetStreamURLsOption) ([]Str
 
 	return streamInfos, nil
 }
-
-func (c *Client) FetchLiveStreamUrl(url string) (*resty.Response, error) {
-	return c.DoLiveStream(func(req *resty.Request) (*resty.Response, error) {
-		return req.Get(url)
-	})
-}
-
-func (c *Client) FetchLiveStreamUrlWithCtx(url string, ctx context.Context) (*resty.Response, error) {
-	return c.DoLiveStream(func(req *resty.Request) (*resty.Response, error) {
-		return req.SetContext(ctx).Get(url)
-	})
-}
-
-func (c *Client) FetchM3u8UrlWithCtx(url string, ctx context.Context) (*resty.Response, error) {
-	if _, ok := ctx.Deadline(); !ok {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, 3*time.Second)
-		defer cancel()
-	}
-	return c.NewLiveHlsClient().R().SetContext(ctx).Get(url)
-}
-
 func containFormat(profiles []StreamProfile, format string) bool {
 	return slices.ContainsFunc(profiles, func(profile StreamProfile) bool {
 		switch format {
