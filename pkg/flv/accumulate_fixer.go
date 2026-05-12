@@ -22,8 +22,9 @@ type AccumulateFixer struct {
 	tagCacheSize int
 
 	// 🔥 新增: 去重支持
-	dedupCache *DedupCache
-	dupCount   int64
+	dedupCache   *DedupCache
+	dupCount     int64
+	jumpReporter TimestampJumpReporter
 }
 
 func NewAccumulateFixer(chunkSizeMB int) *AccumulateFixer {
@@ -41,6 +42,12 @@ func NewAccumulateFixer(chunkSizeMB int) *AccumulateFixer {
 		dedupCache:     NewDedupCache(MaxDedupCacheSize, DedupWindowMs), // 🔥 初始化去重
 		dupCount:       0,
 	}
+}
+
+func (af *AccumulateFixer) SetTimestampJumpReporter(reporter TimestampJumpReporter) {
+	af.mu.Lock()
+	defer af.mu.Unlock()
+	af.jumpReporter = reporter
 }
 
 // 🔥 新增: 獲取去重統計
@@ -274,15 +281,38 @@ func (af *AccumulateFixer) fixTimestamps(tags []*Tag) {
 
 	for _, tag := range tags {
 		currentTimestamp := tag.Timestamp
-		diff := currentTimestamp - ts.LastOriginal
+		previousTimestamp := ts.LastOriginal
+		previousOffset := ts.CurrentOffset
+		diff := currentTimestamp - previousTimestamp
+		var jumpWarning *TimestampJumpWarning
 
 		if diff < -JumpThreshold || (ts.LastOriginal == 0 && diff < 0) {
+			jumpWarning = &TimestampJumpWarning{
+				CurrentTimestamp:  currentTimestamp,
+				PreviousTimestamp: previousTimestamp,
+				Delta:             diff,
+				PreviousOffset:    previousOffset,
+				TagType:           tag.Type,
+			}
 			ts.CurrentOffset = currentTimestamp - ts.NextTimestampTarget
 		} else if diff > JumpThreshold {
+			jumpWarning = &TimestampJumpWarning{
+				CurrentTimestamp:  currentTimestamp,
+				PreviousTimestamp: previousTimestamp,
+				Delta:             diff,
+				PreviousOffset:    previousOffset,
+				TagType:           tag.Type,
+			}
 			ts.CurrentOffset = currentTimestamp - ts.NextTimestampTarget
 		}
 
 		ts.LastOriginal = tag.Timestamp
+		if jumpWarning != nil {
+			jumpWarning.AppliedOffset = ts.CurrentOffset
+			if af.jumpReporter != nil {
+				af.jumpReporter(*jumpWarning)
+			}
+		}
 		tag.Timestamp -= ts.CurrentOffset
 	}
 

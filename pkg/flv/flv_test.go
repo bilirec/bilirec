@@ -158,6 +158,90 @@ func TestRealtimeFixer_ClampsNegativeTimestampAfterReset(t *testing.T) {
 	}
 }
 
+func TestRealtimeFixer_ReportsTimestampJump(t *testing.T) {
+	fixer := flv.NewRealtimeFixer()
+	defer fixer.Close()
+
+	var warnings []flv.TimestampJumpWarning
+	fixer.SetTimestampJumpReporter(func(w flv.TimestampJumpWarning) {
+		warnings = append(warnings, w)
+	})
+
+	if _, err := fixer.Fix(flv.FlvHeader); err != nil {
+		t.Fatalf("unexpected header error: %v", err)
+	}
+
+	tag1 := flv.NewTagBytes(flv.TagTypeAudio, []byte{0xaf, 0x01, 0x11})
+	setTimestamp(tag1, 0)
+	tag2 := flv.NewTagBytes(flv.TagTypeAudio, []byte{0xaf, 0x01, 0x22})
+	setTimestamp(tag2, 1200)
+
+	in := make([]byte, 0, flv.PrevTagSizeBytes+len(tag1)+len(tag2))
+	in = append(in, 0, 0, 0, 0)
+	in = append(in, tag1...)
+	in = append(in, tag2...)
+
+	out, err := fixer.Fix(in)
+	if err != nil {
+		t.Fatalf("unexpected fix error: %v", err)
+	}
+
+	if len(warnings) != 1 {
+		t.Fatalf("expected exactly 1 timestamp jump warning, got %d", len(warnings))
+	}
+	if warnings[0].Delta <= flv.JumpThreshold {
+		t.Fatalf("expected jump delta above threshold, got %d", warnings[0].Delta)
+	}
+	if warnings[0].AppliedOffset != 1178 {
+		t.Fatalf("unexpected applied offset: %d", warnings[0].AppliedOffset)
+	}
+
+	firstTagLen := flv.TagHeaderSize + 3 + flv.PrevTagSizeBytes
+	secondHeader := out[firstTagLen : firstTagLen+flv.TagHeaderSize]
+	secondTs := uint32(secondHeader[7])<<24 | uint32(secondHeader[4])<<16 | uint32(secondHeader[5])<<8 | uint32(secondHeader[6])
+	if secondTs != 22 {
+		t.Fatalf("expected repaired timestamp 22ms, got %d", secondTs)
+	}
+}
+
+func TestRealtimeFixer_SkipRotationJumpWarningWhenPreviousIsZero(t *testing.T) {
+	fixer := flv.NewRealtimeFixer()
+	defer fixer.Close()
+
+	var warnings []flv.TimestampJumpWarning
+	fixer.SetTimestampJumpReporter(func(w flv.TimestampJumpWarning) {
+		warnings = append(warnings, w)
+	})
+
+	// Simulate split rotation: new segment starts without FLV header.
+	fixer.ResetTimestampStore()
+
+	tag1 := flv.NewTagBytes(flv.TagTypeAudio, []byte{0xaf, 0x00})
+	setTimestamp(tag1, 0)
+	tag2 := flv.NewTagBytes(flv.TagTypeAudio, []byte{0xaf, 0x01, 0x22})
+	setTimestamp(tag2, 1200)
+
+	in := make([]byte, 0, flv.PrevTagSizeBytes+len(tag1)+len(tag2))
+	in = append(in, 0, 0, 0, 0)
+	in = append(in, tag1...)
+	in = append(in, tag2...)
+
+	if _, err := fixer.Fix(in); err != nil {
+		t.Fatalf("unexpected fix error: %v", err)
+	}
+
+	if len(warnings) != 0 {
+		t.Fatalf("expected no rotation warning for previous=0 case, got %d", len(warnings))
+	}
+}
+
+func setTimestamp(tag []byte, timestamp uint32) {
+	tag[4] = byte(timestamp >> 16)
+	tag[5] = byte(timestamp >> 8)
+	tag[6] = byte(timestamp)
+	tag[7] = byte(timestamp >> 24)
+}
+
 func TestNewTagBytes_BuildsPrevTagSize(t *testing.T) {
 	payload := []byte{0x17, 0x00, 0x00}
 	tag := flv.NewTagBytes(flv.TagTypeVideo, payload)

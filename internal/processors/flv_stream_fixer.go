@@ -42,6 +42,18 @@ func NewFlvStreamFixerWithFixer(fixer *flv.RealtimeFixer) *pipeline.ProcessorInf
 
 func (p *FlvStreamFixerProcessor) Open(ctx context.Context, log *logrus.Entry) error {
 	p.log = log
+	p.fixer.SetTimestampJumpReporter(func(w flv.TimestampJumpWarning) {
+		p.log.Warnf(
+			"FLV timestamp jump detected: current=%dms previous=%dms delta=%dms offset=%d->%d rotation=%v tagType=0x%02x",
+			w.CurrentTimestamp,
+			w.PreviousTimestamp,
+			w.Delta,
+			w.PreviousOffset,
+			w.AppliedOffset,
+			w.IsRotationSegment,
+			w.TagType,
+		)
+	})
 	return nil
 }
 

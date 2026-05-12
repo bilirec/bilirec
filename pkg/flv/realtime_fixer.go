@@ -18,6 +18,7 @@ type RealtimeFixer struct {
 	dedupCache        *DedupCache // 🔥 新增:  去重緩存
 	dupCount          int64       // 🔥 新增: 重複計數
 	lastDedupClean    int32       // timestamp of last dedup clean
+	jumpReporter      TimestampJumpReporter
 }
 
 func NewRealtimeFixer() *RealtimeFixer {
@@ -28,6 +29,12 @@ func NewRealtimeFixer() *RealtimeFixer {
 		dedupCache:     NewDedupCache(MaxDedupCacheSize, DedupWindowMs), // 🔥 初始化去重
 		dupCount:       0,
 	}
+}
+
+func (rf *RealtimeFixer) SetTimestampJumpReporter(reporter TimestampJumpReporter) {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+	rf.jumpReporter = reporter
 }
 
 // 🔥 新增: 獲取去重統計
@@ -276,6 +283,10 @@ func (rf *RealtimeFixer) compactBufferIfNeeded() {
 func (rf *RealtimeFixer) fixTimestamp(tag *Tag) {
 	ts := rf.tsStore
 	currentTimestamp := tag.Timestamp
+	previousTimestamp := ts.LastOriginal
+	previousOffset := ts.CurrentOffset
+	wasFirstChunk := ts.FirstChunk
+	var jumpWarning *TimestampJumpWarning
 
 	// First chunk special handling
 	if ts.FirstChunk {
@@ -283,16 +294,42 @@ func (rf *RealtimeFixer) fixTimestamp(tag *Tag) {
 		ts.CurrentOffset = currentTimestamp
 	}
 
-	diff := currentTimestamp - ts.LastOriginal
+	diff := currentTimestamp - previousTimestamp
 
 	// Detect timestamp jump
 	if diff < -JumpThreshold || (ts.LastOriginal == 0 && diff < 0) {
+		jumpWarning = &TimestampJumpWarning{
+			CurrentTimestamp:  currentTimestamp,
+			PreviousTimestamp: previousTimestamp,
+			Delta:             diff,
+			PreviousOffset:    previousOffset,
+			IsRotationSegment: rf.isRotationSegment,
+			TagType:           tag.Type,
+		}
 		ts.CurrentOffset = currentTimestamp - ts.NextTimestampTarget
 	} else if diff > JumpThreshold {
+		jumpWarning = &TimestampJumpWarning{
+			CurrentTimestamp:  currentTimestamp,
+			PreviousTimestamp: previousTimestamp,
+			Delta:             diff,
+			PreviousOffset:    previousOffset,
+			IsRotationSegment: rf.isRotationSegment,
+			TagType:           tag.Type,
+		}
 		ts.CurrentOffset = currentTimestamp - ts.NextTimestampTarget
 	}
 
 	ts.LastOriginal = currentTimestamp
+	if jumpWarning != nil {
+		jumpWarning.AppliedOffset = ts.CurrentOffset
+		// Skip reporting for the very first tag only.
+		// Also suppress reset-transition false positives where the previous timestamp is 0ms
+		// (e.g., carried config/header tags followed by a large live timestamp).
+		skipTransientResetJump := rf.isRotationSegment && jumpWarning.PreviousTimestamp == 0 && ts.NextTimestampTarget > 0
+		if rf.jumpReporter != nil && !wasFirstChunk && !skipTransientResetJump {
+			rf.jumpReporter(*jumpWarning)
+		}
+	}
 
 	// Apply offset
 	tag.Timestamp -= ts.CurrentOffset

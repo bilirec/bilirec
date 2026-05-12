@@ -21,9 +21,9 @@ const (
 
 	// slowSyncWarnThreshold warns when fsync takes too long.
 	// This is only used if periodic sync is enabled (syncPeriod > 0).
-	// For microSD: warns if fsync > 800ms (card is struggling).
+	// For microSD: warns if fsync > 1200ms (card is struggling).
 	// For HDD: consider lowering to 200ms (HDDs should sync very fast).
-	slowSyncWarnThreshold = 800 * time.Millisecond
+	slowSyncWarnThreshold = 1200 * time.Millisecond
 
 	// Default number of data chunks that can be queued before Process blocks.
 	defaultChanBufferSize = 256
@@ -62,7 +62,7 @@ type BufferedStreamWriterProcessor struct {
 }
 
 // globalFlushMu is used to serialize flushes across multiple instances when sequentialWrite is enabled.
-// in MicroSD card scenarios, concurrent flushes can cause significant performance degradation, 
+// in MicroSD card scenarios, concurrent flushes can cause significant performance degradation,
 // so this global lock ensures that only one flush/write operation happens at a time across all BufferedStreamWriterProcessor instances.
 var globalFlushMu sync.Mutex
 

@@ -103,6 +103,18 @@ type TimestampStore struct {
 	NextTimestampTarget int32
 }
 
+type TimestampJumpWarning struct {
+	CurrentTimestamp  int32
+	PreviousTimestamp int32
+	Delta             int32
+	AppliedOffset     int32
+	PreviousOffset    int32
+	IsRotationSegment bool
+	TagType           byte
+}
+
+type TimestampJumpReporter func(TimestampJumpWarning)
+
 func (ts *TimestampStore) Reset() {
 	ts.FirstChunk = true
 	ts.LastOriginal = 0
