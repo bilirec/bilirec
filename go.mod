@@ -9,6 +9,7 @@ require (
 	github.com/gofiber/fiber/v3 v3.0.0-rc.3
 	github.com/jellydator/ttlcache/v3 v3.4.0
 	github.com/joho/godotenv v1.5.1
+	github.com/grafov/m3u8 v0.12.1
 	github.com/puzpuzpuz/xsync/v4 v4.2.0
 	github.com/shirou/gopsutil/v4 v4.26.2
 	github.com/stretchr/testify v1.11.1
