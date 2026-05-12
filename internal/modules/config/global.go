@@ -36,7 +36,7 @@ func (g *GlobalReadOnly) LiveStreamWriterBufferSize() int {
 }
 
 func (g *GlobalReadOnly) LiveStreamWriterSyncPeriodSecs() int {
-	if g.config.liveStreamWriterSyncPeriod <= 0 {
+	if g.config.liveStreamWriterSyncPeriod < 0 {
 		return defaultLiveStreamWriterSyncPeriodSecs
 	}
 	return g.config.liveStreamWriterSyncPeriod
@@ -134,7 +134,7 @@ func (g *GlobalReadOnly) Validate() {
 	if g.config.FFmpegAllowDuringRecordingMaxActiveRecordings < 1 {
 		logger.Debugf("FFMPEG_ALLOW_DURING_RECORDING_MAX_ACTIVE_RECORDINGS is %d, threshold disabled (no active-recordings limit)", g.config.FFmpegAllowDuringRecordingMaxActiveRecordings)
 	}
-	if g.config.liveStreamWriterSyncPeriod <= 0 {
+	if g.config.liveStreamWriterSyncPeriod < 0 {
 		logger.Warnf("LIVE_STREAM_WRITER_SYNC_PERIOD_SECS is invalid (%d), using default %d seconds", g.config.liveStreamWriterSyncPeriod, defaultLiveStreamWriterSyncPeriodSecs)
 	}
 	if g.config.liveStreamWriterFlushPeriod <= 0 {
