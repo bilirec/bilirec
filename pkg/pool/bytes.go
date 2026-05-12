@@ -16,32 +16,19 @@ func NewBytesPool(bufferSize int) *BytesPool {
 		BufferSize: bufferSize,
 		Pool: &sync.Pool{
 			New: func() any {
-				buf := make([]byte, bufferSize)
-				return &buf
+				return make([]byte, bufferSize)
 			},
 		},
 	}
 }
 
 func (p *BytesPool) GetBytes() []byte {
-	return *p.GetBytesPtr()
+	return p.Get().([]byte)
 }
 
 func (p *BytesPool) PutBytes(buf []byte) {
-	p.PutBytesPtr(&buf)
-}
-
-func (p *BytesPool) GetBytesPtr() *[]byte {
-	return p.Pool.Get().(*[]byte)
-}
-
-func (p *BytesPool) PutBytesPtr(buf *[]byte) {
-	if buf == nil {
+	if buf == nil || cap(buf) != p.BufferSize {
 		return
 	}
-	if cap(*buf) != p.BufferSize {
-		return
-	}
-	*buf = (*buf)[:cap(*buf)]
-	p.Pool.Put(buf)
+	p.Pool.Put(buf[:cap(buf)])
 }
