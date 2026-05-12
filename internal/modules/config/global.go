@@ -67,6 +67,10 @@ func (g *GlobalReadOnly) SkipSmallFlush() bool {
 	return g.config.skipSmallFlush
 }
 
+func (g *GlobalReadOnly) SequentialWrite() bool {
+	return g.config.sequentialWrite
+}
+
 func (g *GlobalReadOnly) RestAuthEnabled() bool {
 	return g.config.Username != "" && g.config.PasswordHash != ""
 }

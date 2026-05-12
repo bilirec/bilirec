@@ -1,6 +1,7 @@
 package processors_test
 
 import (
+	"bufio"
 	"context"
 	"crypto/rand"
 	"os"
@@ -528,6 +529,7 @@ func TestBufferedStreamWriter_NoSDCardProtection_AlwaysFlushes(t *testing.T) {
 }
 
 func init() {
+	_ = bufio.NewWriter(nil)
 	// Set log level to warn to reduce noise in tests
 	logrus.SetLevel(logrus.WarnLevel)
 }

@@ -41,6 +41,7 @@ func (s *HlsFmp4Strategy) BuildPipeline(ctx context.Context, outputPath string, 
 			processors.WithChanBufferSize(config.ReadOnly.LiveStreamWriterChanBufferSize()),
 			processors.WithBytesPool(getWriterBytesPool()),
 			processors.WithSDCardProtection(config.ReadOnly.SkipSmallFlush()),
+			processors.WithSequentialWrite(config.ReadOnly.SequentialWrite()),
 		),
 	)
 	return pipe, nil

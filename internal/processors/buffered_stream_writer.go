@@ -1,14 +1,16 @@
 package processors
 
 import (
-	"bufio"
 	"context"
+	"hash/fnv"
 	"os"
 	"sync"
 	"time"
 
 	"github.com/eric2788/bilirec/pkg/pipeline"
 	"github.com/eric2788/bilirec/pkg/pool"
+	"github.com/eric2788/bilirec/pkg/rw"
+	"github.com/eric2788/bilirec/utils"
 	"github.com/sirupsen/logrus"
 )
 
@@ -31,6 +33,12 @@ const (
 	defaultFlushPeriod = 15 * time.Second
 )
 
+// noOpLocker is a dummy locker that does nothing. Used when sequential write is disabled.
+type noOpLocker struct{}
+
+func (n *noOpLocker) Lock()   {}
+func (n *noOpLocker) Unlock() {}
+
 type BufferedStreamWriterProcessor struct {
 	file             *os.File
 	path             string
@@ -39,7 +47,8 @@ type BufferedStreamWriterProcessor struct {
 	syncPeriod       time.Duration
 	flushPeriod      time.Duration
 	sdcardProtection bool
-	writer           *bufio.Writer
+	sequentialWrite  bool
+	writer           *rw.FlushLockedBufferedWriter
 	logger           *logrus.Entry
 
 	dataCh       chan []byte
@@ -52,6 +61,11 @@ type BufferedStreamWriterProcessor struct {
 	bytesPool *pool.BytesPool
 }
 
+// globalFlushMu is used to serialize flushes across multiple instances when sequentialWrite is enabled.
+// in MicroSD card scenarios, concurrent flushes can cause significant performance degradation, 
+// so this global lock ensures that only one flush/write operation happens at a time across all BufferedStreamWriterProcessor instances.
+var globalFlushMu sync.Mutex
+
 type BufferedStreamWriterOptions = func(*BufferedStreamWriterProcessor)
 
 func NewBufferedStreamWriter(path string, opts ...BufferedStreamWriterOptions) *pipeline.ProcessorInfo[[]byte] {
@@ -62,6 +76,7 @@ func NewBufferedStreamWriter(path string, opts ...BufferedStreamWriterOptions) *
 		syncPeriod:       45 * time.Second,
 		flushPeriod:      defaultFlushPeriod,
 		sdcardProtection: false,
+		sequentialWrite:  false,
 	}
 	processor.applyOptions(opts...)
 	if processor.bytesPool == nil {
@@ -80,7 +95,14 @@ func (w *BufferedStreamWriterProcessor) Open(ctx context.Context, log *logrus.En
 		return err
 	}
 	w.file = file
-	w.writer = bufio.NewWriterSize(file, w.bufferSize)
+
+	flushLocker := utils.TernaryFunc(
+		w.sequentialWrite,
+		func() sync.Locker { return &globalFlushMu },
+		func() sync.Locker { return &noOpLocker{} },
+	)
+
+	w.writer = rw.NewFlushLockedBufferedWriter(file, w.bufferSize, flushLocker)
 	w.logger = log.WithField("file", file.Name())
 	w.dataCh = make(chan []byte, w.chanBufferSize)
 
@@ -146,9 +168,9 @@ func (w *BufferedStreamWriterProcessor) Close() error {
 // When dataCh is closed by Close(), it drains any remaining queued data before returning
 // so Close can perform a final flush+sync safely.
 func (w *BufferedStreamWriterProcessor) writePeriodically() {
-	flushTicker := time.NewTicker(w.flushPeriod)
+	flushTimer := time.NewTimer(w.flushPeriod + w.flushJitter())
 	defer w.wait.Done()
-	defer flushTicker.Stop()
+	defer flushTimer.Stop()
 
 	for {
 		select {
@@ -175,7 +197,7 @@ func (w *BufferedStreamWriterProcessor) writePeriodically() {
 			if w.bytesPool != nil {
 				w.bytesPool.PutBytes(data)
 			}
-		case <-flushTicker.C:
+		case <-flushTimer.C:
 			flushStart := time.Now()
 			if err := w.writer.Flush(); err != nil {
 				w.logger.Warnf("error flushing writer: %v", err)
@@ -183,8 +205,24 @@ func (w *BufferedStreamWriterProcessor) writePeriodically() {
 			if flushCost := time.Since(flushStart); flushCost > defaultSlowFlushWarnThreshold {
 				w.logger.Warnf("slow periodic flush: cost=%s", flushCost)
 			}
+			flushTimer.Reset(w.flushPeriod)
 		}
 	}
+}
+
+// flushJitter returns a deterministic per-file flush phase offset to reduce
+// synchronized flush bursts when multiple streams start around the same time.
+func (w *BufferedStreamWriterProcessor) flushJitter() time.Duration {
+	if w.flushPeriod <= 1*time.Second {
+		return 0
+	}
+	maxJitter := w.flushPeriod / 2
+	if maxJitter <= 0 {
+		return 0
+	}
+	h := fnv.New64a()
+	_, _ = h.Write([]byte(w.path))
+	return time.Duration(h.Sum64() % uint64(maxJitter))
 }
 
 // syncWorker handles periodic fsync operations in a separate goroutine to avoid
@@ -272,5 +310,15 @@ func WithChanBufferSize(size int) BufferedStreamWriterOptions {
 func WithBytesPool(bp *pool.BytesPool) BufferedStreamWriterOptions {
 	return func(p *BufferedStreamWriterProcessor) {
 		p.bytesPool = bp
+	}
+}
+
+// WithSequentialWrite enables global flush locking to serialize all flush/write
+// operations across multiple BufferedStreamWriterProcessor instances. This is useful
+// when multiple streams write to the same physical disk and you want to prevent
+// simultaneous flush bursts from causing I/O peaks. Default is disabled (no locking).
+func WithSequentialWrite(enabled bool) BufferedStreamWriterOptions {
+	return func(p *BufferedStreamWriterProcessor) {
+		p.sequentialWrite = enabled
 	}
 }

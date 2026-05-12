@@ -90,7 +90,7 @@ docker run -d \
 | ------- | ---- | ------ |
 | `ANONYMOUS_LOGIN` | 是否使用匿名登录 | `false` |
 | `PORT` | API 服务端口 | `8080` |
-| `MAX_CONCURRENT_RECORDINGS` | 最大同时录制数 | `1` |
+| `MAX_CONCURRENT_RECORDINGS` | 最大同时录制数 | `3` |
 | `MAX_RECORDING_HOURS` | 单次录制最长时间（小时） | `5` |
 | `MAX_RECOVERY_ATTEMPTS` | 单次录制的最大重连尝试次数 | `5` |
 | `MAX_RETRY_MINUTES` | 直播中断后判断是否仍在直播的最长容忍时间（分钟） | `10` |
@@ -127,6 +127,7 @@ docker run -d \
 | `LIVE_STREAM_WRITER_CHAN_BUFFER_SIZE` | 实时流写入器通道缓冲区大小（数据块数）；更大的值可容忍写入延迟突变，但会增加内存占用 | `64` |
 | `LIVE_STREAM_WRITER_BYTES_POOL_SIZE` | 实时流写入器内存池的单个缓冲区大小（字节）；应与实际流 chunk 大小相匹配 | `524288` (512 KB) |
 | `SKIP_SMALL_FLUSH` | 启用 microSD 磨损保护：若录制总写入量低于缓冲区大小则跳过 flush，避免写入小块数据（特别是低比特率流） | `true` |
+| `SEQUENTIAL_WRITE` | 启用全局 flush 锁以序列化多路录制的写入操作；仅在多路并发录制写入同一物理磁盘时建议启用，可显著降低 I/O 峰值 | `true` |
 | `MIN_DISK_SPACE_BYTES` | 录制所需的最小磁盘空间（字节），低于此值将拒绝新录制任务 | `5368709120` (5 GB) |
 
 ### 示例配置
@@ -134,7 +135,7 @@ docker run -d \
 ```bash
 export ANONYMOUS_LOGIN=false
 export PORT=8080
-export MAX_CONCURRENT_RECORDINGS=1
+export MAX_CONCURRENT_RECORDINGS=3
 export MAX_RECORDING_HOURS=10
 export MAX_RECOVERY_ATTEMPTS=5
 export MAX_RETRY_MINUTES=10
@@ -189,7 +190,8 @@ Bilirec 当前默认配置已针对树莓派 4B + microSD 场景优化，在“�
 | `LIVE_STREAM_WRITER_CHAN_BUFFER_SIZE=64` | 控制在途内存占用。以 512KB chunk 估算，单录制任务约 32MB 队列数据；比 128（约 64MB）更适合 4GB 设备。 |
 | `SKIP_SMALL_FLUSH=true` | **启用小块跳过保护**，若录制总写入量 < 缓冲区大小则跳过 flush。特别有效于低比特率流（如 240p），防止多次小块写入磨损。 |
 | `LIVE_STREAM_WRITER_BYTES_POOL_SIZE=524288` (512KB) | 与常见 stream chunk 大小一致，减少额外分配与拷贝。 |
-| `MAX_CONCURRENT_RECORDINGS=1` | 保守并发上限，直接限制 RAM 峰值。 |
+| `SEQUENTIAL_WRITE=true` | **启用全局 flush 锁**，序列化多路录制的写入操作，多路并发时有效降低 I/O 峰值; 默认启用以保护 microSD。 |
+| `MAX_CONCURRENT_RECORDINGS=3` | 保守并发上限，直接限制 RAM 峰值。 |
 
 容器运行时默认值也同步为树莓派 4B 取向：`GOMEMLIMIT=768MiB`、`GOGC=100`。
 
@@ -210,15 +212,16 @@ export MAX_CONCURRENT_RECORDINGS=5              # 视 CPU/磁盘性能再提高
 
 | 场景 | 建议 |
 | ---- | ---- |
-| HDD/SSD + 更高可靠性 | 开启 `LIVE_STREAM_WRITER_SYNC_PERIOD_SECS=30~45` |
-| HDD/SSD + 更高吞吐 | 提高 `LIVE_STREAM_WRITER_CHAN_BUFFER_SIZE` 到 `128` 或更高 |
+| HDD/SSD + 更高可靠性 | 开启 `LIVE_STREAM_WRITER_SYNC_PERIOD_SECS=30~45` 和 `SEQUENTIAL_WRITE=true`（多路时） |
+| HDD/SSD + 更高吞吐 | 提高 `LIVE_STREAM_WRITER_CHAN_BUFFER_SIZE` 到 `128` 或更高；禁用 `SEQUENTIAL_WRITE` 若 I/O 阻塞明显 |
 | 仍遇到内存压力 | 优先降低 `MAX_CONCURRENT_RECORDINGS`，再调小 `LIVE_STREAM_WRITER_CHAN_BUFFER_SIZE` |
 
-**注意**：如果你使用高性能存储（NVME/SSD）或需要更高可靠性，可以恢复周期性 sync：
+**注意**：如果你使用高性能存储（NVME/SSD）或需要更高可靠性，可以恢复周期性 sync 和禁用写入序列化：
 
 ```bash
 export LIVE_STREAM_WRITER_SYNC_PERIOD_SECS=45
 export SKIP_SMALL_FLUSH=false
+export SEQUENTIAL_WRITE=false
 ```
 
 ## 使用方法

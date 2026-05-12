@@ -34,6 +34,7 @@ func (s *HlsTsStrategy) BuildPipeline(ctx context.Context, outputPath string, st
 			processors.WithChanBufferSize(config.ReadOnly.LiveStreamWriterChanBufferSize()),
 			processors.WithBytesPool(getWriterBytesPool()),
 			processors.WithSDCardProtection(config.ReadOnly.SkipSmallFlush()),
+			processors.WithSequentialWrite(config.ReadOnly.SequentialWrite()),
 		),
 	)
 	return pipe, nil

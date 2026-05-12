@@ -62,6 +62,7 @@ type Config struct {
 	liveStreamWriterChanBufferSize int
 	liveStreamWriterBytesPoolSize  int
 	skipSmallFlush                 bool
+	sequentialWrite                bool
 }
 
 var logger = logrus.WithField("module", "config")
@@ -105,7 +106,7 @@ func provider(lc fx.Lifecycle) (*Config, error) {
 	c := &Config{
 		AnonymousLogin:                     os.Getenv("ANONYMOUS_LOGIN") == "true",
 		Port:                               utils.EmptyOrElse(os.Getenv("PORT"), "8080"),
-		MaxConcurrentRecordings:            utils.MustAtoi(utils.EmptyOrElse(os.Getenv("MAX_CONCURRENT_RECORDINGS"), "1")),
+		MaxConcurrentRecordings:            utils.MustAtoi(utils.EmptyOrElse(os.Getenv("MAX_CONCURRENT_RECORDINGS"), "3")),
 		MaxRecordingHours:                  utils.MustAtoi(utils.EmptyOrElse(os.Getenv("MAX_RECORDING_HOURS"), "5")),
 		MaxRecoveryAttempts:                utils.MustAtoi(utils.EmptyOrElse(os.Getenv("MAX_RECOVERY_ATTEMPTS"), "5")),
 		MaxRetryMinutes:                    utils.MustAtoi(utils.EmptyOrElse(os.Getenv("MAX_RETRY_MINUTES"), "10")),
@@ -145,6 +146,7 @@ func provider(lc fx.Lifecycle) (*Config, error) {
 		liveStreamWriterChanBufferSize: utils.MustAtoi(utils.EmptyOrElse(os.Getenv("LIVE_STREAM_WRITER_CHAN_BUFFER_SIZE"), "64")),    // default 64: limits in-flight memory while still tolerating write latency bursts
 		liveStreamWriterBytesPoolSize:  utils.MustAtoi(utils.EmptyOrElse(os.Getenv("LIVE_STREAM_WRITER_BYTES_POOL_SIZE"), "524288")), // 512KB per buffer
 		skipSmallFlush:                 os.Getenv("SKIP_SMALL_FLUSH") != "false",                                                     // enabled by default; skip flush if total written < buffer size, reducing SD card wear on low-bitrate streams
+		sequentialWrite:                os.Getenv("SEQUENTIAL_WRITE") != "false",                                                     // enabled by default; set false to disable global flush serialization
 	}
 
 	ReadOnly = &GlobalReadOnly{config: c}
