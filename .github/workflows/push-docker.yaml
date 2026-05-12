@@ -45,6 +45,8 @@ jobs:
         id: test
         continue-on-error: true
         uses: robherley/go-test-action@v0
+        with:
+          testArguments: './... -timeout 2h'
 
   publish_docker:
     needs: [ test_program ]

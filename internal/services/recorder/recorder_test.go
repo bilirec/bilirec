@@ -18,6 +18,7 @@ import (
 	"github.com/eric2788/bilirec/internal/services/recorder"
 	"github.com/eric2788/bilirec/internal/services/stream"
 	"github.com/eric2788/bilirec/internal/testutil"
+	"github.com/eric2788/bilirec/utils"
 	"github.com/sirupsen/logrus"
 	"go.uber.org/fx"
 	"go.uber.org/fx/fxtest"
@@ -64,7 +65,7 @@ func TestFlvRecord(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	<-time.After(30 * time.Second)
+	<-time.After(time.Duration(utils.Ternary(os.Getenv("CI") != "", 15, 3)) * time.Minute)
 	outputPath := waitForOutputPath(t, recorderService, room, 3*time.Second)
 
 	runtime.ReadMemStats(&m2)
@@ -129,7 +130,7 @@ func TestTsRecord(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	<-time.After(30 * time.Second)
+	<-time.After(time.Duration(utils.Ternary(os.Getenv("CI") != "", 15, 3)) * time.Minute)
 	outputPath := waitForOutputPath(t, recorderService, room, 3*time.Second)
 
 	runtime.ReadMemStats(&m2)
@@ -194,7 +195,7 @@ func TestFmp4Record(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	<-time.After(30 * time.Second)
+	<-time.After(time.Duration(utils.Ternary(os.Getenv("CI") != "", 15, 3)) * time.Minute)
 	outputPath := waitForOutputPath(t, recorderService, room, 3*time.Second)
 
 	runtime.ReadMemStats(&m2)
