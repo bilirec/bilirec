@@ -53,26 +53,24 @@ func TestFlvRecord(t *testing.T) {
 	t.Log("start it manually")
 	err := recorderService.Start(room, recorder.WithStreamProfile(bilibili.ProfileHTTPFLV))
 	if err != nil {
-		if err == recorder.ErrStreamNotLive {
-			t.Skip(err)
+		switch err {
+		case recorder.ErrStreamNotLive:
+			t.Skip("Stream not live")
+		case recorder.ErrEmptyStreamURLs:
+			t.Skip("No stream URLs available")
+		case recorder.ErrStreamURLsUnreachable:
+			t.Skip("Stream URLs unreachable")
 		}
 		t.Fatal(err)
 	}
 
 	<-time.After(30 * time.Second)
+	outputPath := waitForOutputPath(t, recorderService, room, 3*time.Second)
 
 	runtime.ReadMemStats(&m2)
 
 	t.Log("stop it manually")
 	t.Logf("stop success: %v", recorderService.Stop(room))
-
-	// Get recording stats before file finalization
-	<-time.After(1 * time.Second)
-	stats, hasStats := recorderService.GetStats(room)
-	outputPath := ""
-	if hasStats && stats != nil {
-		outputPath = stats.OutputPath
-	}
 
 	<-time.After(5 * time.Second)
 	runtime.ReadMemStats(&m3)
@@ -132,19 +130,12 @@ func TestTsRecord(t *testing.T) {
 	}
 
 	<-time.After(30 * time.Second)
+	outputPath := waitForOutputPath(t, recorderService, room, 3*time.Second)
 
 	runtime.ReadMemStats(&m2)
 
 	t.Log("stop it manually")
 	t.Logf("stop success: %v", recorderService.Stop(room))
-
-	// Get recording stats before file finalization
-	<-time.After(1 * time.Second)
-	stats, hasStats := recorderService.GetStats(room)
-	outputPath := ""
-	if hasStats && stats != nil {
-		outputPath = stats.OutputPath
-	}
 
 	<-time.After(5 * time.Second)
 	runtime.ReadMemStats(&m3)
@@ -204,19 +195,12 @@ func TestFmp4Record(t *testing.T) {
 	}
 
 	<-time.After(30 * time.Second)
+	outputPath := waitForOutputPath(t, recorderService, room, 3*time.Second)
 
 	runtime.ReadMemStats(&m2)
 
 	t.Log("stop it manually")
 	t.Logf("stop success: %v", recorderService.Stop(room))
-
-	// Get recording stats before file finalization
-	<-time.After(1 * time.Second)
-	stats, hasStats := recorderService.GetStats(room)
-	outputPath := ""
-	if hasStats && stats != nil {
-		outputPath = stats.OutputPath
-	}
 
 	<-time.After(5 * time.Second)
 	runtime.ReadMemStats(&m3)
@@ -359,6 +343,19 @@ func TestInfoOutputPath_AtomicConcurrentReadWrite(t *testing.T) {
 	}
 }
 
+func waitForOutputPath(t *testing.T, recorderService *recorder.Service, room int, timeout time.Duration) string {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		stats, hasStats := recorderService.GetStats(room)
+		if hasStats && stats != nil && stats.OutputPath != "" {
+			return stats.OutputPath
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	t.Log("output path still empty before stop")
+	return ""
+}
+
 // checkFFmpegAvailable checks if ffmpeg and ffprobe are available in the system PATH
 func checkFFmpegAvailable(t *testing.T) bool {
 	// Check for ffprobe
@@ -388,12 +385,15 @@ type ffprobeStreamInfo struct {
 	StartTime  string `json:"start_time"`
 	Width      int    `json:"width,omitempty"`
 	Height     int    `json:"height,omitempty"`
-	SampleRate int    `json:"sample_rate,omitempty"`
+	SampleRate string `json:"sample_rate,omitempty"`
 	Channels   int    `json:"channels,omitempty"`
 }
 
 // ffprobeOutput represents the output structure from ffprobe
 type ffprobeOutput struct {
+	Format struct {
+		Duration string `json:"duration"`
+	} `json:"format"`
 	Streams []ffprobeStreamInfo `json:"streams"`
 }
 
@@ -430,59 +430,44 @@ func verifyRecordingPlayability(t *testing.T, filePath string, expectedFormat st
 		"-v", "error",
 		"-show_format",
 		"-show_streams",
-		"-print_section", "FORMAT=json",
-		"-print_section", "STREAM=json",
+		"-of", "json",
 		filePath,
 	)
 
 	var stdout bytes.Buffer
+	var stderr bytes.Buffer
 	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
 
 	if err := cmd.Run(); err != nil {
-		t.Logf("⚠️ ffprobe verification skipped (playability check not available): %v", err)
+		t.Logf("⚠️ ffprobe verification skipped: %v, stderr: %s", err, stderr.String())
 		return
 	}
 
-	// Parse multiple JSON objects (format + streams)
-	decoder := json.NewDecoder(bytes.NewReader(stdout.Bytes()))
+	// Parse ffprobe JSON output
+	var probe ffprobeOutput
+	if err := json.Unmarshal(stdout.Bytes(), &probe); err != nil {
+		t.Logf("⚠️ Failed to parse ffprobe JSON: %v, output: %s", err, stdout.String())
+		return
+	}
+
 	hasVideo := false
 	hasAudio := false
 
-	for decoder.More() {
-		var data map[string]interface{}
-		if err := decoder.Decode(&data); err != nil {
-			t.Logf("⚠️ Failed to parse ffprobe output: %v", err)
-			continue
-		}
+	if durationFloat, err := parseFloatDuration(probe.Format.Duration); err == nil {
+		mins := int(durationFloat) / 60
+		secs := int(durationFloat) % 60
+		t.Logf("  - Duration: %d:%02d", mins, secs)
+	}
 
-		// Check if this is a format object (contains duration)
-		if durationVal, ok := data["duration"].(string); ok {
-			// Parse duration and format it as MM:SS
-			if durationFloat, err := parseFloatDuration(durationVal); err == nil {
-				mins := int(durationFloat) / 60
-				secs := int(durationFloat) % 60
-				t.Logf("  Duration: %d:%02d", mins, secs)
-			}
-		}
-
-		// Check if this is a stream object
-		if codecType, ok := data["codec_type"].(string); ok {
-			switch codecType {
-			case "video":
-				hasVideo = true
-				if width, ok := data["width"].(float64); ok {
-					if height, okH := data["height"].(float64); okH {
-						t.Logf("  - Video stream: %dx%d %v", int(width), int(height), data["codec_name"])
-					}
-				}
-			case "audio":
-				hasAudio = true
-				if channels, ok := data["channels"].(float64); ok {
-					if sampleRate, okS := data["sample_rate"].(float64); okS {
-						t.Logf("  - Audio stream: %d ch, %d Hz %v", int(channels), int(sampleRate), data["codec_name"])
-					}
-				}
-			}
+	for _, stream := range probe.Streams {
+		switch stream.CodecType {
+		case "video":
+			hasVideo = true
+			t.Logf("  - Video stream: %dx%d %s", stream.Width, stream.Height, stream.CodecName)
+		case "audio":
+			hasAudio = true
+			t.Logf("  - Audio stream: %d ch, %s Hz %s", stream.Channels, stream.SampleRate, stream.CodecName)
 		}
 	}
 
@@ -512,6 +497,7 @@ func verifyRecordingPlayability(t *testing.T, filePath string, expectedFormat st
 func init() {
 	if os.Getenv("CI") != "" {
 		os.Setenv("ANONYMOUS_LOGIN", "true")
+		os.Setenv("SKIP_SMALL_FLUSH", "false")
 	}
 	logrus.SetLevel(logrus.DebugLevel)
 }

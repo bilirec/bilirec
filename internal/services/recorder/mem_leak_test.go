@@ -15,6 +15,7 @@ import (
 	"github.com/eric2788/bilirec/internal/services/recorder"
 	"github.com/eric2788/bilirec/internal/services/stream"
 	"github.com/eric2788/bilirec/internal/testutil"
+	"github.com/sirupsen/logrus"
 	"go.uber.org/fx"
 	"go.uber.org/fx/fxtest"
 )
@@ -87,8 +88,13 @@ func TestRecorder_MemoryLeak_SingleSession(t *testing.T) {
 	// Phase 2: Start recording
 	err := startMemLeakRecording(t, recorderService, roomID)
 	if err != nil {
-		if err == recorder.ErrStreamNotLive {
-			t.Skip("Stream not live, skipping test")
+		switch err {
+		case recorder.ErrStreamNotLive:
+			t.Skip("Stream not live")
+		case recorder.ErrEmptyStreamURLs:
+			t.Skip("No stream URLs available")
+		case recorder.ErrStreamURLsUnreachable:
+			t.Skip("Stream URLs unreachable")
 		}
 		t.Fatalf("Failed to start recording:  %v", err)
 	}
@@ -498,5 +504,7 @@ func TestRecorder_Goroutine_Leak(t *testing.T) {
 func init() {
 	if os.Getenv("CI") != "" {
 		os.Setenv("ANONYMOUS_LOGIN", "true")
+		os.Setenv("SKIP_SMALL_FLUSH", "false")
 	}
+	logrus.SetLevel(logrus.DebugLevel)
 }
