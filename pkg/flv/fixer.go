@@ -62,6 +62,9 @@ var (
 	headerBytesPool = pool.NewBytesPool(TagHeaderSize)
 	smallBytesPool  = pool.NewBytesPool(PrevTagSizeBytes)
 
+	// 🔥 新增: TagData 變長切片池 (256KB ~ 16MB)
+	tagDataSlicePool = pool.NewBytesSlicePool(256*1024, 16*1024*1024)
+
 	// 🔥 新增: hash 計算器池
 	hasherPool = sync.Pool{
 		New: func() any {

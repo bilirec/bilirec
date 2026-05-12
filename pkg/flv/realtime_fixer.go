@@ -119,8 +119,8 @@ func (rf *RealtimeFixer) Fix(input []byte) ([]byte, error) {
 			break
 		}
 
-		// 🔥 優化: 複用 tag 對象但數據還是要拷貝 (因為會被修改)
-		tagData := make([]byte, dataSize)
+		// 🔥 優化: 從 pool 取得指定長度的 tagData 切片
+		tagData := tagDataSlicePool.GetSized(int(dataSize))
 		rf.buffer.Read(tagData)
 
 		// Parse timestamp (24bit + 8bit extended)
@@ -154,6 +154,8 @@ func (rf *RealtimeFixer) Fix(input []byte) ([]byte, error) {
 		// 🔥 新增: 去重檢查 (在修復時間戳之前)
 		if rf.dedupCache.IsDuplicate(tag) {
 			rf.dupCount++
+			// 回收 tagData 到 pool
+			tagDataSlicePool.Put(tagData)
 			tag.Reset() // clear Data and other fields before pooling
 			tagPool.Put(tag)
 			continue // 跳過重複的 tag
@@ -164,12 +166,15 @@ func (rf *RealtimeFixer) Fix(input []byte) ([]byte, error) {
 
 		// Write fixed tag
 		if err := writeTagOptimized(output, tag); err != nil {
+			// 回收 tagData 到 pool
+			tagDataSlicePool.Put(tagData)
 			output.Reset()
 			realtimeBufferPool.Put(output)
 			return nil, err
 		}
 
-		// 🔥 優化:  返還 tag 到 pool (但保留 Data 因為已經寫入)
+		// 🔥 優化:  返還 tagData 到 pool (在清空 tag 引用之前)
+		tagDataSlicePool.Put(tagData)
 		tag.Reset()
 		tagPool.Put(tag)
 	}
