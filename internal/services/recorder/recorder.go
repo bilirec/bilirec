@@ -444,6 +444,7 @@ func (r *Service) rotate(roomId int, ch <-chan []byte, strategy rs.StreamRecordS
 }
 
 func (r *Service) rev(roomId int, ch <-chan []byte, info *Info, ctx context.Context, pipe *pipeline.Pipe[[]byte]) error {
+	log := logger.WithField("room", roomId)
 	defer func() {
 		pipe.Close()
 		outputPath := info.OutputPath()
@@ -459,7 +460,9 @@ func (r *Service) rev(roomId int, ch <-chan []byte, info *Info, ctx context.Cont
 			//   0B    — split at chunk boundary, no carried bytes (most common, harmless)
 			//   ~4.6KB — carried bytes from a rotation split; replayed into next segment, not lost
 			// At 6 Mbps, 5000B ≈ 6 ms ≈ <0.25 frame at 60 fps — imperceptible in recordings.
-			logger.WithField("room", roomId).Warnf("abandoned flv stream chunk: %dB", len(result))
+			if len(result) > 0 {
+				log.Warnf("abandoned flv stream chunk: %dB", len(result))
+			}
 			return err
 		}
 	}
