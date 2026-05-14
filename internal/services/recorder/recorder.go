@@ -130,7 +130,10 @@ func (r *Service) Start(roomId int, options ...RecordStartOption) error {
 		return ErrInsufficientDiskSpace
 	}
 
+	startTimeRoomInfo := time.Now()
 	roomInfo, err := r.bilic.GetLiveRoomInfo(roomId)
+	durationRoomInfo := time.Since(startTimeRoomInfo)
+	l.Debugf("duration: function=GetLiveRoomInfo spent=%v", durationRoomInfo)
 	if err != nil {
 		return err
 	} else if roomInfo.IsEncrypted {
@@ -142,11 +145,14 @@ func (r *Service) Start(roomId int, options ...RecordStartOption) error {
 	}
 
 	var streams []bilibili.StreamURLInfo
+	startTimeStreamURLs := time.Now()
 	if startOptions.hasStreamProfile {
 		streams, err = r.bilic.GetStreamURLsV2(roomId, bilibili.WithProfiles(startOptions.streamProfile))
 	} else {
 		streams, err = r.bilic.GetStreamURLsV2(roomId)
 	}
+	durationStreamURLs := time.Since(startTimeStreamURLs)
+	l.Debugf("duration: function=GetStreamURLsV2 spent=%v", durationStreamURLs)
 
 	if err != nil {
 		return err
@@ -270,7 +276,11 @@ func (r *Service) Start(roomId int, options ...RecordStartOption) error {
 				func() rs.StreamRecordStrategy { return rs.NewHlsFmp4Strategy() },
 			)
 		default: // "flv" and any unknown format
+			startTimeFlv := time.Now()
 			resp, err := r.bilic.FetchLiveStreamUrlWithCtx(streamInfo.URL, ctx)
+			durationFlv := time.Since(startTimeFlv)
+			l.Debugf("duration: function=FetchLiveStreamUrlWithCtx spent=%v", durationFlv)
+
 			if err != nil {
 				l.Errorf("cannot fetch url: %v, will try next url (protocol=%s, format=%s, codec=%s, qn=%d, url=%s)",
 					err,
