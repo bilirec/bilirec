@@ -7,12 +7,12 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	webpush "github.com/SherClockHolmes/webpush-go"
 	"github.com/eric2788/bilirec/internal/modules/config"
 	"github.com/eric2788/bilirec/pkg/db"
-	"github.com/eric2788/bilirec/pkg/ds"
 	"github.com/sirupsen/logrus"
 	"go.uber.org/fx"
 )
@@ -29,7 +29,7 @@ type Event struct {
 type Service struct {
 	httpClient *http.Client
 	bucket     *db.Bucket
-	state      ds.Atomic[*ServiceState]
+	state      atomic.Pointer[ServiceState]
 }
 
 type ServiceState struct {
@@ -107,7 +107,10 @@ func (s *Service) Publish(event Event) {
 }
 
 func (s *Service) WebPushServiceState() *ServiceState {
-	state, _ := s.state.Load()
+	state := s.state.Load()
+	if state == nil {
+		return &ServiceState{}
+	}
 	return &ServiceState{
 		Enabled:    state.Enabled,
 		Subscriber: state.Subscriber,
@@ -150,8 +153,8 @@ func (s *Service) PublishJSON(v any) {
 }
 
 func (s *Service) publishPayload(payload []byte) {
-	state, _ := s.state.Load()
-	if !state.Enabled {
+	state := s.state.Load()
+	if state == nil || !state.Enabled {
 		return
 	}
 
