@@ -220,6 +220,9 @@ func TestFmp4Record(t *testing.T) {
 }
 
 func TestFlvRecord_AutoStopAfterDuration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping TestFlvRecord_AutoStopAfterDuration in short mode")
+	}
 
 	room := testutil.LiveRoomID(t)
 	const recordDuration = 60 * time.Second

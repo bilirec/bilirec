@@ -26,6 +26,8 @@ func init() {
 func newSubscribeService(t *testing.T) *subscribe.Service {
 	t.Helper()
 
+	t.Setenv("DATABASE_DIR", t.TempDir())
+
 	var svc *subscribe.Service
 	app := fxtest.New(t,
 		config.Module,

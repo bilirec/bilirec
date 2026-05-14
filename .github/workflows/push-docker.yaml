@@ -44,10 +44,11 @@ jobs:
 
       - name: Run tests
         id: test
-        continue-on-error: true
         uses: robherley/go-test-action@v0
+        env:
+          ANONYMOUS_LOGIN: true
         with:
-          testArguments: './... -timeout 2h'
+          testArguments: '-short ./... -timeout 30m'
 
   publish_docker:
     needs: [ test_program ]

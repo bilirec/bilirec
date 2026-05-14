@@ -1,0 +1,59 @@
+name: Test
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+      - 'release/**'
+      - 'hotfix/**'
+    paths:
+      - '**/*.go'
+      - 'go.mod'
+      - 'go.sum'
+      - '.github/workflows/test.yaml'
+      - '.github/workflows/push-docker.yaml'
+  pull_request:
+    branches:
+      - '*'
+    paths:
+      - '**/*.go'
+      - 'go.mod'
+      - 'go.sum'
+      - '.github/workflows/test.yaml'
+      - '.github/workflows/push-docker.yaml'
+  workflow_dispatch:
+
+jobs:
+  test_program:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: '1.25'
+          cache: true
+
+      - name: Install ffmpeg
+        uses: FedericoCarboni/setup-ffmpeg@v3
+
+      - name: Install swag
+        run: go install github.com/swaggo/swag/cmd/swag@v1.16.6
+
+      - name: Add GOPATH bin to PATH
+        run: echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
+
+      - name: Generate swagger docs
+        run: swag init -g internal/modules/rest/rest.go -o docs
+
+      - name: Install dependencies
+        run: go mod download
+
+      - name: Run tests
+        uses: robherley/go-test-action@v0
+        env:
+          ANONYMOUS_LOGIN: true
+        with:
+          testArguments: './... -timeout 2h'
