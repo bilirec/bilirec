@@ -5,6 +5,10 @@ type LiveInfo struct {
 	IsLive bool `json:"is_live"`
 }
 
+type BatchRoomIDsRequest struct {
+	RoomIDs []int `json:"roomIDs"`
+}
+
 type SubscribeStatus struct {
 	RoomId       int  `json:"room_id"`
 	IsSubscribed bool `json:"is_subscribed"`

@@ -26,8 +26,9 @@ func NewController(app *fiber.App, roomSvc *room.Service, subSvc *subscribe.Serv
 	}
 	room := app.Group("/room")
 	room.Get("/:roomID/info", rc.getRoomInfo)
-	room.Get("/infos", rc.getRoomInfos)
-	room.Get("/:roomID/live", rc.isStreamLiving)
+	room.Post("/infos", rc.getRoomInfos)
+	room.Get("/:roomID/live", rc.getLiveStatus)
+	room.Post("/lives", rc.getLiveStatuses)
 	room.Get("/subscribe", rc.listSubscribeRooms)
 	room.Get("/subscribe/:roomID", rc.isSubscribeRoom)
 	room.Get("/:roomID/config", rc.getRoomConfig)
@@ -47,6 +48,7 @@ func NewController(app *fiber.App, roomSvc *room.Service, subSvc *subscribe.Serv
 // @Param roomID path int true "Room ID"
 // @Success 200 {object} bilibili.LiveRoomInfoDetail "Room information"
 // @Failure 400 {string} string "Invalid room ID"
+// @Failure 404 {string} string "Room not found"
 // @Failure 500 {string} string "Internal server error"
 // @Router /room/{roomID}/info [get]
 func (r *Controller) getRoomInfo(ctx fiber.Ctx) error {
@@ -70,30 +72,22 @@ func (r *Controller) getRoomInfo(ctx fiber.Ctx) error {
 }
 
 // @Summary Get multiple room informations
-// @Description Get detailed information about multiple Bilibili live rooms
+// @Description Get detailed information about multiple Bilibili live rooms. Provide roomIDs either via query parameter or JSON payload.
 // @Tags room
 // @Security BearerAuth
 // @Accept json
 // @Produce json
-// @Param roomIDs query string true "Comma-separated list of Room IDs"
+// @Param roomIDs query string false "Comma-separated Room IDs (use this OR payload)"
+// @Param payload body BatchRoomIDsRequest false "JSON payload, e.g. {\"roomIDs\":[123,456,789]} (use this OR roomIDs query)"
 // @Success 200 {object} map[string]bilibili.LiveRoomInfoDetail "Map of Room ID to Room information"
 // @Failure 400 {string} string "Invalid room IDs"
 // @Failure 500 {string} string "Internal server error"
-// @Router /room/infos [get]
+// @Router /room/infos [post]
 func (r *Controller) getRoomInfos(ctx fiber.Ctx) error {
-	roomIdsStr := ctx.Query("roomIDs", "")
-	if roomIdsStr == "" {
-		return fiber.NewError(fiber.StatusBadRequest, "缺少 roomIDs 查詢參數")
-	}
-	roomIdStrs := utils.SplitAndTrim(roomIdsStr, ",")
-	roomIds := make([]int, 0, len(roomIdStrs))
-	for _, idStr := range roomIdStrs {
-		id, err := strconv.Atoi(idStr)
-		if err != nil {
-			logger.Warnf("cannot parse roomId to int: %v", err)
-			return fiber.NewError(fiber.StatusBadRequest, "無效的房間 ID: "+idStr)
-		}
-		roomIds = append(roomIds, id)
+	roomIds, err := utils.ParseRoomIDs(ctx.Query("roomIDs", ""), ctx.Body())
+	if err != nil {
+		logger.Warnf("cannot parse roomIds: %v", err)
+		return fiber.NewError(fiber.StatusBadRequest, err.Error())
 	}
 	res, err := r.roomSvc.GetMultipleRoomInfos(roomIds...)
 	if err != nil {
@@ -112,9 +106,10 @@ func (r *Controller) getRoomInfos(ctx fiber.Ctx) error {
 // @Param roomID path int true "Room ID"
 // @Success 200 {object} LiveInfo "Live status"
 // @Failure 400 {string} string "Invalid room ID"
+// @Failure 404 {string} string "Room not found"
 // @Failure 500 {string} string "Internal server error"
 // @Router /room/{roomID}/live [get]
-func (r *Controller) isStreamLiving(ctx fiber.Ctx) error {
+func (r *Controller) getLiveStatus(ctx fiber.Ctx) error {
 	roomId, err := strconv.Atoi(ctx.Params("roomID"))
 	if err != nil {
 		logger.Warnf("cannot parse roomId to int: %v", err)
@@ -133,6 +128,27 @@ func (r *Controller) isStreamLiving(ctx fiber.Ctx) error {
 		RoomId: roomId,
 		IsLive: isLive,
 	})
+}
+
+// @Summary Check batch live status
+// @Description Check if multiple Bilibili live streams are currently live. Provide roomIDs either via query parameter or JSON payload.
+// @Tags room
+// @Security BearerAuth
+// @Accept json
+// @Produce json
+// @Param roomIDs query string false "Comma-separated Room IDs (use this OR payload)"
+// @Param payload body BatchRoomIDsRequest false "JSON payload, e.g. {\"roomIDs\":[123,456,789]} (use this OR roomIDs query)"
+// @Success 200 {object} map[string]bool "Live statuses map"
+// @Failure 400 {string} string "Invalid room IDs"
+// @Router /room/lives [post]
+func (r *Controller) getLiveStatuses(ctx fiber.Ctx) error {
+	roomIds, err := utils.ParseRoomIDs(ctx.Query("roomIDs", ""), ctx.Body())
+	if err != nil {
+		logger.Warnf("cannot parse roomIds: %v", err)
+		return fiber.NewError(fiber.StatusBadRequest, err.Error())
+	}
+
+	return ctx.JSON(r.roomSvc.GetBatchLiveStatus(roomIds))
 }
 
 // @Summary Subscribe to room

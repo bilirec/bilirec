@@ -343,31 +343,60 @@ Content-Type: application/json
   POST /record/:roomID/stop
   ```
 
-- **获取录制状态**
+- **批量获取录制状态**
 
   ```http
-  GET /record/:roomID/status
-  ```
+  POST /record/statuses
+  Content-Type: application/json
 
-- **获取录制统计**
-
-  ```http
-  GET /record/:roomID/stats
-  ```
-
-  返回：
-
-  ```json
   {
-    "bytes_written": 1048576,
-    "status": "recording",
-    "start_time": 1234567890,
-    "elapsed_seconds": 120,
-    "output_path": "records/tester-123456/live-title-20260428_210000-1.flv"
+    "roomIDs": [123, 456, 789]
   }
   ```
 
-  `output_path` 表示当前正在写入的录制文件路径。如果使用FLV流录制直播过程中发生直播 PK 等分辨率变更，录制器会自动轮转到新的分段文件，后续分段文件名会追加 `-1`、`-2` 等后缀。
+  也支持通过查询参数传入（`roomIDs=123,456,789`）。
+
+  响应示例：
+  ```json
+  {
+    "123": "recording",
+    "456": "idle",
+    "789": "stopped"
+  }
+  ```
+
+- **批量获取录制统计**
+
+  ```http
+  POST /record/stats
+  Content-Type: application/json
+
+  {
+    "roomIDs": [123, 456, 789]
+  }
+  ```
+
+  也支持通过查询参数传入（`roomIDs=123,456,789`）。
+
+  响应示例：
+  ```json
+  {
+    "123": {
+      "bytes_written": 1048576,
+      "status": "recording",
+      "start_time": 1234567890,
+      "elapsed_seconds": 120,
+      "output_path": "records/tester-123/live-title.flv"
+    },
+    "456": {
+      "bytes_written": 0,
+      "status": "idle",
+      "start_time": 0,
+      "elapsed_seconds": 0,
+      "output_path": ""
+    }
+  }
+  ```
 
 - **列出所有录制任务**
 
@@ -495,23 +524,89 @@ Content-Type: application/json
   GET /room/:roomID/info
   ```
 
-  获取指定房间的详细信息。
+  获取指定直播房间的详细信息。返回房间的基本信息如标题、粉丝数、直播封面等。
+
+  响应示例：
+  ```json
+  {
+    "room_id": 123,
+    "short_id": 456,
+    "title": "房间标题",
+    "description": "房间描述",
+    "live_status": 1,
+    "followers": 10000,
+    "cover": "https://example.com/cover.jpg"
+  }
+  ```
+
+  - 状态 `200`: 成功获取房间信息
+  - 状态 `400`: 无效的房间 ID
+  - 状态 `404`: 房间不存在
+  - 状态 `500`: 服务器内部错误
 
 - **批量获取房间信息**
 
   ```http
-  GET /room/infos?roomIDs=123,456,789
+  POST /room/infos
+  Content-Type: application/json
+
+  {
+    "roomIDs": [123, 456, 789]
+  }
   ```
 
-  通过逗号分隔的房间 ID 列表获取多个房间的信息。
+  支持两种传参方式：
+  - Query 参数：`POST /room/infos?roomIDs=123,456,789`
+  - JSON payload：`{"roomIDs":[123,456,789]}`（字段名也可使用 `room_ids` 或 `roomIds`）
 
-- **检查直播状态**
+  响应为房间 ID 到房间信息的映射：
+  ```json
+  {
+    "123": { "room_id": 123, "title": "标题1", ... },
+    "456": { "room_id": 456, "title": "标题2", ... }
+  }
+  ```
+
+- **检查直播状态（单个房间）**
 
   ```http
   GET /room/:roomID/live
   ```
 
-  检查指定房间的直播是否进行中。
+  检查指定房间的直播是否进行中。返回：
+
+  ```json
+  {
+    "room_id": 123,
+    "is_live": true
+  }
+  ```
+
+  - 状态 `200`: 成功获取直播状态
+  - 状态 `400`: 无效的房间 ID
+  - 状态 `404`: 房间不存在
+  - 状态 `500`: 服务器内部错误
+
+- **检查多个房间的直播状态**
+
+  ```http
+  POST /room/lives
+  ```
+
+  批量检查多个房间的直播状态。
+
+  支持两种传参方式：
+  - Query 参数：`POST /room/lives?roomIDs=123,456,789`
+  - JSON payload：`{"roomIDs":[123,456,789]}`（字段名也可使用 `room_ids` 或 `roomIds`）
+
+  响应示例：
+  ```json
+  {
+    "123": true,
+    "456": false,
+    "789": true
+  }
+  ```
 
 #### 房间订阅管理
 

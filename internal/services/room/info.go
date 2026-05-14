@@ -45,6 +45,20 @@ func (r *Service) IsRoomLive(roomID int) (bool, error) {
 	return info.LiveStatus == 1, nil
 }
 
+func (r *Service) GetBatchLiveStatus(roomIDs []int) map[string]bool {
+	result := make(map[string]bool, len(roomIDs))
+	for _, roomID := range roomIDs {
+		isLive, err := r.IsRoomLive(roomID)
+		if err == nil {
+			result[fmt.Sprint(roomID)] = isLive
+		} else {
+			logger.Warnf("error checking live status for room %d: %v", roomID, err)
+			result[fmt.Sprint(roomID)] = false
+		}
+	}
+	return result
+}
+
 func (r *Service) GetMultipleRoomInfos(roomIDs ...int) (map[string]*bilibili.LiveRoomInfoDetail, error) {
 	infos := make(map[string]*bilibili.LiveRoomInfoDetail)
 	missedIDs := make([]int, 0, len(roomIDs))

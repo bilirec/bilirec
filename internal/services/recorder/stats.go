@@ -55,6 +55,25 @@ func (r *Service) IsRecording(path string) bool {
 	return r.writingFiles.Contains(filepath.Base(path))
 }
 
+func (r *Service) GetStatuses(roomIds []int) map[string]RecordStatus {
+	result := make(map[string]RecordStatus, len(roomIds))
+	for _, roomId := range roomIds {
+		status := r.GetStatus(roomId)
+		result[strconv.Itoa(roomId)] = status
+	}
+	return result
+}
+
+func (r *Service) GetBatchStats(roomIds []int) map[string]*Stats {
+	result := make(map[string]*Stats, len(roomIds))
+	for _, roomId := range roomIds {
+		if stats, ok := r.GetStats(roomId); ok {
+			result[strconv.Itoa(roomId)] = stats
+		}
+	}
+	return result
+}
+
 // IsRecordingUnder checks if any recordings are happening under the given relative path.
 // The path format is {username}-{roomID} or {username}-{roomID}/{subpath}
 func (r *Service) IsRecordingUnder(relPath string) bool {

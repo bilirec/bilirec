@@ -10,6 +10,8 @@ import (
 	"github.com/eric2788/bilirec/internal/services/recorder"
 	"github.com/gofiber/fiber/v3"
 	"github.com/sirupsen/logrus"
+
+	"github.com/eric2788/bilirec/utils"
 )
 
 var logger = logrus.WithField("controller", "record")
@@ -22,8 +24,8 @@ func NewController(app *fiber.App, service *recorder.Service) *Controller {
 	rc := &Controller{service: service}
 	record := app.Group("/record")
 	record.Get("/list", rc.listRecordings)
-	record.Get("/:roomID/status", rc.getRecordingStatus)
-	record.Get("/:roomID/stats", rc.getRecordingStats)
+	record.Post("/statuses", rc.getRecordingStatuses)
+	record.Post("/stats", rc.getRecordingStats)
 	record.Post("/:roomID/start", rest.AdminOnly, rc.startRecording)
 	record.Post("/:roomID/stop", rest.AdminOnly, rc.stopRecording)
 	return rc
@@ -127,51 +129,51 @@ func (r *Controller) stopRecording(ctx fiber.Ctx) error {
 	})
 }
 
-// @Summary Get recording status
-// @Description Get the current recording status for a specific room
+// @Summary Get batch recording statuses
+// @Description Get the current recording statuses for multiple rooms. Provide roomIDs either via query parameter or JSON payload.
 // @Tags record
 // @Security BearerAuth
 // @Accept json
 // @Produce json
-// @Param roomID path int true "Room ID"
-// @Success 200 {object} Status "Recording status"
-// @Failure 400 {string} string "Invalid room ID"
-// @Router /record/{roomID}/status [get]
-func (r *Controller) getRecordingStatus(ctx fiber.Ctx) error {
-	roomId, err := strconv.Atoi(ctx.Params("roomID"))
+// @Param roomIDs query string false "Comma-separated Room IDs (use this OR payload)"
+// @Param payload body BatchRoomIDsRequest false "JSON payload, e.g. {\"roomIDs\":[123,456,789]} (use this OR roomIDs query)"
+// @Success 200 {object} map[string]string "Recording statuses map"
+// @Failure 400 {string} string "Invalid room IDs"
+// @Router /record/statuses [post]
+func (r *Controller) getRecordingStatuses(ctx fiber.Ctx) error {
+	roomIds, err := utils.ParseRoomIDs(ctx.Query("roomIDs", ""), ctx.Body())
 	if err != nil {
-		logger.Warnf("cannot parse roomId to int: %v", err)
-		return fiber.NewError(fiber.StatusBadRequest, "無效的房間 ID")
+		logger.Warnf("cannot parse roomIds: %v", err)
+		return fiber.NewError(fiber.StatusBadRequest, err.Error())
 	}
-	status := r.service.GetStatus(roomId)
-	return ctx.JSON(Status{
-		RoomId: roomId,
-		Status: status,
-	})
+
+	statusMap := r.service.GetStatuses(roomIds)
+	result := make(map[string]string, len(statusMap))
+	for roomIdStr, status := range statusMap {
+		result[roomIdStr] = string(status)
+	}
+	return ctx.JSON(result)
 }
 
-// @Summary Get recording statistics
-// @Description Get recording statistics for a specific room
+// @Summary Get batch recording stats
+// @Description Get detailed recording statistics for multiple rooms. Provide roomIDs either via query parameter or JSON payload.
 // @Tags record
 // @Security BearerAuth
 // @Accept json
 // @Produce json
-// @Param roomID path int true "Room ID"
-// @Success 200 {object} recorder.Stats "Recording statistics"
-// @Failure 400 {string} string "Invalid room ID"
-// @Failure 404 {string} string "Recording not found"
-// @Router /record/{roomID}/stats [get]
+// @Param roomIDs query string false "Comma-separated Room IDs (use this OR payload)"
+// @Param payload body BatchRoomIDsRequest false "JSON payload, e.g. {\"roomIDs\":[123,456,789]} (use this OR roomIDs query)"
+// @Success 200 {object} map[string]recorder.Stats "Recording stats map"
+// @Failure 400 {string} string "Invalid room IDs"
+// @Router /record/stats [post]
 func (r *Controller) getRecordingStats(ctx fiber.Ctx) error {
-	roomId, err := strconv.Atoi(ctx.Params("roomID"))
+	roomIds, err := utils.ParseRoomIDs(ctx.Query("roomIDs", ""), ctx.Body())
 	if err != nil {
-		logger.Warnf("cannot parse roomId to int: %v", err)
-		return fiber.NewError(fiber.StatusBadRequest, "無效的房間 ID")
+		logger.Warnf("cannot parse roomIds: %v", err)
+		return fiber.NewError(fiber.StatusBadRequest, err.Error())
 	}
-	stats, ok := r.service.GetStats(roomId)
-	if !ok {
-		return fiber.ErrNotFound
-	}
-	return ctx.JSON(stats)
+
+	return ctx.JSON(r.service.GetBatchStats(roomIds))
 }
 
 // @Summary List all recordings
