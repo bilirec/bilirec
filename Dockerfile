@@ -2,6 +2,11 @@ FROM golang:1.25-alpine AS build
 
 WORKDIR /app
 
+ARG TARGETARCH
+
+ENV GOCACHE=/root/.cache/go-build
+ENV GOMODCACHE=/go/pkg/mod
+
 RUN apk add --no-cache tzdata
 
 COPY go.mod go.sum ./
@@ -18,9 +23,11 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
     /go/bin/swag init -g internal/modules/rest/rest.go -o docs
 
+RUN ls -lah /root/.cache/go-build || echo "No cache found"
+
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
-    go build -v -o bilirec
+    GOOS=linux GOARCH=$TARGETARCH go build -v -o bilirec
 
 FROM alpine:latest
 WORKDIR /app
