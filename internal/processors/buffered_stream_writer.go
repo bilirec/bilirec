@@ -176,16 +176,6 @@ func (w *BufferedStreamWriterProcessor) writePeriodically() {
 		select {
 		case data, ok := <-w.dataCh:
 			if !ok {
-				// Channel is closed; drain any remaining data and exit.
-				// This is important because Close() closes dataCh after canceling context.
-				for data := range w.dataCh {
-					n, err := w.writer.Write(data)
-					w.bytesWritten += int64(n)
-					if err != nil {
-						w.logger.Warnf("error writing remaining data: %v", err)
-					}
-					w.bytesPool.PutBytes(data)
-				}
 				return
 			}
 			n, err := w.writer.Write(data)
