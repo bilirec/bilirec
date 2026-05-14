@@ -1,6 +1,6 @@
-# Bilirec - Bilibili 直播录制工具
+# Bilirec - Bilibili 直播录制后端
 
-一个用 Go 语言编写的 Bilibili 直播录制工具，支持自动录制直播流。
+一个专为树莓派优化的 Bilibili 直播录制后端。
 
 ## 功能特性
 
@@ -11,14 +11,56 @@
 - ✅ 直播通知 - 实时推送开播通知（网页/手机推送）
 - ✅ 自动分段轮转 - 当直播过程中发生直播 PK 等分辨率变更时，自动切换到新的录制分段文件，避免文件花屏或损坏
 - ✅ 支持多个直播间同时录制
-- ✅ 自动处理流中断和恢复（默认自动选择可用流格式，也支持手动指定 profile）
-- ✅ FFmpeg 转换冷却机制 - 其中一个档案转换失败时自动退让给其他档案转换任务
-- ✅ RESTful API 管理录制任务
+- ✅ 自动修复flv流，处理流中断和恢复（默认自动选择可用流格式，也支持手动指定格式）
+- ✅ 自动转换到MP4 - 支援透过cloudconvert或本地ffmpeg
+- ✅ RESTful API 管理录制任务或使用 [App](https://github.com/eric2788/bilirec-web)
 - ✅ 文件管理和下载功能
-- ✅ 在线播放 - 在浏览器中直接预览和播放已录制的视频
+- ✅ 在线播放 - 在 App 中直接预览和播放已录制的视频(仅限MP4)
 - ✅ 支持匿名登录或账号登录
 - ✅ 自动刷新 Cookie 保持登录状态
 - ✅ 低内存与低 CPU 占用，适合在资源受限设备（如树莓派）上运行
+- ✅ 默认配置下对 microSD 卡友好，能显着减低写入磨损 （针对树莓派)
+
+## 效能指标
+
+> 服务器为 **树莓派5B 16GB** · 同时录制多个直播间（默认配置）
+
+**初始闲置**
+<img width="1140" height="142" alt="初始闲置" src="https://github.com/user-attachments/assets/fca278a1-62ac-4828-9f28-fd3e577b2ab3" />
+
+**录制单个直播间**
+<img width="1138" height="153" alt="單路并發" src="https://github.com/user-attachments/assets/e582fb47-43f0-455e-a94a-536739d39160" />
+
+**同时录制2个直播间**
+<img width="1120" height="137" alt="2路并發" src="https://github.com/user-attachments/assets/b9d388cb-f019-4373-b55b-3225f32e330d" />
+
+**同时录制3个直播间**
+<img width="1139" height="144" alt="3路并發" src="https://github.com/user-attachments/assets/fa4e1a2e-3a15-4622-8778-adca44fa7184" />
+
+**同时录制4个直播间**
+<img width="1147" height="156" alt="4路并發" src="https://github.com/user-attachments/assets/26eca95e-fa50-4240-adfb-c8ba0b1671ea" />
+
+同时录制5个直播间
+<img width="1143" height="133" alt="5路并發" src="https://github.com/user-attachments/assets/19509190-c3ad-4565-9162-0a8d4899cba2" />
+
+恢复闲置时
+<img width="1142" height="150" alt="image" src="https://github.com/user-attachments/assets/90081087-7967-454d-91d7-1256e48b40e3" />
+
+| 并发路数 | CPU峰值占用 | 内存占用 |
+|---------|---------|----------|
+| 初始闲置 | ~0.0% | ~7MB |
+| 1路并发  | ~0.8% | ~42MB |
+| 2路并发  | ~2.6% | ~76MB |
+| 3路并发  | ~3.0% | ~96MB |
+| 4路并发  | ~3.4% | ~129MB |
+| 5路并发  | ~4.1% | ~142MB |
+| 恢复闲置 | ~0.0% | ~54MB |
+
+> [!NOTE]
+> 本程序使用了大量内存池，因此先前使用的一部分内存会回到内存池中等待日后重用，以减轻GC压力。
+>
+> 此外，本程序默认使用针对microSD卡优化的配置，因此内存占用会稍高以减少写入磨损。
+> 你可以透过[调控配置](#配置)进一步降低内存占用。
 
 ## 安装
 
@@ -178,9 +220,9 @@ export PRODUCTION_MODE=false
 
 Web Push 的 VAPID key 会由后端在启动时自动生成并写入 `SECRET_DIR`（默认 `secrets`）下的 `_webpush_public_key` 与 `_webpush_private_key`。后续重启会优先复用已存在的 key。
 
-### 树莓派 4B 默认配置（microSD）
+### 树莓派 5B 默认配置（microSD）
 
-Bilirec 当前默认配置已针对树莓派 4B + microSD 场景优化，在“降低写入次数”和“控制内存占用”之间取平衡：
+Bilirec 当前默认配置已针对树莓派 5B + microSD 场景优化，在“降低写入次数”和“控制内存占用”之间取平衡：
 
 | 优化项 | 说明 |
 | ----- | ---- |
@@ -193,36 +235,48 @@ Bilirec 当前默认配置已针对树莓派 4B + microSD 场景优化，在“�
 | `SEQUENTIAL_WRITE=true` | **启用全局 flush 锁**，序列化多路录制的写入操作，多路并发时有效降低 I/O 峰值; 默认启用以保护 microSD。 |
 | `MAX_CONCURRENT_RECORDINGS=3` | 保守并发上限，直接限制 RAM 峰值。 |
 
-容器运行时默认值也同步为树莓派 4B 取向：`GOMEMLIMIT=768MiB`、`GOGC=100`。
+容器运行时默认值也同步为树莓派 5B 取向：`GOMEMLIMIT=768MiB`、`GOGC=100`。
 
-### HDD/SSD 使用者调整建议
+### HDD/SSD 与 DIY NAS 调整建议
 
-如果你的存储介质是 HDD 或 SSD（而非 microSD），可以优先提高数据安全性并放宽吞吐设置：
+默认配置主要为降低单板电脑（如树莓派）的 microSD 卡磨损而设计，采取了极度保守的缓冲与刷盘策略。如果你的存储介质是常规 HDD、SSD 或是自建的本地 NAS，具备更好的读写寿命和性能，建议将侧重点从“保护存储”转移到“**提高录制完整性与多路并发能力**”。
+
+请根据你的具体硬件情况选择以下配置方向：
+
+#### 方案一：固态硬盘 (SSD / NVMe)
+SSD 具备极高的随机读写性能，无需过度担忧小块文件的写入磨损，且开启应用层的写入序列化反而会限制其并发优势。
 
 ```bash
-# 建议 HDD/SSD 起始配置
-export LIVE_STREAM_WRITER_SYNC_PERIOD_SECS=30   # 或 45，启用周期性 sync
-export SKIP_SMALL_FLUSH=false                   # 优先落盘完整性
-export LIVE_STREAM_WRITER_BUFFER_SIZE=8388608   # 8MB
-export LIVE_STREAM_WRITER_CHAN_BUFFER_SIZE=128  # 更高突发容忍
-export MAX_CONCURRENT_RECORDINGS=5              # 视 CPU/磁盘性能再提高
+# 解放 I/O 限制，优先保障数据实时性与高并发
+export LIVE_STREAM_WRITER_SYNC_PERIOD_SECS=30   # 恢复周期性 sync，降低断电导致的数据丢失风险
+export SKIP_SMALL_FLUSH=false                   # 优先保障录制完整性，不再跳过小块 flush
+export SEQUENTIAL_WRITE=false                   # 【关键】禁用全局 flush 锁，解放 SSD 多路并发 I/O 能力
+export LIVE_STREAM_WRITER_CHAN_BUFFER_SIZE=128  # 提高内存队列深度（容忍更高的网络突发流量）
+export MAX_CONCURRENT_RECORDINGS=10             # 可视设备的 CPU 与内存宽裕程度放宽限制
+
 ```
 
-调参建议：
+#### 方案二：大容量机械硬盘 (HDD) / DIY NAS
 
-| 场景 | 建议 |
-| ---- | ---- |
-| HDD/SSD + 更高可靠性 | 开启 `LIVE_STREAM_WRITER_SYNC_PERIOD_SECS=30~45` 和 `SEQUENTIAL_WRITE=true`（多路时） |
-| HDD/SSD + 更高吞吐 | 提高 `LIVE_STREAM_WRITER_CHAN_BUFFER_SIZE` 到 `128` 或更高；禁用 `SEQUENTIAL_WRITE` 若 I/O 阻塞明显 |
-| 仍遇到内存压力 | 优先降低 `MAX_CONCURRENT_RECORDINGS`，再调小 `LIVE_STREAM_WRITER_CHAN_BUFFER_SIZE` |
-
-**注意**：如果你使用高性能存储（NVME/SSD）或需要更高可靠性，可以恢复周期性 sync 和禁用写入序列化：
+机械硬盘（如 16TB 级别的存储盘）的物理弱点是**磁头寻道延迟**。当发生多路并发录制时，频繁的随机写入会导致严重的卡顿。调整核心在于**在内存中合并大块数据**并**强制顺序写入**。
 
 ```bash
-export LIVE_STREAM_WRITER_SYNC_PERIOD_SECS=45
+# 优化大块连续写入，保护磁头并提升系统整体流畅度
+export LIVE_STREAM_WRITER_SYNC_PERIOD_SECS=45   # 适当拉长 sync 周期，避免频繁打断顺序写入
 export SKIP_SMALL_FLUSH=false
-export SEQUENTIAL_WRITE=false
+export SEQUENTIAL_WRITE=true                    # 【关键】保持全局写锁，多路并发时强制转换为顺序写入，大幅降低物理寻道延迟
+export LIVE_STREAM_WRITER_BUFFER_SIZE=16777216  # (16MB) 增大单次落盘大小，让文件在磁盘上的分布更连续
+export MAX_CONCURRENT_RECORDINGS=5              # 视硬盘转速适度调整
+
 ```
+
+> [!TIP]
+> 
+> **关于自建 NAS 与混合部署**
+> * **文件系统缓存（如 ZFS）：** 如果你的底层存储池使用了 ZFS 这种自带强大内存缓存机制（ARC）的文件系统，频繁的应用层 `sync` 可能会引发写入放大并拖慢效能。此时可以将 `LIVE_STREAM_WRITER_SYNC_PERIOD_SECS` 设为 `0` 或更长的时间（如 `60`），将落盘调度完全交由底层系统接管。
+> * **与私有云服务共存：** 若你的硬盘同时还在运行其他个人服务（如 Cloudreve 私有云、影音服务器等），强烈建议保持 `SEQUENTIAL_WRITE=true`。这能有效避免 bilirec 的碎片化写入与其他服务发生磁头争抢，保障 NAS 在私人使用时的整体响应速度。
+> 
+> 
 
 ## 使用方法
 
@@ -660,10 +714,9 @@ Content-Type: application/json
 - **自动分段轮转（HTTP-FLV）**: 仅适用于 HTTP-FLV 格式；当检测到 FLV 文件头变更（直播 PK 等分辨率切换）时，自动轮转到新的分段文件并重写文件头，降低画质切换导致输出异常的风险。HLS-TS / HLS-fMP4 格式不使用文件轮转，不连续性由 HLS 播放列表层自然处理
 - **自动录制**: 为订阅的直播间配置自动开播录制，后台定期检查直播间状态并自动启动录制，详见 [`subcheck.Service`](internal/services/subcheck/check.go)
 - **实时通知**: 通过 Web Push 推送直播开播通知和自动录制状态，详见 [`notify.Service`](internal/services/notify/notify.go)
-- **缓冲池**: 使用 [`pool.BufferPool`](pkg/pool/pool.go) 减少内存分配
+- **内存池**: 使用 [`pool.BufferPool`](pkg/pool/pool.go) 减少内存分配
 - **SWR 缓存**: 房间信息缓存采用 Stale-While-Revalidate 策略（[`pkg/swr`](pkg/swr/)），结合 singleflight 去重，缓存命中时立即返回旧数据并在后台异步刷新，软 TTL 5 分钟、硬 TTL 30 分钟，有效降低 Bilibili API 请求压力
-- **定期刷盘**: 每 30 秒自动同步写入文件，防止数据丢失
-- **低资源占用**: 设计注重低内存和低 CPU 使用，适合树莓派等资源受限设备
+- **低资源占用**: 设计注重低内存，低SD卡磨損和低 CPU 使用，适合树莓派等资源受限设备
 - **文件管理**: 支持列出、预览、下载（可转换格式）、批量删除文件及删除目录，详见 `internal/controllers/file/file.go`
 - **自动转换**: 如果启用 `CONVERT_TO_MP4`，录制完成时会自动将可转换源文件（例如 FLV、TS）转为 MP4；可通过 `DELETE_SOURCE_AFTER_CONVERT` 控制是否删除原始源文件。已修复部分不支持的编解码器导致转换失败的问题，并具备 FFmpeg 任务冷却机制避免卡死失败任务
 - **在线播放**: 支持在浏览器中直接播放已转换的 MP4 视频，提供原生 HTML5 video 标签体验，支持暂停/快进/全屏等操作
