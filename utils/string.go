@@ -3,6 +3,7 @@ package utils
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"strings"
 )
 
@@ -54,4 +55,16 @@ func SplitAndTrim(s, sep string) []string {
 		}
 	}
 	return result
+}
+
+// IsValidAbsoluteHTTPURL checks whether raw is an absolute HTTP/HTTPS URL with host.
+func IsValidAbsoluteHTTPURL(raw string) bool {
+	parsedURL, err := url.Parse(raw)
+	if err != nil {
+		return false
+	}
+	if parsedURL.Host == "" {
+		return false
+	}
+	return parsedURL.Scheme == "http" || parsedURL.Scheme == "https"
 }

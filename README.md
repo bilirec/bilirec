@@ -140,8 +140,8 @@ docker run -d \
 | `SECRET_DIR` | Cookie 和 Token 保存目录 | `secrets` |
 | `CONVERT_TO_MP4` | 录制完成后是否将可转换源文件（如 FLV/TS）转为 MP4 | `false` |
 | `DELETE_SOURCE_AFTER_CONVERT` | 转换后是否删除原始源文件 | `false` |
-| `BACKEND_HOST` | 后端主机（用于生成Cookie域名） | `localhost:8080` |
-| `FRONTEND_URL` | 前端 URL（用于 CORS 与 cookie 域） | `http://localhost:8080` |
+| `PUBLIC_BASE_URL` | 后端公开基址（仅用于生成预签名 URL，需为完整 URL） | (空字符串) |
+| `FRONTEND_URL` | 前端 URL（用于 CORS） | `http://localhost:8080` |
 | `WEBPUSH_SUBSCRIBER` | Web Push VAPID 的 subject（建议使用 `mailto:you@example.com`） | `mailto:webpush@example.com` |
 | `USERNAME` | 可选：启用用户名/密码认证时的用户名 | (未设置) |
 | `PASSWORD` | 可选：启用用户名/密码认证时的密码 | (未设置) |
@@ -196,7 +196,7 @@ export FFMPEG_CHECK_INTERVAL_SECS=60
 export FFMPEG_MAX_CONCURRENT_TASKS=1
 export FFMPEG_ALLOW_DURING_RECORDING=false
 export FFMPEG_ALLOW_DURING_RECORDING_MAX_ACTIVE_RECORDINGS=1
-export BACKEND_HOST=localhost:8080
+export PUBLIC_BASE_URL=http://localhost:8080
 export FRONTEND_URL=http://localhost:8080
 export WEBPUSH_SUBSCRIBER=mailto:webpush@example.com
 export UPLOAD_BUFFER_SIZE=5242880
@@ -217,6 +217,8 @@ export PRODUCTION_MODE=false
 ```
 
 如果你是使用二进制文件，启动服务后会生成 `.env` 文件，里面包含当前的环境变量配置（不包含敏感信息）。你可以编辑这个文件来修改配置，或者直接设置环境变量覆盖。
+
+`PUBLIC_BASE_URL` 为空或不是有效 URL（必须包含 `http/https`）时，预签名 URL 会记录 warning 并回退为不含 base URL 的相对地址（`/files/tempdownload?presigned=...`）；CloudConvert 在该情况下会直接报错并拒绝创建任务。
 
 Web Push 的 VAPID key 会由后端在启动时自动生成并写入 `SECRET_DIR`（默认 `secrets`）下的 `_webpush_public_key` 与 `_webpush_private_key`。后续重启会优先复用已存在的 key。
 

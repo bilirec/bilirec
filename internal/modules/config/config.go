@@ -30,7 +30,7 @@ type Config struct {
 	CloudConvertThreshold    int64
 	CloudConvertApiKey       string
 
-	BackendHost        string
+	PublicBaseUrl      string
 	FrontendURL        *url.URL
 	WebPushSubscriber  string
 	Username           string
@@ -118,7 +118,7 @@ func provider(lc fx.Lifecycle) (*Config, error) {
 		ConvertToMp4:                       os.Getenv("CONVERT_TO_MP4") == "true" || os.Getenv("CONVERT_FLV_TO_MP4") == "true",
 		DeleteSourceAfterConvert:           os.Getenv("DELETE_SOURCE_AFTER_CONVERT") == "true" || os.Getenv("DELETE_FLV_AFTER_CONVERT") == "true",
 		FrontendURL:                        url,
-		BackendHost:                        utils.EmptyOrElse(os.Getenv("BACKEND_HOST"), "localhost:8080"),
+		PublicBaseUrl:                      utils.EmptyOrElse(os.Getenv("PUBLIC_BASE_URL"), utils.EmptyOrElse(os.Getenv("BACKEND_HOST"), "")),
 		WebPushSubscriber:                  utils.EmptyOrElse(os.Getenv("WEBPUSH_SUBSCRIBER"), "mailto:webpush@example.com"),
 		Username:                           username,
 		PasswordHash:                       string(passwordHash),

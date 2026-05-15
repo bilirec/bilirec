@@ -22,6 +22,7 @@ var (
 	ErrNoConvertManager          = errors.New("no convert manager available")
 	ErrFFmpegNotInstalled        = errors.New("ffmpeg is not installed or not found in PATH")
 	ErrCloudConvertNotConfigured = errors.New("cloudconvert client is not initialized")
+	ErrInvalidPublicBaseURL      = errors.New("invalid PUBLIC_BASE_URL for cloudconvert presigned URL")
 )
 
 type Service struct {

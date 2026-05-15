@@ -45,18 +45,20 @@ func (s *Service) GeneratePresignedURL(fullPath string, expireAfter time.Duratio
 	if err != nil {
 		return "", err
 	}
-	baseURL := utils.TernaryFunc(
-		s.cfg.BackendHost == "",
-		func() string { return "" },
-		func() string {
-			return utils.Ternary(
-				strings.Contains(s.cfg.BackendHost, "localhost"),
-				"http://"+s.cfg.BackendHost,
-				"https://"+s.cfg.BackendHost,
-			)
-		},
-	)
-	return fmt.Sprintf("%s/files/tempdownload?presigned=%s", baseURL, token), nil
+
+	fallbackURL := fmt.Sprintf("/files/tempdownload?presigned=%s", token)
+	baseURL := strings.TrimSpace(s.cfg.PublicBaseUrl)
+	if baseURL == "" {
+		logger.Warn("PUBLIC_BASE_URL is empty, returning relative presigned URL")
+		return fallbackURL, nil
+	}
+
+	if !utils.IsValidAbsoluteHTTPURL(baseURL) {
+		logger.Warnf("PUBLIC_BASE_URL is invalid: %q, returning relative presigned URL", s.cfg.PublicBaseUrl)
+		return fallbackURL, nil
+	}
+
+	return fmt.Sprintf("%s/files/tempdownload?presigned=%s", strings.TrimRight(baseURL, "/"), token), nil
 }
 
 func (s *Service) ParsePresignedURL(fullURL string) (string, error) {

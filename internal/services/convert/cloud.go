@@ -373,6 +373,12 @@ func (c *cloudConvertManager) getOrCreatePresignedURL(inputPath string) (url str
 	}
 	url, err = c.pathSvc.GeneratePresignedURL(inputPath, signeddownload.DefaultExpireAfter)
 	if err == nil {
+		if !utils.IsValidAbsoluteHTTPURL(url) {
+			c.logger.Errorf("PUBLIC_BASE_URL is empty or invalid, cloudconvert requires a valid absolute presigned URL")
+			return "", ErrInvalidPublicBaseURL
+		}
+	}
+	if err == nil {
 		c.presignedUrlPool.Store(inputPath, url)
 	}
 	return

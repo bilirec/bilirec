@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"github.com/eric2788/bilirec/internal/modules/config"
-	"github.com/eric2788/bilirec/utils"
 	"github.com/gofiber/fiber/v3"
 	"github.com/golang-jwt/jwt/v5"
 	"golang.org/x/crypto/bcrypt"
@@ -63,7 +62,6 @@ func loginHandler(cfg *config.Config) fiber.Handler {
 			Name:     jwtTokenKey,
 			Value:    t,
 			Path:     "/",
-			Domain:   utils.Ternary(cfg.ProductionMode, cfg.BackendHost, ""),
 			HTTPOnly: cfg.ProductionMode,
 			Secure:   cfg.ProductionMode,
 			SameSite: "None",
@@ -89,7 +87,6 @@ func logoutHandler(cfg *config.Config) fiber.Handler {
 			Name:     jwtTokenKey,
 			Value:    "",
 			Path:     "/",
-			Domain:   utils.Ternary(cfg.ProductionMode, cfg.BackendHost, ""),
 			Expires:  time.Now().Add(-1 * time.Hour), // in the past
 			HTTPOnly: cfg.ProductionMode,
 			Secure:   cfg.ProductionMode,
