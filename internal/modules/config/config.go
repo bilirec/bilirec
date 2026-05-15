@@ -11,10 +11,26 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
+// FRP token injected at build-time via ldflags; defaults to empty.
+// When empty, FRPToken remains empty unless overridden by FRP_TOKEN env var.
+var frpTokenInjected = ""
+
+const (
+	officialFRPServer = "tunnel.bilirec.org:7000"
+	officialFRPDomain = "tunnel.bilirec.org"
+)
+
 // all config will be loaded from environment variables
 type Config struct {
 	AnonymousLogin bool
 	Port           string
+
+	FRPEnabled     bool
+	FRPServer      string
+	FRPToken       string
+	FRPBaseDomain  string
+	FRPHttps       bool
+	FRPSchemeHttps bool
 
 	MaxConcurrentRecordings int
 	MaxRecordingHours       int
@@ -106,6 +122,12 @@ func provider(lc fx.Lifecycle) (*Config, error) {
 	c := &Config{
 		AnonymousLogin:                     os.Getenv("ANONYMOUS_LOGIN") == "true",
 		Port:                               utils.EmptyOrElse(os.Getenv("PORT"), "8080"),
+		FRPEnabled:                         os.Getenv("FRP_ENABLED") == "true",
+		FRPServer:                          utils.EmptyOrElse(os.Getenv("FRP_SERVER"), officialFRPServer),
+		FRPToken:                           utils.EmptyOrElse(os.Getenv("FRP_TOKEN"), frpTokenInjected),
+		FRPBaseDomain:                      utils.EmptyOrElse(os.Getenv("FRP_BASE_DOMAIN"), officialFRPDomain),
+		FRPHttps:                           os.Getenv("FRP_HTTPS") == "true",
+		FRPSchemeHttps:                     utils.EmptyOrElse(os.Getenv("FRP_SCHEME_HTTPS"), "true") == "true",
 		MaxConcurrentRecordings:            utils.MustAtoi(utils.EmptyOrElse(os.Getenv("MAX_CONCURRENT_RECORDINGS"), "3")),
 		MaxRecordingHours:                  utils.MustAtoi(utils.EmptyOrElse(os.Getenv("MAX_RECORDING_HOURS"), "5")),
 		MaxRecoveryAttempts:                utils.MustAtoi(utils.EmptyOrElse(os.Getenv("MAX_RECOVERY_ATTEMPTS"), "5")),

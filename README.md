@@ -13,13 +13,14 @@
 - ✅ 支持多个直播间同时录制
 - ✅ 自动修复flv流，处理流中断和恢复（默认自动选择可用流格式，也支持手动指定格式）
 - ✅ 自动转换到MP4 - 支援透过cloudconvert或本地ffmpeg
-- ✅ RESTful API 管理录制任务或使用 [App](https://github.com/eric2788/bilirec-web)
+- ✅ RESTful API 管理录制任务或使用 [Web 界面](https://github.com/eric2788/bilirec-web)
+- ✅ FRP 内网穿透 - 把录制后端安全暴露到外网，随时随地用 Web 界面 管理录制任务、文件和通知
 - ✅ 文件管理和下载功能
 - ✅ 在线播放 - 在 App 中直接预览和播放已录制的视频(仅限MP4)
 - ✅ 支持匿名登录或账号登录
 - ✅ 自动刷新 Cookie 保持登录状态
 - ✅ 低内存与低 CPU 占用，适合在资源受限设备（如树莓派）上运行
-- ✅ 默认配置下对 microSD 卡友好，能显着减低写入磨损 （针对树莓派)
+- ✅ 默认配置下对 microSD 卡友好，能显着减低写入磨损 (针对树莓派)
 
 ## 效能指标
 
@@ -131,7 +132,13 @@ docker run -d \
 | 环境变量 | 说明 | 默认值 |
 | ------- | ---- | ------ |
 | `ANONYMOUS_LOGIN` | 是否使用匿名登录 | `false` |
-| `PORT` | API 服务端口 | `8080` |
+| `PORT` | API 服務端口 | `8080` |
+| `FRP_ENABLED` | 是否启用 FRP 内网穿透 | `false` |
+| `FRP_SERVER` | FRP 服务器地址（格式：`host:port`） | `tunnel.bilirec.org:7000` |
+| `FRP_TOKEN` | FRP 认证 Token；如果你有自己的 FRP 服务就填写，没有就留空。 | (空字符串) |
+| `FRP_BASE_DOMAIN` | FRP 公网基础域名（用于组装公开访问地址） | `tunnel.bilirec.org` |
+| `FRP_HTTPS` | FRP 代理使用的协议（`true`=HTTPS，`false`=HTTP） | `false` |
+| `FRP_SCHEME_HTTPS` | 公網 URL scheme（`true`=https，`false`=http） | `true` |
 | `MAX_CONCURRENT_RECORDINGS` | 最大同时录制数 | `3` |
 | `MAX_RECORDING_HOURS` | 单次录制最长时间（小时） | `5` |
 | `MAX_RECOVERY_ATTEMPTS` | 单次录制的最大重连尝试次数 | `5` |
@@ -172,11 +179,64 @@ docker run -d \
 | `SEQUENTIAL_WRITE` | 启用全局 flush 锁以序列化多路录制的写入操作；仅在多路并发录制写入同一物理磁盘时建议启用，可显著降低 I/O 峰值 | `true` |
 | `MIN_DISK_SPACE_BYTES` | 录制所需的最小磁盘空间（字节），低于此值将拒绝新录制任务 | `5368709120` (5 GB) |
 
+#### FRP 内网穿透配置说明
+
+启用 FRP (`FRP_ENABLED=true`) 时，配置 Bilirec 作为内网穿透客户端连接到 FRP 服务器。
+
+如果你只开启 `FRP_ENABLED=true`，程序会默认使用官方免费的公共 FRP 服务；只有当你另外设置 `FRP_SERVER`、`FRP_BASE_DOMAIN` 或 `FRP_TOKEN` 时，才会切换成自定义 FRP 配置。
+
+**基础参数：**
+- `FRP_SERVER`：FRP 服务器地址和端口（格式：`host:port`）
+- `FRP_TOKEN`：FRP 服务的认证 Token；有自己的 FRP 服务时填写，没有就留空。
+- `FRP_BASE_DOMAIN`：生成公网访问地址的基础域名
+
+**协议配置（可选）：**
+- `FRP_HTTPS`：FRP 代理使用的协议
+  - `false`（默认）：使用 HTTP 代理（适合内部自架、有前置 HTTPS 层的情况）
+  - `true`：使用 HTTPS 代理（适合公开 FRP 服务）
+- `FRP_SCHEME_HTTPS`：生成的公网 URL scheme（默认 `true`）
+  - `false`：公网 URL 为 `http://bilirec-<random>.<FRP_BASE_DOMAIN>`
+  - `true`：公网 URL 为 `https://bilirec-<random>.<FRP_BASE_DOMAIN>`
+
+**常见配置示例：**
+
+1. **使用官方公共服务 bilirec.org**（推荐）
+   ```bash
+   FRP_ENABLED=true # 只开启 FRP_ENABLED=true 时，就会使用官方免费的公共 FRP 服务
+   ```
+
+2. **自定义 FRP（需要自己提供服务器信息）**
+   ```bash
+   FRP_ENABLED=true
+   FRP_SERVER=your-frp-ip:7000
+   FRP_TOKEN=your-token            # 你的 FRP 服务需要什么，就按你的服务填写
+   FRP_BASE_DOMAIN=your-domain.com
+   FRP_HTTPS=false                 # 内部用 HTTP
+   FRP_SCHEME_HTTPS=true           # Caddy 或前置代理提供 HTTPS
+   ```
+
+3. **启动日志示例**
+   ```
+  FRP enabled in official-public mode
+  FRP enabled in custom-selfhost mode
+   ```
+  - `official-public`：当前使用官方免费的公共 FRP 服务
+  - `custom-selfhost`：当前使用自定义 FRP 配置
+
+使用 FRP 后，你可以把本机的 Bilirec 系统暴露到外网。这样无论你在家里、办公室，还是外出时，只要打开 Web 界面，就能随时登录和管理自己的录制任务、查看录制状态、处理文件与通知。
+
 ### 示例配置
 
 ```bash
 export ANONYMOUS_LOGIN=false
 export PORT=8080
+# 可选：FRP 内网穿透（只开启 FRP_ENABLED=true 时默认走官方公共服务）
+export FRP_ENABLED=true
+export FRP_SERVER=tunnel.bilirec.org:7000
+# 若要自定义 FRP 服务，再设置 FRP_SERVER / FRP_BASE_DOMAIN / FRP_TOKEN
+export FRP_BASE_DOMAIN=tunnel.bilirec.org
+export FRP_HTTPS=false                  # 使用 HTTP 代理
+export FRP_SCHEME_HTTPS=true            # 公网 URL 为 HTTPS
 export MAX_CONCURRENT_RECORDINGS=3
 export MAX_RECORDING_HOURS=10
 export MAX_RECOVERY_ATTEMPTS=5
@@ -290,11 +350,19 @@ export MAX_CONCURRENT_RECORDINGS=5              # 视硬盘转速适度调整
 
 ### Web 页面
 
-1. 设置你的 `FRONTEND_URL` 为 `https://bilirec.ericlamm.com/`
+1. 设置你的 `FRONTEND_URL` 为 `https://app.bilirec.org/`
 
-2. 直接访问 `https://bilirec.ericlamm.com/` 进入登入界面
+2. 直接访问 `https://app.bilirec.org/` 进入登入界面
 
 3. 根据你所设置的 `USERNAME` 和 `PASSWORD` 进行登录（如果未设置则直接进入）
+
+**如果启用 FRP 内网穿透**
+
+1. 启动内网穿透后，日志中会显示 FRP 连接状态和公网访问地址 (如 `https://abc1234567.tunnel.bilirec.org`)
+
+2. 进入 `https://app.bilirec.org/` 后，在登录界面的服务器地址栏位输入公网访问地址（如 `https://abc1234567.tunnel.bilirec.org`）
+
+3. 使用 `USERNAME` 和 `PASSWORD` 登录 (暴露到公网后请务必设置 `USERNAME` 和 `PASSWORD`!)
 
 ### API 接口
 
