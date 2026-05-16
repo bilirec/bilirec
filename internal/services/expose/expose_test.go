@@ -90,6 +90,10 @@ func TestNewService_FRPEnabled_InvalidServerPort(t *testing.T) {
 // printTunnelBox is now delayed until the proxy status reaches running, so
 // this test waits for a real successful startup path before asserting output.
 func TestNewService_FRPEnabled_TunnelBox(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping FRP public tunnel integration test in short mode")
+	}
+
 	t.Setenv("FRP_ENABLED", "true")
 	t.Setenv("FRP_SERVER", "hk2.afrp.net:7000")
 	t.Setenv("FRP_TOKEN", "afrp.net")
