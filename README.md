@@ -30,19 +30,19 @@
 <img width="1140" height="142" alt="初始闲置" src="https://github.com/user-attachments/assets/fca278a1-62ac-4828-9f28-fd3e577b2ab3" />
 
 **录制单个直播间**
-<img width="1138" height="153" alt="單路并發" src="https://github.com/user-attachments/assets/e582fb47-43f0-455e-a94a-536739d39160" />
+<img width="1138" height="153" alt="单路并发" src="https://github.com/user-attachments/assets/e582fb47-43f0-455e-a94a-536739d39160" />
 
 **同时录制2个直播间**
-<img width="1120" height="137" alt="2路并發" src="https://github.com/user-attachments/assets/b9d388cb-f019-4373-b55b-3225f32e330d" />
+<img width="1120" height="137" alt="2路并发" src="https://github.com/user-attachments/assets/b9d388cb-f019-4373-b55b-3225f32e330d" />
 
 **同时录制3个直播间**
-<img width="1139" height="144" alt="3路并發" src="https://github.com/user-attachments/assets/fa4e1a2e-3a15-4622-8778-adca44fa7184" />
+<img width="1139" height="144" alt="3路并发" src="https://github.com/user-attachments/assets/fa4e1a2e-3a15-4622-8778-adca44fa7184" />
 
 **同时录制4个直播间**
-<img width="1147" height="156" alt="4路并發" src="https://github.com/user-attachments/assets/26eca95e-fa50-4240-adfb-c8ba0b1671ea" />
+<img width="1147" height="156" alt="4路并发" src="https://github.com/user-attachments/assets/26eca95e-fa50-4240-adfb-c8ba0b1671ea" />
 
 同时录制5个直播间
-<img width="1143" height="133" alt="5路并發" src="https://github.com/user-attachments/assets/19509190-c3ad-4565-9162-0a8d4899cba2" />
+<img width="1143" height="133" alt="5路并发" src="https://github.com/user-attachments/assets/19509190-c3ad-4565-9162-0a8d4899cba2" />
 
 恢复闲置时
 <img width="1142" height="150" alt="image" src="https://github.com/user-attachments/assets/90081087-7967-454d-91d7-1256e48b40e3" />
@@ -108,7 +108,7 @@ docker run -d \
   bilirec:latest
 ```
 
-你也可以直接從 Docker Hub 拉取并运行镜像：
+你也可以直接从 Docker Hub 拉取并运行镜像：
 
 ```bash
 docker pull eric1008818/bilirec:latest # 最新测试版本请用 :edge
@@ -132,13 +132,13 @@ docker run -d \
 | 环境变量 | 说明 | 默认值 |
 | ------- | ---- | ------ |
 | `ANONYMOUS_LOGIN` | 是否使用匿名登录 | `false` |
-| `PORT` | API 服務端口 | `8080` |
+| `PORT` | API 服务端口 | `8080` |
 | `FRP_ENABLED` | 是否启用 FRP 内网穿透 | `false` |
 | `FRP_SERVER` | FRP 服务器地址（格式：`host:port`） | `tunnel.bilirec.org:7000` |
 | `FRP_TOKEN` | FRP 认证 Token；如果你有自己的 FRP 服务就填写，没有就留空。 | (空字符串) |
 | `FRP_BASE_DOMAIN` | FRP 公网基础域名（用于组装公开访问地址） | `tunnel.bilirec.org` |
 | `FRP_HTTPS` | FRP 代理使用的协议（`true`=HTTPS，`false`=HTTP） | `false` |
-| `FRP_SCHEME_HTTPS` | 公網 URL scheme（`true`=https，`false`=http） | `true` |
+| `FRP_SCHEME_HTTPS` | 公网 URL scheme（`true`=https，`false`=http） | `true` |
 | `MAX_CONCURRENT_RECORDINGS` | 最大同时录制数 | `3` |
 | `MAX_RECORDING_HOURS` | 单次录制最长时间（小时） | `5` |
 | `MAX_RECOVERY_ATTEMPTS` | 单次录制的最大重连尝试次数 | `5` |
@@ -195,8 +195,8 @@ docker run -d \
   - `false`（默认）：使用 HTTP 代理（适合内部自架、有前置 HTTPS 层的情况）
   - `true`：使用 HTTPS 代理（适合公开 FRP 服务）
 - `FRP_SCHEME_HTTPS`：生成的公网 URL scheme（默认 `true`）
-  - `false`：公网 URL 为 `http://bilirec-<random>.<FRP_BASE_DOMAIN>`
-  - `true`：公网 URL 为 `https://bilirec-<random>.<FRP_BASE_DOMAIN>`
+  - `false`：公网 URL 为 `http://<random>.<FRP_BASE_DOMAIN>`
+  - `true`：公网 URL 为 `https://<random>.<FRP_BASE_DOMAIN>`
 
 **常见配置示例：**
 
