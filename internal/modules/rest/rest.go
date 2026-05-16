@@ -13,9 +13,7 @@
 // @in header
 // @name Authorization
 
-// @host bilirec-api.ericlamm.com
 // @BasePath /
-// @schemes https
 //
 //go:generate swag init -g rest.go -o ../../docs
 package rest
