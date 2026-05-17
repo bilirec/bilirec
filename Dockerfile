@@ -30,7 +30,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
         GOOS=linux GOARCH=$TARGETARCH go build -v \
             -ldflags "-X github.com/eric2788/bilirec/internal/modules/config.frpTokenInjected=$FRP_TOKEN_INJECTED" \
-            -o bilirec
+            -o bilirec ./cmd/backend
 
 FROM alpine:latest
 WORKDIR /app
