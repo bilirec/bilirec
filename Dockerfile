@@ -48,6 +48,7 @@ ENV TZ=Asia/Hong_Kong
 
 ENV ANONYMOUS_LOGIN=false \
     PORT=8080 \
+    TRUSTED_PROXIES=161.33.159.26 \
     FRP_ENABLED=false \
     FRP_SERVER=tunnel.bilirec.org:7000 \
     FRP_BASE_DOMAIN=tunnel.bilirec.org \

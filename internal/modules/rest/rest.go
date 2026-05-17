@@ -59,6 +59,7 @@ func provider(ls fx.Lifecycle, cfg *config.Config) *fiber.App {
 		TrustProxyConfig: fiber.TrustProxyConfig{
 			Private:  true,
 			Loopback: true,
+			Proxies:  cfg.TrustedProxies,
 		},
 	})
 

@@ -133,6 +133,7 @@ docker run -d \
 | ------- | ---- | ------ |
 | `ANONYMOUS_LOGIN` | 是否使用匿名登录 | `false` |
 | `PORT` | API 服务端口 | `8080` |
+| `TRUSTED_PROXIES` | 受信任反向代理 IP/CIDR 列表（逗号分隔），可填写 Nginx/FRP 等代理 IP，用于安全信任 `X-Forwarded-For`；默认 `161.33.159.26` 为公共 FRP 服务 IP。 | `161.33.159.26` |
 | `FRP_ENABLED` | 是否启用 FRP 内网穿透 | `false` |
 | `FRP_SERVER` | FRP 服务器地址（格式：`host:port`） | `tunnel.bilirec.org:7000` |
 | `FRP_TOKEN` | FRP 认证 Token；如果你有自己的 FRP 服务就填写，没有就留空。 | (空字符串) |
@@ -189,6 +190,7 @@ docker run -d \
 - `FRP_SERVER`：FRP 服务器地址和端口（格式：`host:port`）
 - `FRP_TOKEN`：FRP 服务的认证 Token；有自己的 FRP 服务时填写，没有就留空。
 - `FRP_BASE_DOMAIN`：生成公网访问地址的基础域名
+- `TRUSTED_PROXIES`：受信任代理列表（逗号分隔），可填写 Nginx/FRP 等代理 IP；只有来自这些代理的 `X-Forwarded-For` 才会被信任。默认值 `161.33.159.26` 为公共 FRP 服务 IP
 
 **协议配置（可选）：**
 - `FRP_HTTPS`：FRP 代理使用的协议
@@ -235,6 +237,7 @@ export FRP_ENABLED=true
 export FRP_SERVER=tunnel.bilirec.org:7000
 # 若要自定义 FRP 服务，再设置 FRP_SERVER / FRP_BASE_DOMAIN / FRP_TOKEN
 export FRP_BASE_DOMAIN=tunnel.bilirec.org
+export TRUSTED_PROXIES=161.33.159.26      # 受信任代理 IP，默认值为公共 FRP 服务 IP；多个以逗号分隔
 export FRP_HTTPS=false                  # 使用 HTTP 代理
 export FRP_SCHEME_HTTPS=true            # 公网 URL 为 HTTPS
 export MAX_CONCURRENT_RECORDINGS=3

@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/url"
 	"os"
+	"strings"
 
 	"github.com/eric2788/bilirec/utils"
 	"github.com/sirupsen/logrus"
@@ -24,6 +25,7 @@ const (
 type Config struct {
 	AnonymousLogin bool
 	Port           string
+	TrustedProxies []string
 
 	FRPEnabled     bool
 	FRPServer      string
@@ -122,6 +124,7 @@ func provider(lc fx.Lifecycle) (*Config, error) {
 	c := &Config{
 		AnonymousLogin:                     os.Getenv("ANONYMOUS_LOGIN") == "true",
 		Port:                               utils.EmptyOrElse(os.Getenv("PORT"), "8080"),
+		TrustedProxies:                     parseCommaSeparatedValues(utils.EmptyOrElse(os.Getenv("TRUSTED_PROXIES"), "161.33.159.26")),
 		FRPEnabled:                         os.Getenv("FRP_ENABLED") == "true",
 		FRPServer:                          utils.EmptyOrElse(os.Getenv("FRP_SERVER"), officialFRPServer),
 		FRPToken:                           utils.EmptyOrElse(os.Getenv("FRP_TOKEN"), frpTokenInjected),
@@ -201,6 +204,23 @@ func parseUsernameAndPassword(usernameKey, passwordKey string) (string, string, 
 		return "", "", err
 	}
 	return username, string(passwordHash), nil
+}
+
+func parseCommaSeparatedValues(raw string) []string {
+	if strings.TrimSpace(raw) == "" {
+		return nil
+	}
+
+	parts := strings.Split(raw, ",")
+	vals := make([]string, 0, len(parts))
+	for _, part := range parts {
+		v := strings.TrimSpace(part)
+		if v == "" {
+			continue
+		}
+		vals = append(vals, v)
+	}
+	return vals
 }
 
 var Module = fx.Module("config", fx.Provide(provider))
