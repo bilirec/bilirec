@@ -42,7 +42,7 @@ func (r *Controller) getStatus(ctx fiber.Ctx) error {
 	session := r.client.GetSession()
 
 	resp := StatusResponse{
-		Authenticated: session.State == bilibili.StateAuthenticated,
+		Authenticated: session.Account != nil,
 		State:         string(session.State),
 	}
 
@@ -91,7 +91,6 @@ func (r *Controller) initLogin(ctx fiber.Ctx) error {
 			})
 	}
 
-	logger.Info("QR login session initiated")
 	return ctx.Status(fiber.StatusCreated).JSON(InitLoginResponse{
 		QR: &QRInfo{
 			URL: qrResp.Url,

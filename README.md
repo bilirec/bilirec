@@ -131,7 +131,7 @@ docker run -d \
 
 | 环境变量 | 说明 | 默认值 |
 | ------- | ---- | ------ |
-| `BILIBILI_LOGIN_MODE` | 登录模式：`startup`（启动时登录）/ `controller`（由 API 控制登录）/ `anonymous`（匿名登录） | `startup` |
+| `BILIBILI_LOGIN_MODE` | 登录模式：`startup`（启动时登录）/ `controller`（由 API 控制登录）/ `anonymous`（匿名登录） | `controller` |
 | `HOST` | API 服务绑定地址（空值时监听所有网卡） | (空字符串) |
 | `PORT` | API 服务端口 | `8080` |
 | `SERVER_CRT` | 可选：HTTPS 证书文件路径；当与 `SERVER_KEY` 同时设置时，Fiber 默认启用 HTTPS | (未设置) |
@@ -237,7 +237,7 @@ FRP enabled in custom-selfhost mode
 ### 示例配置
 
 ```bash
-export BILIBILI_LOGIN_MODE=startup
+export BILIBILI_LOGIN_MODE=controller
 # 可选：指定监听网卡；留空表示监听所有网卡
 # export HOST=0.0.0.0
 export PORT=8080

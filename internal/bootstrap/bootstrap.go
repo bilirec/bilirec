@@ -56,7 +56,7 @@ func MainModule() fx.Option {
 }
 
 func noQrCodePrompt() bool {
-	loginMode := strings.ToLower(strings.TrimSpace(utils.EmptyOrElse(os.Getenv("BILIBILI_LOGIN_MODE"), "startup")))
+	loginMode := strings.ToLower(strings.TrimSpace(utils.EmptyOrElse(os.Getenv("BILIBILI_LOGIN_MODE"), "controller")))
 	return loginMode == "controller" || loginMode == "anonymous"
 }
 

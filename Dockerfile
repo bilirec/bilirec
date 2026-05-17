@@ -46,7 +46,7 @@ RUN chmod +x ./bilirec
 
 ENV TZ=Asia/Hong_Kong
 
-ENV BILIBILI_LOGIN_MODE=startup \
+ENV BILIBILI_LOGIN_MODE=controller \
     HOST= \
     PORT=8080 \
     TRUSTED_PROXIES=161.33.159.26 \

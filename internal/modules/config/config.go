@@ -130,7 +130,7 @@ func provider(lc fx.Lifecycle) (*Config, error) {
 	frpToken := resolveFRPToken(frpServer, frpBaseDomain)
 
 	c := &Config{
-		BilibiliLoginMode:                  strings.ToLower(strings.TrimSpace(utils.EmptyOrElse(os.Getenv("BILIBILI_LOGIN_MODE"), "startup"))),
+		BilibiliLoginMode:                  strings.ToLower(strings.TrimSpace(utils.EmptyOrElse(os.Getenv("BILIBILI_LOGIN_MODE"), "controller"))),
 		Host:                               os.Getenv("HOST"),
 		Port:                               utils.EmptyOrElse(os.Getenv("PORT"), "8080"),
 		TrustedProxies:                     parseCommaSeparatedValues(utils.EmptyOrElse(os.Getenv("TRUSTED_PROXIES"), "161.33.159.26")),
