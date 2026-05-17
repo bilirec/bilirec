@@ -140,8 +140,11 @@ func (g *GlobalReadOnly) Validate() {
 	if g.config.liveStreamWriterFlushPeriod <= 0 {
 		logger.Warnf("LIVE_STREAM_WRITER_FLUSH_PERIOD_SECS is invalid (%d), using default %d seconds", g.config.liveStreamWriterFlushPeriod, defaultLiveStreamWriterFlushPeriodSecs)
 	}
-	// Warn if fiber uses HTTPS and FRP is enabled but not using HTTPS protocol
+	// Reject protocol-mismatch configs between FRP backend mode and Fiber listener mode.
 	if g.config.ServerCrt != "" && g.config.ServerKey != "" && g.config.FRPEnabled && !g.config.FRPHttps {
-		logger.Warnf("SERVER_CRT and SERVER_KEY are configured (HTTPS enabled), but FRP_ENABLED=true with FRP_HTTPS=false; FRP proxy uses HTTP protocol which may expose traffic between Fiber and FRP proxy")
+		logger.Fatalf("invalid config: SERVER_CRT and SERVER_KEY enable HTTPS-only server, but FRP_ENABLED=true with FRP_HTTPS=false configures an HTTP FRP backend; this protocol mismatch causes FRP to fail. Set FRP_HTTPS=true, or disable HTTPS certs (SERVER_CRT/SERVER_KEY), or disable FRP")
+	}
+	if g.config.FRPEnabled && g.config.FRPHttps && (g.config.ServerCrt == "" || g.config.ServerKey == "") {
+		logger.Fatalf("invalid config: FRP_ENABLED=true with FRP_HTTPS=true requires Fiber HTTPS to be enabled by setting both SERVER_CRT and SERVER_KEY; otherwise FRP HTTPS backend protocol mismatches and FRP fails. Set SERVER_CRT and SERVER_KEY, or set FRP_HTTPS=false, or disable FRP")
 	}
 }

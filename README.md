@@ -198,7 +198,8 @@ docker run -d \
 - `FRP_HTTPS`：FRP 代理使用的协议
   - `false`（默认）：使用 HTTP 代理（适合内部自架、有前置 HTTPS 层的情况）
   - `true`：使用 HTTPS 代理（适合公开 FRP 服务）
-  - **⚠️ 警告**：如果启用 FRP (`FRP_ENABLED=true`) 且设置 `FRP_HTTPS=false`，在不安全的网络环境下应用数据可能暴露，请确保 FRP 代理运行在安全的网络中或使用前置 HTTPS 层（如 Caddy、Nginx）保护。
+  - **❗配置约束**：当 `FRP_ENABLED=true` 且 `FRP_HTTPS=true` 时，必须同时设置 `SERVER_CRT` + `SERVER_KEY`（确保 Fiber 启用 HTTPS）；否则会发生协议不匹配并导致 FRP 无法工作，程序会在启动阶段直接报错退出。
+  - **❗配置约束**：当同时设置 `SERVER_CRT` + `SERVER_KEY`（Fiber 仅提供 HTTPS）且 `FRP_ENABLED=true` 时，`FRP_HTTPS` 不能为 `false`。否则 FRP 会以 HTTP 回源到 HTTPS 本地服务，发生协议不匹配并导致 FRP 无法工作，程序会在启动阶段直接报错退出。
 - `FRP_SCHEME_HTTPS`：生成的公网 URL scheme（默认 `true`）
   - `false`：公网 URL 为 `http://<random>.<FRP_BASE_DOMAIN>`
   - `true`：公网 URL 为 `https://<random>.<FRP_BASE_DOMAIN>`
