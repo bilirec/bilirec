@@ -1,4 +1,4 @@
-package utils
+﻿package utils
 
 import (
 	"strconv"
@@ -65,11 +65,11 @@ func WithRetry(attempts int, log *logrus.Entry, action string, fn func() error) 
 			log.Debugf("%s succeeded on attempt %d", action, i+1)
 			return nil
 		} else {
-			log.Warnf("%s failed on attempt %d: %v", action, i+1, err)
+			log.Warnf("%s 在第 %d 次尝试时失败：%v", action, i+1, err)
 		}
 		if i < attempts-1 {
 			sleep := time.Duration(1<<i) * time.Second
-			log.Warnf("will retry after %.f seconds...", sleep.Seconds())
+			log.Warnf("将在 %.f 秒后重试...", sleep.Seconds())
 			time.Sleep(sleep)
 		}
 	}

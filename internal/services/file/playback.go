@@ -1,4 +1,4 @@
-package file
+﻿package file
 
 import (
 	"errors"
@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-var ErrUnsupportedPlaybackMedia = errors.New("unsupported playback media")
+var ErrUnsupportedPlaybackMedia = errors.New("不支持的播放媒体格式")
 
 // OpenForPlayback validates a relative path and returns an absolute path plus MIME type.
 func (s *Service) OpenForPlayback(relPath string) (string, string, error) {

@@ -1,4 +1,4 @@
-package processors
+﻿package processors
 
 import (
 	"context"
@@ -49,7 +49,7 @@ func (p *TsContinuityFixerProcessor) Process(_ context.Context, log *logrus.Entr
 	if result.Patched > 3 {
 		log.Debugf("ts-continuity-fixer: patched %d packets in segment (%d B)", result.Patched, len(data))
 	} else if result.Patched > 10 {
-		log.Warnf("ts-continuity-fixer: patched %d packets in segment (%d B) - this may indicate a problem with the source segments", result.Patched, len(data))
+		log.Warnf("ts-continuity-fixer：已修补分片（%d B）中的 %d 个包，这可能表示源分片存在问题", result.Patched, len(data))
 	}
 	return data, nil
 }

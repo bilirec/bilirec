@@ -50,7 +50,7 @@ func TestFlvStreamFixerProcessor_LogsTimestampJumpWarning(t *testing.T) {
 	}
 
 	logs := logBuffer.String()
-	if !strings.Contains(logs, "FLV timestamp jump detected") {
+	if !strings.Contains(logs, "检测到 FLV 时间戳跳变") {
 		t.Fatalf("expected warning log, got: %s", logs)
 	}
 	if !strings.Contains(logs, "delta=1200ms") {

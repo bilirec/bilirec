@@ -1,4 +1,4 @@
-package convert
+﻿package convert
 
 import (
 	"net/url"
@@ -44,7 +44,7 @@ func NewController(app *fiber.App, convertSvc *convert.Service, pathSvc *path.Se
 func (c *Controller) listConvertTasks(ctx fiber.Ctx) error {
 	tasks, err := c.convertSvc.ListInProgress()
 	if err != nil {
-		logger.Errorf("error listing convert tasks: %v", err)
+		logger.Errorf("列出转码任务失败：%v", err)
 		return fiber.ErrInternalServerError
 	}
 
@@ -54,13 +54,13 @@ func (c *Controller) listConvertTasks(ctx fiber.Ctx) error {
 		if rel, err := c.pathSvc.GetRelativePath(tasks[i].InputPath); err == nil {
 			tasks[i].InputPath = rel
 		} else {
-			logger.Warnf("error getting relative path for %s: %v", tasks[i].InputPath, err)
+			logger.Warnf("获取 %s 的相对路径失败：%v", tasks[i].InputPath, err)
 		}
 
 		if rel, err := c.pathSvc.GetRelativePath(tasks[i].OutputPath); err == nil {
 			tasks[i].OutputPath = rel
 		} else {
-			logger.Warnf("error getting relative path for %s: %v", tasks[i].OutputPath, err)
+			logger.Warnf("获取 %s 的相对路径失败：%v", tasks[i].OutputPath, err)
 		}
 
 	}
@@ -89,7 +89,7 @@ func (c *Controller) cancelTask(ctx fiber.Ctx) error {
 		if err == convert.ErrTaskNotFound {
 			return fiber.ErrNotFound
 		} else {
-			logger.Errorf("error cancelling convert task %s: %v", taskID, err)
+			logger.Errorf("取消转码任务 %s 失败：%v", taskID, err)
 			return fiber.ErrInternalServerError
 		}
 	}
@@ -120,18 +120,18 @@ func (c *Controller) enqueueTask(ctx fiber.Ctx) error {
 	delete := ctx.Query("delete", "false") == "true"
 	fullPath, err := c.pathSvc.ValidatePath(path)
 	if err != nil {
-		logger.Warnf("error validating file path %s: %v", path, err)
+		logger.Warnf("校验文件路径 %s 失败：%v", path, err)
 		return c.parseFiberError(err)
 	}
 	if inQueue, err := c.convertSvc.IsInQueue(fullPath); err != nil {
-		logger.Errorf("error checking if path %s is in convert queue: %v", path, err)
+		logger.Errorf("检查路径 %s 是否在转码队列中失败：%v", path, err)
 		return c.parseFiberError(err)
 	} else if inQueue {
-		return fiber.NewError(fiber.StatusConflict, "該文件已在轉檔佇列中")
+		return fiber.NewError(fiber.StatusConflict, "该文件已在转码队列中")
 	}
 	// currnetly only support converting to mp4
 	if q, err := c.convertSvc.Enqueue(fullPath, "mp4", delete); err != nil {
-		logger.Errorf("error enqueueing convert task for path %s: %v", path, err)
+		logger.Errorf("为路径 %s 入队转码任务失败：%v", path, err)
 		return utils.Ternary(
 			os.IsNotExist(err),
 			fiber.ErrNotFound,
@@ -144,11 +144,11 @@ func (c *Controller) enqueueTask(ctx fiber.Ctx) error {
 func (c *Controller) parseFiberError(err error) error {
 	switch {
 	case os.IsNotExist(err):
-		return fiber.NewError(fiber.StatusNotFound, "找不到所屬文件夾或檔案")
+		return fiber.NewError(fiber.StatusNotFound, "找不到所属文件夹或文件")
 	case os.IsPermission(err), err == path.ErrAccessDenied:
-		return fiber.NewError(fiber.StatusForbidden, "無法存取該文件路徑")
+		return fiber.NewError(fiber.StatusForbidden, "无法访问该文件路径")
 	case err == path.ErrInvalidFilePath:
-		return fiber.NewError(fiber.StatusBadRequest, "無效文件路徑")
+		return fiber.NewError(fiber.StatusBadRequest, "无效文件路径")
 	default:
 		return fiber.ErrInternalServerError
 	}

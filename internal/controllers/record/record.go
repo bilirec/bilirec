@@ -1,4 +1,4 @@
-package record
+﻿package record
 
 import (
 	"strconv"
@@ -47,8 +47,8 @@ func NewController(app *fiber.App, service *recorder.Service) *Controller {
 func (r *Controller) startRecording(ctx fiber.Ctx) error {
 	roomId, err := strconv.Atoi(ctx.Params("roomID"))
 	if err != nil {
-		logger.Warnf("cannot parse roomId to int: %v", err)
-		return fiber.NewError(fiber.StatusBadRequest, "無效的房間 ID")
+		logger.Warnf("无法将 roomId 解析为整数：%v", err)
+		return fiber.NewError(fiber.StatusBadRequest, "无效的房间 ID")
 	}
 
 	// duration_minutes query param: 0 (sentinel) = not provided → use system default
@@ -70,34 +70,34 @@ func (r *Controller) startRecording(ctx fiber.Ctx) error {
 		case bilibili.ProfileHTTPFLV, bilibili.ProfileHLSTS, bilibili.ProfileHLSFMP4:
 			startArgs = append(startArgs, recorder.WithStreamProfile(bilibili.StreamProfile(streamProfileRaw)))
 		default:
-			return fiber.NewError(fiber.StatusBadRequest, "無效的串流格式，僅支援 http-flv / hls-ts / hls-fmp4")
+			return fiber.NewError(fiber.StatusBadRequest, "无效的流格式，仅支持 http-flv / hls-ts / hls-fmp4")
 		}
 	}
 
 	err = r.service.Start(roomId, startArgs...)
 	if err != nil {
-		logger.Errorf("error starting recording for room %d: %v", roomId, err)
+		logger.Errorf("为房间 %d 开始录制失败：%v", roomId, err)
 		switch err {
 		case bilibili.ErrRoomNotFound:
-			return fiber.NewError(fiber.StatusNotFound, "房間不存在")
+			return fiber.NewError(fiber.StatusNotFound, "房间不存在")
 		case recorder.ErrRoomBanned:
-			return fiber.NewError(fiber.StatusBadRequest, "房間已被封禁")
+			return fiber.NewError(fiber.StatusBadRequest, "房间已被封禁")
 		case recorder.ErrRoomEncrypted:
-			return fiber.NewError(fiber.StatusBadRequest, "房間已被上鎖")
+			return fiber.NewError(fiber.StatusBadRequest, "房间已被上锁")
 		case recorder.ErrEmptyStreamURLs:
-			return fiber.NewError(fiber.StatusBadRequest, "無可用的視頻流 URL")
+			return fiber.NewError(fiber.StatusBadRequest, "无可用的视频流 URL")
 		case recorder.ErrStreamNotLive:
-			return fiber.NewError(fiber.StatusBadRequest, "房間並非直播狀態")
+			return fiber.NewError(fiber.StatusBadRequest, "房间并非直播状态")
 		case recorder.ErrRecordingStarted:
-			return fiber.NewError(fiber.StatusBadRequest, "此房間已經正在錄製中")
+			return fiber.NewError(fiber.StatusBadRequest, "该房间已在录制中")
 		case recorder.ErrMaxConcurrentRecordingsReached:
-			return fiber.NewError(fiber.StatusTooManyRequests, "已達到最大同時錄製數")
+			return fiber.NewError(fiber.StatusTooManyRequests, "已达到最大同时录制数")
 		case recorder.ErrInsufficientDiskSpace:
-			return fiber.NewError(fiber.StatusInsufficientStorage, "磁碟空間低於設定值")
+			return fiber.NewError(fiber.StatusInsufficientStorage, "磁盘空间低于设定值")
 		case recorder.ErrInvalidStreamProfile:
-			return fiber.NewError(fiber.StatusBadRequest, "無效的串流格式")
+			return fiber.NewError(fiber.StatusBadRequest, "无效的流格式")
 		case recorder.ErrStreamURLsUnreachable, recorder.ErrEmptyStreamURLs:
-			return fiber.NewError(fiber.StatusGone, "無法連接到視頻流 URL")
+			return fiber.NewError(fiber.StatusGone, "无法连接到视频流 URL")
 		default:
 			return fiber.ErrInternalServerError
 		}
@@ -119,8 +119,8 @@ func (r *Controller) startRecording(ctx fiber.Ctx) error {
 func (r *Controller) stopRecording(ctx fiber.Ctx) error {
 	roomId, err := strconv.Atoi(ctx.Params("roomID"))
 	if err != nil {
-		logger.Warnf("cannot parse roomId to int: %v", err)
-		return fiber.NewError(fiber.StatusBadRequest, "無效的房間 ID")
+		logger.Warnf("无法将 roomId 解析为整数：%v", err)
+		return fiber.NewError(fiber.StatusBadRequest, "无效的房间 ID")
 	}
 	stopped := r.service.Stop(roomId)
 	return ctx.JSON(StopResult{
@@ -143,7 +143,7 @@ func (r *Controller) stopRecording(ctx fiber.Ctx) error {
 func (r *Controller) getRecordingStatuses(ctx fiber.Ctx) error {
 	roomIds, err := utils.ParseRoomIDs(ctx.Query("roomIDs", ""), ctx.Body())
 	if err != nil {
-		logger.Warnf("cannot parse roomIds: %v", err)
+		logger.Warnf("无法解析 roomIds：%v", err)
 		return fiber.NewError(fiber.StatusBadRequest, err.Error())
 	}
 
@@ -169,7 +169,7 @@ func (r *Controller) getRecordingStatuses(ctx fiber.Ctx) error {
 func (r *Controller) getRecordingStats(ctx fiber.Ctx) error {
 	roomIds, err := utils.ParseRoomIDs(ctx.Query("roomIDs", ""), ctx.Body())
 	if err != nil {
-		logger.Warnf("cannot parse roomIds: %v", err)
+		logger.Warnf("无法解析 roomIds：%v", err)
 		return fiber.NewError(fiber.StatusBadRequest, err.Error())
 	}
 

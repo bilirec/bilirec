@@ -1,4 +1,4 @@
-package bilibili
+﻿package bilibili
 
 import (
 	"encoding/json"
@@ -80,7 +80,7 @@ func (c *Client) GetLiveRoomInfos(roomIDs ...int) (map[string]*LiveRoomInfoDetai
 	} else if resp.Code != 0 {
 		return nil, errors.Errorf("failed to get live room infos: %s (code: %d)", resp.Message, resp.Code)
 	} else if resp.Data == nil {
-		return nil, errors.New("no data in live room info response")
+		return nil, errors.New("直播间信息响应中没有数据")
 	} else if len(resp.Data.ByRoomIDs) == 0 {
 		return nil, ErrRoomNotFound
 	}

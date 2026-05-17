@@ -1,4 +1,4 @@
-package bilibili
+﻿package bilibili
 
 import (
 	"context"
@@ -14,7 +14,7 @@ import (
 
 func (c *Client) loadCookiesOrLogin(ctx context.Context, cfg *config.Config) error {
 	if cfg.AnonymousLogin {
-		logger.Info("using anonymous login, skipping bilibili login process")
+		logger.Info("使用匿名登录，跳过哔哩哔哩登录流程")
 		return nil
 	}
 
@@ -26,24 +26,24 @@ func (c *Client) loadCookiesOrLogin(ctx context.Context, cfg *config.Config) err
 		c.refreshToken = token
 
 		if acc, err := c.GetAccountInformation(); err == nil {
-			logger.Infof("loaded cookies for user: %s (mid: %d)", acc.Uname, acc.Mid)
+			logger.Infof("已加载用户 Cookie：%s（mid：%d）", acc.Uname, acc.Mid)
 			return c.refreshCookiesIfRequired()
 		} else {
-			logger.Warnf("failed to get account information with loaded cookies: %v", err)
+			logger.Warnf("使用已加载 Cookie 获取账号信息失败：%v", err)
 		}
 
 	} else if !os.IsNotExist(err) {
-		return fmt.Errorf("error reading cookie file: %v", err)
+		return fmt.Errorf("读取 cookie 文件失败：%v", err)
 	}
 
-	logger.Info("starting bilibili login process")
+	logger.Info("开始哔哩哔哩登录流程")
 
 	qrcode, err := c.GetQRCode()
 	if err != nil {
-		return fmt.Errorf("error getting qrcode: %v", err)
+		return fmt.Errorf("获取二维码失败：%v", err)
 	}
 
-	logger.Info("please scan the qrcode to login:")
+	logger.Info("请扫描二维码登录：")
 	qrcode.Print()
 
 	// blocking thread
@@ -52,15 +52,15 @@ func (c *Client) loadCookiesOrLogin(ctx context.Context, cfg *config.Config) err
 	})
 
 	if err != nil {
-		return fmt.Errorf("error logging in with qrcode: %v", err)
+		return fmt.Errorf("二维码登录失败：%v", err)
 	} else if result.Code != 0 {
-		return fmt.Errorf("login failed: %s (code %d)", result.Message, result.Code)
+		return fmt.Errorf("登录失败：%s（代码 %d）", result.Message, result.Code)
 	}
 
 	if acc, err := c.GetAccountInformation(); err != nil {
-		return fmt.Errorf("error getting account information after login: %v, please try again.", err)
+		return fmt.Errorf("登录后获取账号信息失败：%v，请重试。", err)
 	} else {
-		logger.Infof("login successful. logged in as %s (mid: %d)", acc.Uname, acc.Mid)
+		logger.Infof("登录成功，当前账号：%s（mid：%d）", acc.Uname, acc.Mid)
 	}
 
 	if err := c.writeRefreshTokenToFile(result.RefreshToken); err != nil {
@@ -73,26 +73,26 @@ func (c *Client) loadCookiesOrLogin(ctx context.Context, cfg *config.Config) err
 func (c *Client) refreshCookiesIfRequired() error {
 	info, err := c.GetWebCookieRefreshInfo()
 	if err != nil {
-		return fmt.Errorf("error getting cookie refresh info: %v", err)
+		return fmt.Errorf("获取 cookie 刷新信息失败：%v", err)
 	}
 	if !info.Refresh {
-		logger.Info("cookies do not require refresh")
+		logger.Info("Cookie 无需刷新")
 		return nil
 	}
 	csrfResult, err := c.GetWebCookieRefreshCsrf(bili.GetWebCookieRefreshCsrfParam{
 		Timestamp: info.Timestamp,
 	})
 	if err != nil {
-		return fmt.Errorf("error getting cookie refresh csrf: %v", err)
+		return fmt.Errorf("获取 cookie 刷新 csrf 失败：%v", err)
 	}
 	refreshed, err := c.RefreshCookie(bili.RefreshCookieParam{
 		RefreshToken: c.refreshToken,
 		RefreshCsrf:  csrfResult.RefreshCsrf,
 	})
 	if err != nil {
-		return fmt.Errorf("error refreshing cookies: %v", err)
+		return fmt.Errorf("刷新 cookie 失败：%v", err)
 	} else {
-		logger.Info("cookies refreshed successfully")
+		logger.Info("Cookie 刷新成功")
 		c.syncCookies()
 	}
 
@@ -105,7 +105,7 @@ func (c *Client) refreshCookiesIfRequired() error {
 func (c *Client) writerCookiesToFile() error {
 	cookieStr := c.GetCookiesString()
 	if err := os.WriteFile(c.cookiePath, []byte(cookieStr), 0600); err != nil {
-		return fmt.Errorf("error writing cookie file: %v", err)
+		return fmt.Errorf("写入 cookie 文件失败：%v", err)
 	}
 	return nil
 }
@@ -113,7 +113,7 @@ func (c *Client) writerCookiesToFile() error {
 func (c *Client) writeRefreshTokenToFile(refreshToken string) error {
 	c.refreshToken = refreshToken
 	if err := os.WriteFile(c.refreshTokenPath, []byte(refreshToken), 0600); err != nil {
-		return fmt.Errorf("error writing refresh token file: %v", err)
+		return fmt.Errorf("写入 refresh token 文件失败：%v", err)
 	}
 	return nil
 }
@@ -124,7 +124,7 @@ func (c *Client) loadOfflineCredentials() (cookie string, refreshToken string, e
 	if os.IsNotExist(err) {
 		cookie = ""
 	} else if err != nil {
-		err = fmt.Errorf("error reading cookie file: %v", err)
+		err = fmt.Errorf("读取 cookie 文件失败：%v", err)
 	} else {
 		cookie = string(cookieBytes)
 	}
@@ -133,7 +133,7 @@ func (c *Client) loadOfflineCredentials() (cookie string, refreshToken string, e
 	if os.IsNotExist(err) {
 		refreshToken = ""
 	} else if err != nil {
-		err = fmt.Errorf("error reading refresh token file: %v", err)
+		err = fmt.Errorf("读取 refresh token 文件失败：%v", err)
 	} else {
 		refreshToken = string(refreshTokenBytes)
 	}

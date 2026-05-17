@@ -1,4 +1,4 @@
-package cloudconvert
+﻿package cloudconvert
 
 import (
 	"encoding/json"
@@ -8,7 +8,7 @@ import (
 
 func (c *Client) GetJobDetails(jobID string, includes ...string) (*JobResponse, error) {
 	if jobID == "" {
-		return nil, fmt.Errorf("job id is required")
+		return nil, fmt.Errorf("job id 为必填项")
 	}
 
 	req := c.client.R().
@@ -24,7 +24,7 @@ func (c *Client) GetJobDetails(jobID string, includes ...string) (*JobResponse, 
 		return nil, err
 	}
 	if res.StatusCode() < 200 || res.StatusCode() >= 400 {
-		return nil, fmt.Errorf("get job details failed with status code %d: %s", res.StatusCode(), res.String())
+		return nil, fmt.Errorf("获取 job 详情失败，状态码 %d：%s", res.StatusCode(), res.String())
 	}
 
 	var jobRes JobResponse

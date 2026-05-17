@@ -1,4 +1,4 @@
-package main
+﻿package main
 
 import (
 	_ "embed"
@@ -16,7 +16,7 @@ var logger = logrus.WithField("package", "main")
 func init() {
 	exe, err := os.Executable()
 	if err != nil {
-		logger.Warnf("cannot determine executable path: %v", err)
+		logger.Warnf("无法确定可执行文件路径：%v", err)
 		// fallback to cwd
 		exe = "."
 	}
@@ -26,11 +26,11 @@ func init() {
 
 	if _, err := os.Stat(swagPath); os.IsNotExist(err) {
 		if err := os.MkdirAll(swagDir, 0755); err != nil {
-			logger.Warnf("failed to create docs dir: %v", err)
+			logger.Warnf("创建 docs 目录失败：%v", err)
 		}
 		if err := os.WriteFile(swagPath, embeddedSwagger, 0644); err != nil {
-			logger.Warnf("failed to write embedded swagger: %v", err)
+			logger.Warnf("写入内置 swagger 失败：%v", err)
 		}
-		logger.Infof("wrote embedded swagger to %s", swagPath)
+		logger.Infof("已将内置 swagger 写入 %s", swagPath)
 	}
 }

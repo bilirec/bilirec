@@ -1,4 +1,4 @@
-package hls
+﻿package hls
 
 import (
 	"bytes"
@@ -22,14 +22,14 @@ func ParseBytes(body []byte) (*Playlist, error) {
 	playlist := &Playlist{}
 	parsed, listType, err := m3u8.DecodeFrom(bytes.NewReader(body), true)
 	if err != nil {
-		return nil, fmt.Errorf("hls: m3u8 decode error: %w", err)
+		return nil, fmt.Errorf("hls：m3u8 解码错误：%w", err)
 	}
 	if listType != m3u8.MEDIA {
-		return nil, fmt.Errorf("hls: expected media playlist, got %v", listType)
+		return nil, fmt.Errorf("hls：期望 media playlist，实际为 %v", listType)
 	}
 	mediaPlaylist, ok := parsed.(*m3u8.MediaPlaylist)
 	if !ok {
-		return nil, fmt.Errorf("hls: unexpected playlist type %T", parsed)
+		return nil, fmt.Errorf("hls：意外的播放列表类型 %T", parsed)
 	}
 
 	playlist.MediaSeq = int64(mediaPlaylist.SeqNo)
@@ -175,13 +175,13 @@ func FetchSegmentWithRetry(ctx context.Context, client *resty.Client, segmentURL
 			if errors.Is(err, context.Canceled) || ctx.Err() == context.Canceled {
 				return nil, err
 			}
-			return nil, fmt.Errorf("segment fetch: %w", err)
+			return nil, fmt.Errorf("拉取分片失败：%w", err)
 		}
 		if resp.StatusCode() == 200 {
 			return resp.Body(), nil
 		}
 		if !IsRetryableSegmentStatus(resp.StatusCode()) || attempt == attempts {
-			return nil, fmt.Errorf("segment status %d", resp.StatusCode())
+			return nil, fmt.Errorf("分片状态码 %d", resp.StatusCode())
 		}
 
 		timer := time.NewTimer(delay)
@@ -193,5 +193,5 @@ func FetchSegmentWithRetry(ctx context.Context, client *resty.Client, segmentURL
 		}
 	}
 
-	return nil, fmt.Errorf("segment fetch retry exhausted")
+	return nil, fmt.Errorf("分片拉取重试次数已耗尽")
 }

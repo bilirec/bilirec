@@ -1,4 +1,4 @@
-package file
+﻿package file
 
 import (
 	"context"
@@ -16,7 +16,7 @@ import (
 
 // var logger = logrus.WithField("service", "file")
 
-var ErrIsDirectory = fmt.Errorf("path is a directory")
+var ErrIsDirectory = fmt.Errorf("路径是目录")
 
 type Service struct {
 	cfg *config.Config

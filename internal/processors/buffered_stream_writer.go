@@ -1,4 +1,4 @@
-package processors
+﻿package processors
 
 import (
 	"context"
@@ -151,13 +151,13 @@ func (w *BufferedStreamWriterProcessor) Close() error {
 	}
 	w.wait.Wait()
 	if w.sdcardProtection && w.bytesWritten < int64(w.bufferSize) {
-		w.logger.Warnf("total bytes written (%d) less than buffer size (%d), skipping flush to reduce SD card wear", w.bytesWritten, w.bufferSize)
+		w.logger.Warnf("已写入总字节数（%d）小于缓冲区大小（%d），为减少 SD 卡磨损跳过 flush", w.bytesWritten, w.bufferSize)
 		return w.file.Close()
 	}
 	if err := w.writer.Flush(); err != nil {
-		w.logger.Warnf("error flushing writer: %v", err)
+		w.logger.Warnf("刷新写入器失败：%v", err)
 	} else if err := w.file.Sync(); err != nil {
-		w.logger.Warnf("error syncing file: %v", err)
+		w.logger.Warnf("同步文件失败：%v", err)
 	}
 	w.logger.Debugf("file path: %s, total written %vB", w.path, w.bytesWritten)
 	return w.file.Close()
@@ -181,7 +181,7 @@ func (w *BufferedStreamWriterProcessor) writePeriodically() {
 			n, err := w.writer.Write(data)
 			w.bytesWritten += int64(n)
 			if err != nil {
-				w.logger.Warnf("error writing data: %v", err)
+				w.logger.Warnf("写入数据失败：%v", err)
 			}
 			// Return buffer to pool after writing (if pool is enabled).
 			if w.bytesPool != nil {
@@ -190,10 +190,10 @@ func (w *BufferedStreamWriterProcessor) writePeriodically() {
 		case <-flushTimer.C:
 			flushStart := time.Now()
 			if err := w.writer.Flush(); err != nil {
-				w.logger.Warnf("error flushing writer: %v", err)
+				w.logger.Warnf("刷新写入器失败：%v", err)
 			}
 			if flushCost := time.Since(flushStart); flushCost > defaultSlowFlushWarnThreshold {
-				w.logger.Warnf("slow periodic flush: cost=%s", flushCost)
+				w.logger.Warnf("周期性 flush 较慢：耗时=%s", flushCost)
 			}
 			flushTimer.Reset(w.flushPeriod)
 		}
@@ -230,10 +230,10 @@ func (w *BufferedStreamWriterProcessor) syncWorker() {
 			// Perform the actual sync to disk (can be slow on SD cards).
 			syncStart := time.Now()
 			if err := w.file.Sync(); err != nil {
-				w.logger.Warnf("error syncing file: %v", err)
+				w.logger.Warnf("同步文件失败：%v", err)
 			}
 			if syncCost := time.Since(syncStart); syncCost > slowSyncWarnThreshold {
-				w.logger.Warnf("slow periodic sync: cost=%s", syncCost)
+				w.logger.Warnf("周期性 sync 较慢：耗时=%s", syncCost)
 			}
 		case <-w.stopCh:
 			return

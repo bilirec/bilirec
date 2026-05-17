@@ -1,4 +1,4 @@
-package testutil
+﻿package testutil
 
 import (
 	"context"
@@ -161,7 +161,7 @@ func fetchBroadcastRoomIDs() ([]int, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("broadcast API returned status %s", resp.Status)
+		return nil, fmt.Errorf("broadcast API 返回状态 %s", resp.Status)
 	}
 
 	var payload broadcastsResponse
@@ -169,7 +169,7 @@ func fetchBroadcastRoomIDs() ([]int, error) {
 		return nil, err
 	}
 	if payload.Code != 0 {
-		return nil, fmt.Errorf("broadcast API returned code %d", payload.Code)
+		return nil, fmt.Errorf("broadcast API 返回代码 %d", payload.Code)
 	}
 
 	seen := make(map[int]struct{}, len(payload.Data))
@@ -185,7 +185,7 @@ func fetchBroadcastRoomIDs() ([]int, error) {
 		ids = append(ids, item.RoomID)
 	}
 	if len(ids) == 0 {
-		return nil, fmt.Errorf("broadcast API returned no valid live room ids")
+		return nil, fmt.Errorf("broadcast API 未返回有效的直播间 ID")
 	}
 	return ids, nil
 }

@@ -1,4 +1,4 @@
-package processors
+﻿package processors
 
 import (
 	"context"
@@ -91,7 +91,7 @@ func (p *SegmentDedupProcessor) Process(_ context.Context, log *logrus.Entry, da
 	// Phase 2: full SHA-256 — only reached when fingerprint matches.
 	sum := sha256.Sum256(data)
 	if p.hasLast && sum == p.lastHash {
-		log.Warnf("segment-dedup: dropping duplicate segment (%d B)", len(data))
+		log.Warnf("segment-dedup：丢弃重复分片（%d B）", len(data))
 		return nil, nil
 	}
 	p.lastHash = sum

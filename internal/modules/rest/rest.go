@@ -1,4 +1,4 @@
-// @title BiliRec API
+﻿// @title BiliRec API
 // @version 1.0
 // @description Bilibili Live Recording Service API
 // @termsOfService http://swagger.io/terms/
@@ -69,7 +69,7 @@ func provider(ls fx.Lifecycle, cfg *config.Config) *fiber.App {
 
 	if cfg.Debug {
 		hexStr := utils.RandomHexStringMust(32)
-		logger.Infof("you can use hex token %q to login /debug/pprof", hexStr)
+		logger.Infof("你可以使用十六进制令牌 %q 登录 /debug/pprof", hexStr)
 		authenticate := func(c fiber.Ctx) error {
 			if c.Get("Authorization") != hexStr {
 				return fiber.ErrUnauthorized
@@ -127,7 +127,7 @@ func provider(ls fx.Lifecycle, cfg *config.Config) *fiber.App {
 	})
 
 	if cfg.Username != "" && cfg.PasswordHash != "" {
-		logger.Info("JWT authentication enabled for REST API")
+		logger.Info("REST API 已启用 JWT 认证")
 		app.Post("/login",
 			limiter.New(limiter.Config{Max: 10, Expiration: 1 * time.Minute}),
 			loginHandler(cfg),
@@ -160,7 +160,7 @@ func provider(ls fx.Lifecycle, cfg *config.Config) *fiber.App {
 				if e, ok := err.(*fiber.Error); ok {
 					return c.Status(e.Code).SendString(e.Message)
 				}
-				return c.Status(fiber.StatusUnauthorized).SendString("Invalid or expired JWT")
+				return c.Status(fiber.StatusUnauthorized).SendString("JWT 无效或已过期")
 			},
 		}))
 	}
@@ -177,7 +177,7 @@ func provider(ls fx.Lifecycle, cfg *config.Config) *fiber.App {
 				}
 			},
 			func(ctx context.Context) error {
-				logger.Info("stopping server")
+				logger.Info("正在停止服务器")
 				return app.ShutdownWithContext(ctx)
 			},
 		),
@@ -187,10 +187,10 @@ func provider(ls fx.Lifecycle, cfg *config.Config) *fiber.App {
 }
 
 func startHttpsServer(app *fiber.App, addr, serverCrt, serverKey string) error {
-	logger.Infof("starting https server on %s", addr)
+	logger.Infof("正在 %s 启动 HTTPS 服务器", addr)
 	cert, err := tls.LoadX509KeyPair(serverCrt, serverKey)
 	if err != nil {
-		return fmt.Errorf("failed to load certificates: %w", err)
+		return fmt.Errorf("加载证书失败：%w", err)
 	}
 
 	tlsConfig := &tls.Config{
@@ -199,21 +199,21 @@ func startHttpsServer(app *fiber.App, addr, serverCrt, serverKey string) error {
 
 	listener, err := tls.Listen("tcp", addr, tlsConfig)
 	if err != nil {
-		return fmt.Errorf("https server error: %w", err)
+		return fmt.Errorf("HTTPS 服务器错误：%w", err)
 	}
 	go func() {
 		if err := app.Listener(listener); err != nil {
-			logger.Errorf("https server error: %v", err)
+			logger.Errorf("HTTPS 服务器错误：%v", err)
 		}
 	}()
 	return nil
 }
 
 func startHttpServer(app *fiber.App, addr string) error {
-	logger.Infof("starting http server on %s", addr)
+	logger.Infof("正在 %s 启动 HTTP 服务器", addr)
 	go func() {
 		if err := app.Listen(addr); err != nil {
-			logger.Errorf("http server error: %v", err)
+			logger.Errorf("HTTP 服务器错误：%v", err)
 		}
 	}()
 	return nil

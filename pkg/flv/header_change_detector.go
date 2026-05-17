@@ -1,4 +1,4 @@
-package flv
+﻿package flv
 
 import (
 	"bytes"
@@ -8,7 +8,7 @@ import (
 
 // ErrVideoHeaderChanged signals that the video sequence header (SPS/PPS) has
 // changed and the recording pipeline should rotate to a new file.
-var ErrVideoHeaderChanged = errors.New("video sequence header changed, pipe rotation required")
+var ErrVideoHeaderChanged = errors.New("视频序列头已变化，需要进行管道轮转")
 
 // FlvHeaderChangedError is a rich error returned by HeaderChangeDetector when
 // the video sequence header changes. It carries the new tag bytes so callers

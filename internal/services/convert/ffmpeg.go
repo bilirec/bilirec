@@ -1,4 +1,4 @@
-package convert
+﻿package convert
 
 import (
 	"context"
@@ -91,7 +91,7 @@ func (f *ffmpegConvertManager) ListInProgress() ([]*TaskQueue, error) {
 	err := f.bucket.ForEach(func(k, v []byte) error {
 		var queue TaskQueue
 		if err := f.serializer.Deserialize(v, &queue); err != nil {
-			return fmt.Errorf("deserialize task %s: %w", string(k), err)
+			return fmt.Errorf("反序列化任务 %s 失败：%w", string(k), err)
 		}
 		queues = append(queues, &queue)
 		return nil
@@ -121,7 +121,7 @@ func (f *ffmpegConvertManager) runTaskPeriodically(ctx context.Context) {
 
 			list, err := f.ListInProgress()
 			if err != nil {
-				f.logger.Errorf("failed to list ffmpeg in-progress tasks: %v", err)
+				f.logger.Errorf("列出 ffmpeg 进行中的任务失败：%v", err)
 				continue
 			} else if len(list) == 0 {
 				continue
@@ -142,9 +142,9 @@ func (f *ffmpegConvertManager) runTaskPeriodically(ctx context.Context) {
 				}
 
 				if !utils.IsFileExists(queue.InputPath) {
-					taskLog.Warnf("input file %s no longer exists, cancelling task", queue.InputPath)
+					taskLog.Warnf("输入文件 %s 已不存在，正在取消任务", queue.InputPath)
 					if err := f.deleteTaskFromQueue(queue.TaskID); err != nil {
-						taskLog.Errorf("failed to remove ffmpeg task from queue: %v", err)
+						taskLog.Errorf("从队列移除 ffmpeg 任务失败：%v", err)
 					}
 					continue
 				}
@@ -157,7 +157,7 @@ func (f *ffmpegConvertManager) runTaskPeriodically(ctx context.Context) {
 				processCtx, cancel := context.WithCancel(ctx)
 				f.processing.Store(queue.TaskID, cancel)
 
-				taskLog.Infof("processing ffmpeg task input=%s output=%s", queue.InputPath, queue.OutputPath)
+				taskLog.Infof("正在处理 ffmpeg 任务 input=%s output=%s", queue.InputPath, queue.OutputPath)
 				go f.asyncProcessTask(processCtx, queue, taskLog)
 			}
 		case <-ctx.Done():
@@ -182,30 +182,30 @@ func (f *ffmpegConvertManager) asyncProcessTask(ctx context.Context, queue *Task
 	defer f.concurrent.Release(1)
 
 	if err := f.processTask(ctx, queue, taskLog); err != nil {
-		taskLog.Errorf("ffmpeg task failed: %v", err)
+		taskLog.Errorf("ffmpeg 任务失败：%v", err)
 		// delay the tasks to interval + 30s to avoid multiple tasks failing at the same time and retrying immediately
 		delay := time.Duration(config.ReadOnly.FFmpegCheckIntervalSecs())*time.Second + 30*time.Second
 		delayTime := time.Now().Add(delay)
 		f.cooldowns.Store(queue.TaskID, delayTime)
-		taskLog.Warnf("delayed the task until %v", delayTime.Format(time.RFC3339))
+		taskLog.Warnf("任务已延后至 %v", delayTime.Format(time.RFC3339))
 		return
 	}
 
 	if err := f.deleteTaskFromQueue(queue.TaskID); err != nil {
-		taskLog.Errorf("failed to remove ffmpeg task from queue: %v", err)
+		taskLog.Errorf("从队列移除 ffmpeg 任务失败：%v", err)
 		return
 	}
 
-	taskLog.Info("completed and removed from queue")
+	taskLog.Info("任务已完成并从队列移除")
 }
 
 func (f *ffmpegConvertManager) processTask(ctx context.Context, queue *TaskQueue, taskLog *logrus.Entry) error {
 
 	if !utils.IsFileExists(queue.InputPath) {
-		taskLog.Warnf("input file %s no longer exists, skipping conversion", queue.InputPath)
+		taskLog.Warnf("输入文件 %s 已不存在，跳过转码", queue.InputPath)
 		return nil
 	} else if utils.IsFileExists(queue.OutputPath) {
-		taskLog.Warnf("output file %s already exists, skipping conversion", queue.OutputPath)
+		taskLog.Warnf("输出文件 %s 已存在，跳过转码", queue.OutputPath)
 		return nil
 	}
 

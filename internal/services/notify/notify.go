@@ -1,4 +1,4 @@
-package notify
+﻿package notify
 
 import (
 	"encoding/json"
@@ -77,13 +77,13 @@ func NewService(lc fx.Lifecycle, cfg *config.Config) (*Service, error) {
 
 			if strings.TrimSpace(cfg.WebPushSubscriber) == "" {
 				s.state.Store(&ServiceState{Enabled: false})
-				logger.Info("web push is disabled: set WEBPUSH_SUBSCRIBER to enable")
+				logger.Info("Web Push 已禁用：设置 WEBPUSH_SUBSCRIBER 可启用")
 				return nil // allow to be disabled
 			}
 
 			publicKey, privateKey, err := loadOrCreateVAPIDKeys(cfg.SecretDir)
 			if err != nil {
-				return fmt.Errorf("failed to initialize vapid keys: %w", err)
+				return fmt.Errorf("初始化 vapid 密钥失败：%w", err)
 			}
 
 			s.state.Store(&ServiceState{
@@ -120,12 +120,12 @@ func (s *Service) WebPushServiceState() *ServiceState {
 
 func (s *Service) AddWebPushSubscription(sub webpush.Subscription) error {
 	if sub.Endpoint == "" || sub.Keys.Auth == "" || sub.Keys.P256dh == "" {
-		return fmt.Errorf("invalid subscription")
+		return fmt.Errorf("无效的订阅")
 	}
 
 	payload, err := json.Marshal(sub)
 	if err != nil {
-		return fmt.Errorf("failed to marshal subscription: %w", err)
+		return fmt.Errorf("序列化订阅失败：%w", err)
 	}
 
 	if err := s.bucket.Put([]byte(sub.Endpoint), payload); err != nil {
@@ -137,7 +137,7 @@ func (s *Service) AddWebPushSubscription(sub webpush.Subscription) error {
 
 func (s *Service) RemoveWebPushSubscription(endpoint string) error {
 	if endpoint == "" {
-		return fmt.Errorf("invalid endpoint")
+		return fmt.Errorf("无效的订阅 endpoint")
 	} else if err := s.bucket.Delete([]byte(endpoint)); err != nil {
 		return err
 	}
@@ -190,7 +190,7 @@ func (s *Service) publishPayload(payload []byte) {
 		}
 
 		if sendErr != nil {
-			logger.Warnf("failed to send web push notification to %s: %v", sub.Endpoint, sendErr)
+			logger.Warnf("向 %s 发送 Web Push 通知失败：%v", sub.Endpoint, sendErr)
 		}
 
 		return nil
@@ -198,7 +198,7 @@ func (s *Service) publishPayload(payload []byte) {
 
 	for _, endpoint := range staleEndpoints {
 		if err := s.bucket.Delete([]byte(endpoint)); err != nil {
-			logger.Warnf("failed to delete stale web push subscription: %s", endpoint)
+			logger.Warnf("删除过期 Web Push 订阅失败：%s", endpoint)
 		}
 	}
 }
@@ -245,7 +245,7 @@ func (s *Service) PublishLive(roomID int, streamer string, roomTitle string, sta
 		message = "直播間已結束"
 	}
 
-	logger.Infof("pushing notification for room %d (%s): %s", roomID, streamer, message)
+	logger.Infof("正在推送房间 %d（%s）通知：%s", roomID, streamer, message)
 
 	s.Publish(Event{
 		Type:      string(state),

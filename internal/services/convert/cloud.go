@@ -1,4 +1,4 @@
-package convert
+﻿package convert
 
 import (
 	"context"
@@ -139,7 +139,7 @@ func (c *cloudConvertManager) Cancel(taskID string) error {
 		}
 		var queue TaskQueue
 		if err := c.serializer.Deserialize(v, &queue); err != nil {
-			return fmt.Errorf("deserialize task %s: %w", string(taskID), err)
+			return fmt.Errorf("反序列化任务 %s 失败：%w", string(taskID), err)
 		}
 		convertTaskID = queue.ConvertTaskID
 		return nil
@@ -157,7 +157,7 @@ func (c *cloudConvertManager) ListInProgress() ([]*TaskQueue, error) {
 	err := c.bucket.ForEach(func(k, v []byte) error {
 		var queue TaskQueue
 		if err := c.serializer.Deserialize(v, &queue); err != nil {
-			return fmt.Errorf("deserialize task %s: %w", string(k), err)
+			return fmt.Errorf("反序列化任务 %s 失败：%w", string(k), err)
 		}
 		queues = append(queues, &queue)
 		return nil
@@ -173,7 +173,7 @@ func (c *cloudConvertManager) checkTaskStatusPeriodically(ctx context.Context) {
 		case <-ticker.C:
 			c.logger.Debugf("checking task queue...")
 			if list, err := c.ListInProgress(); err != nil {
-				c.logger.Errorf("failed to list in-progress tasks: %v", err)
+				c.logger.Errorf("列出进行中的任务失败：%v", err)
 			} else {
 				for _, queue := range list {
 					id := queue.TaskID
@@ -186,16 +186,16 @@ func (c *cloudConvertManager) checkTaskStatusPeriodically(ctx context.Context) {
 					info, err := c.client.GetTask(id)
 					if err != nil {
 						if err == cloudconvert.ErrTaskNotFound {
-							c.logger.Warnf("task id=%v not found, re-enqueueing", id)
-							go c.asyncOnFailed(queue, cloudconvert.TaskData{Message: utils.Ptr("task not found")})
+							c.logger.Warnf("任务 id=%v 未找到，正在重新入队", id)
+							go c.asyncOnFailed(queue, cloudconvert.TaskData{Message: utils.Ptr("任务未找到")})
 						} else {
-							c.logger.Errorf("failed to get task info for id=%v: %v", id, err)
+							c.logger.Errorf("获取任务 id=%v 信息失败：%v", id, err)
 							c.processing.LoadAndDelete(id)
 						}
 						continue
 					}
 
-					c.logger.Infof("task id=%v status=%v", id, info.Data.Status)
+					c.logger.Infof("任务 id=%v 状态=%v", id, info.Data.Status)
 
 					switch info.Data.Status {
 					case cloudconvert.TaskStatusFinished:
@@ -217,14 +217,14 @@ func (c *cloudConvertManager) checkTaskStatusPeriodically(ctx context.Context) {
 func (c *cloudConvertManager) asyncOnFinished(ctx context.Context, queue *TaskQueue, data cloudconvert.TaskData) {
 	defer c.processing.LoadAndDelete(queue.TaskID)
 	if err := c.handleFinished(ctx, queue, &data); err != nil {
-		c.logger.Errorf("handling task id=%v status=%v failed: %v", queue.TaskID, data.Status, err)
+		c.logger.Errorf("处理任务 id=%v 状态=%v 失败：%v", queue.TaskID, data.Status, err)
 	}
 }
 
 func (c *cloudConvertManager) asyncOnFailed(queue *TaskQueue, data cloudconvert.TaskData) {
 	defer c.processing.LoadAndDelete(queue.TaskID)
 	if err := c.handleFailed(queue, &data); err != nil {
-		c.logger.Errorf("handling task id=%v status=%v failed: %v", queue.TaskID, data.Status, err)
+		c.logger.Errorf("处理任务 id=%v 状态=%v 失败：%v", queue.TaskID, data.Status, err)
 	}
 }
 
@@ -232,11 +232,11 @@ func (c *cloudConvertManager) handleFinished(ctx context.Context, queue *TaskQue
 	// download file
 	var download *cloudconvert.TaskResultFile
 	if len(data.Result.Files) == 0 {
-		return fmt.Errorf("no result files for task %s", queue.TaskID)
+		return fmt.Errorf("任务 %s 没有结果文件", queue.TaskID)
 	} else if len(data.Result.Files) == 1 {
 		download = &data.Result.Files[0]
 	} else {
-		c.logger.Warnf("multiple result files for task %s, will use smart detect", queue.TaskID)
+		c.logger.Warnf("任务 %s 存在多个结果文件，将使用智能检测", queue.TaskID)
 		// check output format and compare output path from TAskQueue
 		for _, file := range data.Result.Files {
 			format := utils.GetPathFormat(file.Filename)
@@ -257,17 +257,17 @@ func (c *cloudConvertManager) handleFinished(ctx context.Context, queue *TaskQue
 	}
 
 	if err := c.downloadExportedFile(ctx, download.URL, queue.OutputPath); err != nil {
-		c.logger.Errorf("failed to download exported file for task %s: %v", queue.TaskID, err)
+		c.logger.Errorf("下载任务 %s 的导出文件失败：%v", queue.TaskID, err)
 		return err
 	}
 
 	if err := c.validateDownloadedOutputSize(queue); err != nil {
-		c.logger.Warnf("downloaded file validation failed for task %s: %v", queue.TaskID, err)
+		c.logger.Warnf("任务 %s 下载文件校验失败：%v", queue.TaskID, err)
 		msg := err.Error()
 		return c.handleFailed(queue, &cloudconvert.TaskData{Message: &msg})
 	}
 
-	c.logger.Infof("successfully downloaded exported file for task %s to %s", queue.TaskID, queue.OutputPath)
+	c.logger.Infof("已成功将任务 %s 的导出文件下载到 %s", queue.TaskID, queue.OutputPath)
 	c.presignedUrlPool.Delete(queue.InputPath)
 
 	err := utils.WithRetry(3, c.logger, "delete bucket", func() error {
@@ -294,8 +294,8 @@ func (c *cloudConvertManager) handleFailed(queue *TaskQueue, info *cloudconvert.
 		message = *info.Message
 	}
 	// print log and queue again
-	c.logger.Errorf("task %s failed with message: %s", queue.TaskID, message)
-	c.logger.Infof("re-enqueueing task %s", queue.TaskID)
+	c.logger.Errorf("任务 %s 失败，消息：%s", queue.TaskID, message)
+	c.logger.Infof("正在将任务 %s 重新入队", queue.TaskID)
 
 	deleteBucket := func() error {
 		return utils.WithRetry(3, c.logger, "delete bucket", func() error {
@@ -304,26 +304,26 @@ func (c *cloudConvertManager) handleFailed(queue *TaskQueue, info *cloudconvert.
 	}
 
 	if !utils.IsFileExists(queue.InputPath) {
-		c.logger.Warnf("input file %s no longer exists, cancelling retry for task %s", queue.InputPath, queue.TaskID)
+		c.logger.Warnf("输入文件 %s 已不存在，取消任务 %s 的重试", queue.InputPath, queue.TaskID)
 		return deleteBucket()
 	}
 
 	// enqueue again
 	newInfo, err := c.Enqueue(queue.InputPath, queue.OutputPath, queue.OutputFormat, queue.DeleteSource)
 	if err != nil {
-		c.logger.Errorf("failed to re-enqueue task %s: %v", queue.TaskID, err)
+		c.logger.Errorf("重新入队任务 %s 失败：%v", queue.TaskID, err)
 		return err
 	}
 
-	c.logger.Infof("re-enqueued task %s as new task %s", queue.TaskID, newInfo.TaskID)
+	c.logger.Infof("已将任务 %s 重新入队为新任务 %s", queue.TaskID, newInfo.TaskID)
 
 	err = deleteBucket()
 
 	if err != nil {
 		// cancel re-enqueued task if we failed to delete old one
-		c.logger.Warnf("cancelling re-enqueued task %s due to failure in deleting old task %s", newInfo.TaskID, queue.TaskID)
+		c.logger.Warnf("删除旧任务 %s 失败，正在取消重新入队任务 %s", newInfo.TaskID, queue.TaskID)
 		if cancelErr := c.Cancel(newInfo.TaskID); cancelErr != nil {
-			c.logger.Errorf("failed to cancel re-enqueued task %s: %v", newInfo.TaskID, cancelErr)
+			c.logger.Errorf("取消重新入队任务 %s 失败：%v", newInfo.TaskID, cancelErr)
 		}
 		return err
 	}
@@ -337,7 +337,7 @@ func (c *cloudConvertManager) validateDownloadedOutputSize(queue *TaskQueue) err
 	} else {
 		reason := err.Error()
 		if removeErr := os.Remove(queue.OutputPath); removeErr != nil && !os.IsNotExist(removeErr) {
-			c.logger.Warnf("failed to remove invalid downloaded output %s: %v", queue.OutputPath, removeErr)
+			c.logger.Warnf("移除无效下载输出 %s 失败：%v", queue.OutputPath, removeErr)
 		}
 		return errors.New(reason)
 	}
@@ -374,7 +374,7 @@ func (c *cloudConvertManager) getOrCreatePresignedURL(inputPath string) (url str
 	url, err = c.pathSvc.GeneratePresignedURL(inputPath, signeddownload.DefaultExpireAfter)
 	if err == nil {
 		if !utils.IsValidAbsoluteHTTPURL(url) {
-			c.logger.Errorf("PUBLIC_BASE_URL is empty or invalid, cloudconvert requires a valid absolute presigned URL")
+			c.logger.Errorf("PUBLIC_BASE_URL 为空或无效，CloudConvert 需要有效的绝对预签名 URL")
 			return "", ErrInvalidPublicBaseURL
 		}
 	}

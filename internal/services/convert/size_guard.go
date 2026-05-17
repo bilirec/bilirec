@@ -1,4 +1,4 @@
-package convert
+﻿package convert
 
 import (
 	"fmt"
@@ -20,7 +20,7 @@ func IsConvertedFileInvalid(outputBytes, inputBytes int64) bool {
 func ValidateOutputFileSize(inputPath, outputPath string) error {
 	output, err := os.Stat(outputPath)
 	if err != nil {
-		return fmt.Errorf("stat converted output %s: %w", outputPath, err)
+		return fmt.Errorf("获取转码输出 %s 文件状态失败：%w", outputPath, err)
 	}
 
 	input, err := os.Stat(inputPath)
@@ -28,7 +28,7 @@ func ValidateOutputFileSize(inputPath, outputPath string) error {
 	if err == nil {
 		inputBytes = input.Size()
 	} else if !os.IsNotExist(err) {
-		return fmt.Errorf("stat source file %s: %w", inputPath, err)
+		return fmt.Errorf("获取源文件 %s 状态失败：%w", inputPath, err)
 	}
 
 	outputBytes := output.Size()
@@ -36,5 +36,5 @@ func ValidateOutputFileSize(inputPath, outputPath string) error {
 		return nil
 	}
 
-	return fmt.Errorf("converted output too small: output=%dB, input=%dB", outputBytes, inputBytes)
+	return fmt.Errorf("转码输出过小：output=%dB，input=%dB", outputBytes, inputBytes)
 }

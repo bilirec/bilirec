@@ -1,4 +1,4 @@
-package config
+﻿package config
 
 import "fmt"
 
@@ -122,32 +122,32 @@ func (g *GlobalReadOnly) FFmpegAllowDuringRecordingMaxActiveRecordings() int {
 
 func (g *GlobalReadOnly) Validate() error {
 	if g.config.CloudConvertCheckIntervalSecs <= 0 {
-		logger.Warnf("CLOUDCONVERT_CHECK_INTERVAL_SECS is invalid (%d), using default %d seconds", g.config.CloudConvertCheckIntervalSecs, defaultCloudConvertCheckIntervalSecs)
+		logger.Warnf("CLOUDCONVERT_CHECK_INTERVAL_SECS 无效（%d），使用默认值 %d 秒", g.config.CloudConvertCheckIntervalSecs, defaultCloudConvertCheckIntervalSecs)
 	}
 	if g.config.CloudConvertMaxConcurrentDownloads <= 0 {
-		logger.Warnf("CLOUDCONVERT_MAX_CONCURRENT_DOWNLOADS is invalid (%d), using default %d", g.config.CloudConvertMaxConcurrentDownloads, defaultCloudConvertMaxConcurrentDownloads)
+		logger.Warnf("CLOUDCONVERT_MAX_CONCURRENT_DOWNLOADS 无效（%d），使用默认值 %d", g.config.CloudConvertMaxConcurrentDownloads, defaultCloudConvertMaxConcurrentDownloads)
 	}
 	if g.config.FFmpegCheckIntervalSecs <= 0 {
-		logger.Warnf("FFMPEG_CHECK_INTERVAL_SECS is invalid (%d), using default %d seconds", g.config.FFmpegCheckIntervalSecs, defaultFFmpegCheckIntervalSecs)
+		logger.Warnf("FFMPEG_CHECK_INTERVAL_SECS 无效（%d），使用默认值 %d 秒", g.config.FFmpegCheckIntervalSecs, defaultFFmpegCheckIntervalSecs)
 	}
 	if g.config.FFmpegMaxConcurrentTasks <= 0 {
-		logger.Warnf("FFMPEG_MAX_CONCURRENT_TASKS is invalid (%d), using default %d", g.config.FFmpegMaxConcurrentTasks, defaultFFmpegMaxConcurrentTasks)
+		logger.Warnf("FFMPEG_MAX_CONCURRENT_TASKS 无效（%d），使用默认值 %d", g.config.FFmpegMaxConcurrentTasks, defaultFFmpegMaxConcurrentTasks)
 	}
 	if g.config.FFmpegAllowDuringRecordingMaxActiveRecordings < 1 {
 		logger.Debugf("FFMPEG_ALLOW_DURING_RECORDING_MAX_ACTIVE_RECORDINGS is %d, threshold disabled (no active-recordings limit)", g.config.FFmpegAllowDuringRecordingMaxActiveRecordings)
 	}
 	if g.config.liveStreamWriterSyncPeriod < 0 {
-		logger.Warnf("LIVE_STREAM_WRITER_SYNC_PERIOD_SECS is invalid (%d), using default %d seconds", g.config.liveStreamWriterSyncPeriod, defaultLiveStreamWriterSyncPeriodSecs)
+		logger.Warnf("LIVE_STREAM_WRITER_SYNC_PERIOD_SECS 无效（%d），使用默认值 %d 秒", g.config.liveStreamWriterSyncPeriod, defaultLiveStreamWriterSyncPeriodSecs)
 	}
 	if g.config.liveStreamWriterFlushPeriod <= 0 {
-		logger.Warnf("LIVE_STREAM_WRITER_FLUSH_PERIOD_SECS is invalid (%d), using default %d seconds", g.config.liveStreamWriterFlushPeriod, defaultLiveStreamWriterFlushPeriodSecs)
+		logger.Warnf("LIVE_STREAM_WRITER_FLUSH_PERIOD_SECS 无效（%d），使用默认值 %d 秒", g.config.liveStreamWriterFlushPeriod, defaultLiveStreamWriterFlushPeriodSecs)
 	}
 	// Reject protocol-mismatch configs between FRP backend mode and Fiber listener mode.
 	if g.config.ServerCrt != "" && g.config.ServerKey != "" && g.config.FRPEnabled && !g.config.FRPHttps {
-		return fmt.Errorf("invalid config: SERVER_CRT and SERVER_KEY enable HTTPS-only server, but FRP_ENABLED=true with FRP_HTTPS=false configures an HTTP FRP backend; this protocol mismatch causes FRP to fail. Set FRP_HTTPS=true, or disable HTTPS certs (SERVER_CRT/SERVER_KEY), or disable FRP")
+		return fmt.Errorf("配置无效：SERVER_CRT 和 SERVER_KEY 启用仅 HTTPS 服务器，但 FRP_ENABLED=true 且 FRP_HTTPS=false 会将 FRP 后端配置为 HTTP；协议不匹配会导致 FRP 失败。请设置 FRP_HTTPS=true，或禁用 HTTPS 证书（SERVER_CRT/SERVER_KEY），或禁用 FRP")
 	}
 	if g.config.FRPEnabled && g.config.FRPHttps && (g.config.ServerCrt == "" || g.config.ServerKey == "") {
-		return fmt.Errorf("invalid config: FRP_ENABLED=true with FRP_HTTPS=true requires Fiber HTTPS to be enabled by setting both SERVER_CRT and SERVER_KEY; otherwise FRP HTTPS backend protocol mismatches and FRP fails. Set SERVER_CRT and SERVER_KEY, or set FRP_HTTPS=false, or disable FRP")
+		return fmt.Errorf("配置无效：当 FRP_ENABLED=true 且 FRP_HTTPS=true 时，必须同时设置 SERVER_CRT 和 SERVER_KEY 以启用 Fiber HTTPS；否则 FRP HTTPS 后端协议不匹配会导致 FRP 失败。请设置 SERVER_CRT 和 SERVER_KEY，或将 FRP_HTTPS=false，或禁用 FRP")
 	}
 	return nil
 }

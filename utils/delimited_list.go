@@ -1,4 +1,4 @@
-package utils
+﻿package utils
 
 import (
 	"bytes"
@@ -40,7 +40,7 @@ func parseListFromBody[T any](paramName string, body []byte, bodyKeys []string, 
 	decoder := json.NewDecoder(bytes.NewReader(body))
 	decoder.UseNumber()
 	if err := decoder.Decode(&payload); err != nil {
-		return nil, false, fmt.Errorf("無效的 JSON body")
+		return nil, false, fmt.Errorf("无效的 JSON 请求体")
 	}
 
 	switch value := payload.(type) {
@@ -50,7 +50,7 @@ func parseListFromBody[T any](paramName string, body []byte, bodyKeys []string, 
 			return nil, true, err
 		}
 		if len(items) == 0 {
-			return nil, true, fmt.Errorf("缺少 %s 請求內容", paramName)
+			return nil, true, fmt.Errorf("缺少 %s 请求内容", paramName)
 		}
 		return items, true, nil
 	case map[string]any:
@@ -61,7 +61,7 @@ func parseListFromBody[T any](paramName string, body []byte, bodyKeys []string, 
 					return nil, true, err
 				}
 				if len(items) == 0 {
-					return nil, true, fmt.Errorf("缺少 %s 請求內容", paramName)
+					return nil, true, fmt.Errorf("缺少 %s 请求内容", paramName)
 				}
 				return items, true, nil
 			}
@@ -73,7 +73,7 @@ func parseListFromBody[T any](paramName string, body []byte, bodyKeys []string, 
 			return nil, true, err
 		}
 		if len(items) == 0 {
-			return nil, true, fmt.Errorf("缺少 %s 請求內容", paramName)
+			return nil, true, fmt.Errorf("缺少 %s 请求内容", paramName)
 		}
 		return items, true, nil
 	}
@@ -82,7 +82,7 @@ func parseListFromBody[T any](paramName string, body []byte, bodyKeys []string, 
 func parseListFromQuery[T any](paramName string, queryValue string, parseItem listItemParser[T]) ([]T, error) {
 	queryValue = strings.TrimSpace(queryValue)
 	if queryValue == "" {
-		return nil, fmt.Errorf("缺少 %s 查詢參數或請求內容", paramName)
+		return nil, fmt.Errorf("缺少 %s 查询参数或请求内容", paramName)
 	}
 
 	items, err := parseListValue(paramName, queryValue, parseItem)
@@ -90,7 +90,7 @@ func parseListFromQuery[T any](paramName string, queryValue string, parseItem li
 		return nil, err
 	}
 	if len(items) == 0 {
-		return nil, fmt.Errorf("缺少 %s 查詢參數或請求內容", paramName)
+		return nil, fmt.Errorf("缺少 %s 查询参数或请求内容", paramName)
 	}
 	return items, nil
 }
@@ -100,7 +100,7 @@ func parseListValue[T any](paramName string, raw any, parseItem listItemParser[T
 	case string:
 		parts := SplitAndTrim(value, ",")
 		if len(parts) == 0 {
-			return nil, fmt.Errorf("缺少 %s 查詢參數或請求內容", paramName)
+			return nil, fmt.Errorf("缺少 %s 查询参数或请求内容", paramName)
 		}
 		items := make([]T, 0, len(parts))
 		for _, part := range parts {
@@ -139,12 +139,12 @@ func parseIntListItem(raw any) (int, error) {
 	case json.Number:
 		id, err := value.Int64()
 		if err != nil {
-			return 0, fmt.Errorf("無效的數值: %s", value.String())
+			return 0, fmt.Errorf("无效的数值: %s", value.String())
 		}
 		return int(id), nil
 	case float64:
 		if value != float64(int(value)) {
-			return 0, fmt.Errorf("無效的數值: %v", value)
+			return 0, fmt.Errorf("无效的数值: %v", value)
 		}
 		return int(value), nil
 	case int:
@@ -152,10 +152,10 @@ func parseIntListItem(raw any) (int, error) {
 	case string:
 		id, err := strconv.Atoi(strings.TrimSpace(value))
 		if err != nil {
-			return 0, fmt.Errorf("無效的數值: %s", value)
+			return 0, fmt.Errorf("无效的数值: %s", value)
 		}
 		return id, nil
 	default:
-		return 0, fmt.Errorf("無效的數值: %v", value)
+		return 0, fmt.Errorf("无效的数值: %v", value)
 	}
 }

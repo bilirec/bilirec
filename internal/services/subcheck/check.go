@@ -1,4 +1,4 @@
-package subcheck
+﻿package subcheck
 
 import (
 	"context"
@@ -114,7 +114,7 @@ func (s *Service) loop() {
 func (s *Service) tryStartAllAutoRecordRooms() {
 	rooms, err := s.subSvc.ListSubscribedRoomsWithConfig()
 	if err != nil {
-		logger.Warnf("failed to list room subscriptions: %v", err)
+		logger.Warnf("列出房间订阅失败：%v", err)
 		return
 	}
 
@@ -165,10 +165,10 @@ func (s *Service) tryStartAllAutoRecordRooms() {
 				switch err {
 				case nil, recorder.ErrRecordingStarted:
 					state = notify.LiveStateAutoRecordStarted
-					logger.Infof("started recording for room %d (%s)", roomID, info.Uname)
+					logger.Infof("已开始录制房间 %d（%s）", roomID, info.Uname)
 				default:
 					state = notify.LiveStateAutoRecordFailed
-					logger.Warnf("failed to start recording for room %d: %v", roomID, err)
+					logger.Warnf("开始录制房间 %d 失败：%v", roomID, err)
 				}
 			}
 		}
@@ -184,7 +184,7 @@ func (s *Service) tryStartAllAutoRecordRooms() {
 func (s *Service) markSessionState(roomID int, sessionKey string) {
 	s.sessionKeys.Store(roomID, sessionKey)
 	if err := s.bucket.Put([]byte(strconv.Itoa(roomID)), []byte(sessionKey)); err != nil {
-		logger.Warnf("failed to save session key for room %d: %v", roomID, err)
+		logger.Warnf("保存房间 %d 会话密钥失败：%v", roomID, err)
 	}
 }
 
@@ -194,7 +194,7 @@ func (s *Service) clearSessionState(roomID int) {
 		return
 	}
 	if err := s.bucket.Delete([]byte(strconv.Itoa(roomID))); err != nil {
-		logger.Warnf("failed to clear session state for room %d: %v", roomID, err)
+		logger.Warnf("清理房间 %d 会话状态失败：%v", roomID, err)
 	}
 }
 
@@ -218,11 +218,11 @@ func (s *Service) getNotifyRoomInfos(liveCheckRoomIDs []int) map[int]*bilibili.L
 	if len(liveCheckRoomIDs) > 0 {
 		infos, err := s.roomSvc.GetMultipleRoomInfos(liveCheckRoomIDs...)
 		if err != nil {
-			logger.Warnf("batch fetch room info failed: %v, fallback to per-room check", err)
+			logger.Warnf("批量获取房间信息失败：%v，回退到逐房间检查", err)
 			for _, roomID := range liveCheckRoomIDs {
 				info, checkErr := s.roomSvc.GetLiveRoomInfo(roomID)
 				if checkErr != nil {
-					logger.Warnf("failed to get room info for room %d: %v", roomID, checkErr)
+					logger.Warnf("获取房间 %d 信息失败：%v", roomID, checkErr)
 					continue
 				}
 				notifyRoomInfos[roomID] = info

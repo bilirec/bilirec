@@ -1,4 +1,4 @@
-package hls
+﻿package hls
 
 import (
 	"context"
@@ -42,7 +42,7 @@ func (p *SegmentPrefetcher) Start(seq int64, segmentURI string) {
 	go func() {
 		segmentURL, err := p.resolver.Resolve(segmentURI)
 		if err != nil {
-			resultCh <- SegmentFetchResult{Err: fmt.Errorf("resolve segment URL %q: %w", segmentURI, err)}
+			resultCh <- SegmentFetchResult{Err: fmt.Errorf("解析分片 URL %q 失败：%w", segmentURI, err)}
 			return
 		}
 
@@ -56,7 +56,7 @@ func (p *SegmentPrefetcher) Wait(seq int64, segmentURI string) ([]byte, error) {
 	p.Start(seq, segmentURI)
 	resultCh, ok := p.started[seq]
 	if !ok {
-		return nil, fmt.Errorf("prefetch result channel not found for seq=%d", seq)
+		return nil, fmt.Errorf("未找到 seq=%d 的预取结果通道", seq)
 	}
 	delete(p.started, seq)
 

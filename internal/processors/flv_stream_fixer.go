@@ -1,4 +1,4 @@
-package processors
+﻿package processors
 
 import (
 	"context"
@@ -44,7 +44,7 @@ func (p *FlvStreamFixerProcessor) Open(ctx context.Context, log *logrus.Entry) e
 	p.log = log
 	p.fixer.SetTimestampJumpReporter(func(w flv.TimestampJumpWarning) {
 		p.log.Warnf(
-			"FLV timestamp jump detected: current=%dms previous=%dms delta=%dms offset=%d->%d rotation=%v tagType=0x%02x",
+			"检测到 FLV 时间戳跳变：current=%dms previous=%dms delta=%dms offset=%d->%d rotation=%v tagType=0x%02x",
 			w.CurrentTimestamp,
 			w.PreviousTimestamp,
 			w.Delta,
@@ -63,7 +63,7 @@ func (p *FlvStreamFixerProcessor) Process(ctx context.Context, log *logrus.Entry
 
 func (p *FlvStreamFixerProcessor) Close() error {
 	dups, size, capacity := p.fixer.GetDedupStats()
-	p.log.Infof("🗂️ Dedup Stats: %d duplicates detected, cache size: %d/%d", dups, size, capacity)
+	p.log.Infof("🗂️ 去重统计：检测到 %d 个重复片段，缓存大小：%d/%d", dups, size, capacity)
 	if p.own {
 		p.fixer.Close()
 	}

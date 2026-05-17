@@ -1,4 +1,4 @@
-package cloudconvert
+﻿package cloudconvert
 
 import (
 	"encoding/json"
@@ -49,7 +49,7 @@ func (c *Client) CreateUploadTask(redirect ...string) (*ImportUploadResponse, er
 	if err := json.Unmarshal(res.Body(), &taskRes); err != nil {
 		return nil, err
 	} else if res.StatusCode() < 200 || res.StatusCode() >= 400 {
-		return nil, fmt.Errorf("video convert failed with status code %d: %s", res.StatusCode(), res.String())
+		return nil, fmt.Errorf("视频转换失败，状态码 %d：%s", res.StatusCode(), res.String())
 	}
 	return &taskRes, nil
 }
@@ -98,21 +98,21 @@ func (c *Client) UploadFileToTask(f *os.File, form *ImportUploadForm) error {
 	// Create HTTP request using standard library (NOT resty)
 	httpReq, err := http.NewRequestWithContext(c.ctx, "POST", form.URL, pr)
 	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
+		return fmt.Errorf("创建请求失败：%w", err)
 	}
 
 	httpReq.Header.Set("Content-Type", mw.FormDataContentType())
 
 	res, err := c.streamClient.Do(httpReq)
 	if err != nil {
-		return fmt.Errorf("upload request failed: %w", err)
+		return fmt.Errorf("上传请求失败：%w", err)
 	}
 	defer res.Body.Close()
 
 	// Check response status
 	if res.StatusCode < 200 || res.StatusCode >= 400 {
 		body, _ := io.ReadAll(res.Body)
-		return fmt.Errorf("upload failed with status code %d: %s", res.StatusCode, string(body))
+		return fmt.Errorf("上传失败，状态码 %d：%s", res.StatusCode, string(body))
 	}
 
 	return nil

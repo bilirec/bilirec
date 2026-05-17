@@ -1,4 +1,4 @@
-package expose
+﻿package expose
 
 import (
 	"context"
@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"github.com/eric2788/bilirec/internal/modules/config"
 	"github.com/eric2788/bilirec/utils"
@@ -18,6 +19,7 @@ import (
 	v1 "github.com/fatedier/frp/pkg/config/v1"
 	"github.com/sirupsen/logrus"
 	"go.uber.org/fx"
+	xwidth "golang.org/x/text/width"
 )
 
 const (
@@ -52,21 +54,22 @@ func NewService(lc fx.Lifecycle, cfg *config.Config) *Service {
 
 	// Log FRP mode and token source for audit/debugging (without exposing token value)
 	modeLabel := frpModeLabel(cfg)
-	logger.Infof("FRP enabled in %s mode", modeLabel)
+	logger.Infof("FRP 已启用，模式：%s", modeLabel)
 
 	svc, proxyName, remoteURL, err := initService(cfg)
 	if err != nil {
-		logger.Errorf("Failed to initialize FRP client: %v", err)
+		logger.Errorf("初始化 FRP 客户端失败：%v", err)
 		return s
 	} else {
 		s.svc = svc
 	}
+	scheme := utils.Ternary(cfg.ServerCrt != "" && cfg.ServerKey != "", "https", "http")
 	lc.Append(fx.StartStopHook(
 		func() error {
 			s.ctx, s.cancel = context.WithCancel(context.Background())
 			s.wg.Add(1)
 			go s.Run()
-			go s.waitAndPrintTunnelBox(fmt.Sprintf("%s:%s", defaultLoopbackIP, cfg.Port), proxyName, remoteURL)
+			go s.waitAndPrintTunnelBox(fmt.Sprintf("%s://%s:%s", scheme, defaultLoopbackIP, cfg.Port), proxyName, remoteURL)
 			return nil
 		},
 		func() error {
@@ -88,7 +91,7 @@ func frpModeLabel(cfg *config.Config) string {
 func (s *Service) Run() {
 	defer s.wg.Done()
 	if err := s.svc.Run(s.ctx); err != nil {
-		logger.Errorf("FRP client error: %v", err)
+		logger.Errorf("FRP 客户端错误：%v", err)
 	}
 }
 
@@ -104,7 +107,7 @@ func (s *Service) waitAndPrintTunnelBox(local, proxyName, remoteURL string) {
 		case <-s.ctx.Done():
 			return
 		case <-timeout.C:
-			logger.Warnf("timed out waiting for FRP proxy %q to become running; tunnel box not printed", proxyName)
+			logger.Warnf("等待 FRP 代理 %q 变为运行状态超时；未打印隧道信息框", proxyName)
 			return
 		case <-ticker.C:
 			if exporter := s.svc.StatusExporter(); exporter != nil {
@@ -114,10 +117,10 @@ func (s *Service) waitAndPrintTunnelBox(local, proxyName, remoteURL string) {
 						printTunnelBox(local, remoteURL)
 						return
 					case proxy.ProxyPhaseStartErr:
-						logger.Errorf("proxy %q failed to start: %s", proxyName, status.Err)
+						logger.Errorf("代理 %q 启动失败：%s", proxyName, status.Err)
 						return
 					case proxy.ProxyPhaseCheckFailed:
-						logger.Errorf("proxy %q check failed: %s", proxyName, status.Err)
+						logger.Errorf("代理 %q 检查失败：%s", proxyName, status.Err)
 						return
 					}
 				}
@@ -129,12 +132,12 @@ func (s *Service) waitAndPrintTunnelBox(local, proxyName, remoteURL string) {
 func initService(cfg *config.Config) (*client.Service, string, string, error) {
 	addr, port, err := parseServerAddr(cfg.FRPServer)
 	if err != nil {
-		return nil, "", "", fmt.Errorf("invalid frp server addr: %w", err)
+		return nil, "", "", fmt.Errorf("无效的 frp 服务器地址：%w", err)
 	}
 	configSource := source.NewConfigSource()
 	random, err := utils.RandomHexString(12)
 	if err != nil {
-		return nil, "", "", fmt.Errorf("failed to generate random string: %w", err)
+		return nil, "", "", fmt.Errorf("生成随机字符串失败：%w", err)
 	}
 	proxyName := fmt.Sprintf("bilirec-%s", random)
 	if err := configSource.ReplaceAll([]v1.ProxyConfigurer{
@@ -191,17 +194,17 @@ func initService(cfg *config.Config) (*client.Service, string, string, error) {
 
 func parseServerAddr(addr string) (string, int, error) {
 	if addr == "" {
-		return "", 0, fmt.Errorf("FRP_SERVER is empty")
+		return "", 0, fmt.Errorf("FRP_SERVER 为空")
 	}
 
 	host, portStr, err := net.SplitHostPort(addr)
 	if err == nil {
 		if host == "" {
-			return "", 0, fmt.Errorf("invalid FRP_SERVER format: %q", addr)
+			return "", 0, fmt.Errorf("无效的 FRP_SERVER 格式：%q", addr)
 		}
 		port, convErr := strconv.Atoi(portStr)
 		if convErr != nil {
-			return "", 0, fmt.Errorf("invalid frp server port %q: %w", portStr, convErr)
+			return "", 0, fmt.Errorf("无效的 frp 服务器端口 %q：%w", portStr, convErr)
 		}
 		return host, port, nil
 	}
@@ -210,7 +213,7 @@ func parseServerAddr(addr string) (string, int, error) {
 		return addr, defaultFRPServerPort, nil
 	}
 
-	return "", 0, fmt.Errorf("invalid FRP_SERVER format: %q: %w", addr, err)
+	return "", 0, fmt.Errorf("无效的 FRP_SERVER 格式：%q: %w", addr, err)
 }
 
 func shouldFallbackToDefaultPort(addr string, err error) bool {
@@ -236,21 +239,21 @@ func shouldFallbackToDefaultPort(addr string, err error) bool {
 
 func printTunnelBox(local, remote string) {
 	const minWidth = 55
-	const horizontalPadding = 2
-	title := "Tunnel is established!"
-	localLine := "Local Address:  " + local
-	remoteLine := "Remote Public:  " + remote
+	const leftPadding = "  "
+	title := "内网穿透已建立!"
+	localLine := "本地地址:  " + local
+	remoteLine := "远程地址:  " + remote
 
-	// Width tracks the inner box width. Keep one trailing padding space even
-	// when the content length matches the longest line.
+	// Width tracks the inner box width by terminal display width, not byte
+	// length, so CJK text aligns with ASCII URLs in monospaced terminals.
 	width := minWidth
-	if l := len(title) + horizontalPadding + 1; l > width {
+	if l := displayWidth(leftPadding+title) + 1; l > width {
 		width = l
 	}
-	if l := len(localLine) + horizontalPadding + 1; l > width {
+	if l := displayWidth(leftPadding+localLine) + 1; l > width {
 		width = l
 	}
-	if l := len(remoteLine) + horizontalPadding + 1; l > width {
+	if l := displayWidth(leftPadding+remoteLine) + 1; l > width {
 		width = l
 	}
 
@@ -260,15 +263,42 @@ func printTunnelBox(local, remote string) {
 	fmt.Println()
 	fmt.Println(edge)
 
-	fmt.Printf("|  %-*s|\n", width-horizontalPadding, title)
+	printBoxLine(width, title)
 
 	fmt.Println(emptyLine)
 
-	fmt.Printf("|  %-*s|\n", width-horizontalPadding, localLine)
-	fmt.Printf("|  %-*s|\n", width-horizontalPadding, remoteLine)
+	printBoxLine(width, localLine)
+	printBoxLine(width, remoteLine)
 
 	fmt.Println(emptyLine)
 
 	fmt.Println(edge)
 	fmt.Println()
+}
+
+func printBoxLine(width int, content string) {
+	const leftPadding = "  "
+	inner := leftPadding + content
+	padding := width - displayWidth(inner)
+	if padding < 0 {
+		padding = 0
+	}
+	fmt.Printf("|%s%s|\n", inner, strings.Repeat(" ", padding))
+}
+
+func displayWidth(s string) int {
+	total := 0
+	for _, r := range s {
+		if unicode.Is(unicode.Mn, r) || unicode.Is(unicode.Me, r) || r == '\u200d' {
+			continue
+		}
+
+		switch xwidth.LookupRune(r).Kind() {
+		case xwidth.EastAsianWide, xwidth.EastAsianFullwidth:
+			total += 2
+		default:
+			total += 1
+		}
+	}
+	return total
 }

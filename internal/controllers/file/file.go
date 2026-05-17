@@ -1,4 +1,4 @@
-package file
+﻿package file
 
 import (
 	"io/fs"
@@ -74,12 +74,12 @@ func (c *Controller) playbackFile(ctx fiber.Ctx) error {
 	if err != nil {
 		return fiber.ErrBadRequest
 	} else if c.recorderSvc.IsRecording(path) {
-		return fiber.NewError(fiber.StatusBadRequest, "無法播放正在錄製的文件")
+		return fiber.NewError(fiber.StatusBadRequest, "无法播放正在录制的文件")
 	}
 
 	fullPath, mimeType, err := c.fileSvc.OpenForPlayback(path)
 	if err != nil {
-		logger.Warnf("error opening playback file %s: %v", path, err)
+		logger.Warnf("打开播放文件 %s 失败：%v", path, err)
 		return c.parseFiberError(err)
 	}
 
@@ -116,11 +116,11 @@ func (c *Controller) listFiles(ctx fiber.Ctx) error {
 
 	offset, err := strconv.Atoi(ctx.Query("offset", "0"))
 	if err != nil || offset < 0 {
-		return fiber.NewError(fiber.StatusBadRequest, "offset 必須為非負整數")
+		return fiber.NewError(fiber.StatusBadRequest, "offset 必须为非负整数")
 	}
 	limit, err := strconv.Atoi(ctx.Query("limit", "0"))
 	if err != nil || limit < 0 || limit > 200 {
-		return fiber.NewError(fiber.StatusBadRequest, "limit 必須為 0 至 200 之間的整數")
+		return fiber.NewError(fiber.StatusBadRequest, "limit 必须为 0 至 200 之间的整数")
 	}
 
 	paged, err := c.fileSvc.ListTreeWithOptions(path, file.ListOptions{
@@ -132,7 +132,7 @@ func (c *Controller) listFiles(ctx fiber.Ctx) error {
 		Limit:  limit,
 	})
 	if err != nil {
-		logger.Warnf("error listing dir at path %s: %v", path, err)
+		logger.Warnf("列出路径 %s 的目录失败：%v", path, err)
 		return c.parseFiberError(err)
 	}
 	paged.Items = c.withRecordingStatus(paged.Items)
@@ -158,11 +158,11 @@ func (c *Controller) downloadFile(ctx fiber.Ctx) error {
 		return fiber.ErrBadRequest
 	}
 	if c.recorderSvc.IsRecording(path) {
-		return fiber.NewError(fiber.StatusBadRequest, "無法下載正在錄製的文件")
+		return fiber.NewError(fiber.StatusBadRequest, "无法下载正在录制的文件")
 	}
 	fullPath, err := c.pathSvc.ValidatePath(path)
 	if err != nil {
-		logger.Warnf("error validating path %s: %v", path, err)
+		logger.Warnf("校验路径 %s 失败：%v", path, err)
 		return c.parseFiberError(err)
 	}
 	ctx.Attachment(fullPath) // set this because SendFile does not set the filename when using Download: true
@@ -190,13 +190,13 @@ func (c *Controller) presignedDownload(ctx fiber.Ctx) error {
 	relPath, err := c.pathSvc.ParsePresignedURLToken(token)
 	if err != nil {
 		if err == path.ErrTokenExpired {
-			return fiber.NewError(fiber.StatusForbidden, "Token 已過期")
+			return fiber.NewError(fiber.StatusForbidden, "Token 已过期")
 		}
 		return fiber.NewError(fiber.StatusBadRequest, err.Error())
 	}
 	fullPath, err := c.pathSvc.ValidatePath(relPath)
 	if err != nil {
-		logger.Warnf("error validating path %s: %v", relPath, err)
+		logger.Warnf("校验路径 %s 失败：%v", relPath, err)
 		return c.parseFiberError(err)
 	}
 	ctx.Attachment(fullPath) // set this because SendFile does not set the filename when using Download: true
@@ -224,12 +224,12 @@ func (c *Controller) createPresignedURL(ctx fiber.Ctx) error {
 	if err != nil {
 		return fiber.ErrBadRequest
 	} else if c.recorderSvc.IsRecording(path) {
-		return fiber.NewError(fiber.StatusBadRequest, "無法為正在錄製的文件產生臨時下載連結")
+		return fiber.NewError(fiber.StatusBadRequest, "无法为正在录制的文件生成临时下载链接")
 	}
 
 	fullPath, err := c.pathSvc.ValidatePath(path)
 	if err != nil {
-		logger.Warnf("error validating path %s: %v", path, err)
+		logger.Warnf("校验路径 %s 失败：%v", path, err)
 		return c.parseFiberError(err)
 	}
 
@@ -238,7 +238,7 @@ func (c *Controller) createPresignedURL(ctx fiber.Ctx) error {
 	if ttlStr != "" {
 		n, err := strconv.ParseInt(ttlStr, 10, 64)
 		if err != nil || n <= 0 {
-			return fiber.NewError(fiber.StatusBadRequest, "invalid ttl")
+			return fiber.NewError(fiber.StatusBadRequest, "ttl 无效")
 		}
 		ttlSeconds = n
 	}
@@ -246,7 +246,7 @@ func (c *Controller) createPresignedURL(ctx fiber.Ctx) error {
 
 	url, err := c.pathSvc.GeneratePresignedURL(fullPath, ttl)
 	if err != nil {
-		logger.Warnf("error creating presigned token for path %s: %v", path, err)
+		logger.Warnf("为路径 %s 生成预签名令牌失败：%v", path, err)
 		return fiber.ErrInternalServerError
 	}
 
@@ -269,7 +269,7 @@ func (c *Controller) createPresignedURL(ctx fiber.Ctx) error {
 func (c *Controller) getDiskSpace(ctx fiber.Ctx) error {
 	space, err := c.fileSvc.GetDiskSpace()
 	if err != nil {
-		logger.Warnf("error getting disk space: %v", err)
+		logger.Warnf("获取磁盘空间失败：%v", err)
 		return fiber.ErrInternalServerError
 	}
 	return ctx.JSON(space)
@@ -295,20 +295,20 @@ func (c *Controller) deleteFiles(ctx fiber.Ctx) error {
 
 	for _, p := range paths {
 		if c.recorderSvc.IsRecording(p) {
-			return fiber.NewError(fiber.StatusBadRequest, "要刪除的文件中包含正在錄製的文件")
+			return fiber.NewError(fiber.StatusBadRequest, "要删除的文件中包含正在录制的文件")
 		} else if fullPath, err := c.pathSvc.ValidatePath(p); err != nil {
-			logger.Warnf("error validating path %s: %v", p, err)
+			logger.Warnf("校验路径 %s 失败：%v", p, err)
 			return c.parseFiberError(err)
 		} else if inQueue, err := c.convertSvc.IsInQueue(fullPath); err != nil {
-			logger.Warnf("error checking convert queue for path %s: %v", p, err)
+			logger.Warnf("检查路径 %s 的转码队列失败：%v", p, err)
 			return fiber.ErrInternalServerError
 		} else if inQueue {
-			return fiber.NewError(fiber.StatusBadRequest, "要刪除的文件中包含正在轉檔的文件")
+			return fiber.NewError(fiber.StatusBadRequest, "要删除的文件中包含正在转码的文件")
 		}
 	}
 
 	if err := c.fileSvc.DeleteFiles(paths...); err != nil {
-		logger.Warnf("error deleting files: %v", err)
+		logger.Warnf("删除文件失败：%v", err)
 		return c.parseFiberError(err)
 	}
 	return ctx.SendStatus(fiber.StatusNoContent)
@@ -332,9 +332,9 @@ func (c *Controller) deleteDir(ctx fiber.Ctx) error {
 	if err != nil {
 		return fiber.ErrBadRequest
 	} else if c.recorderSvc.IsRecordingUnder(path) {
-		return fiber.NewError(fiber.StatusBadRequest, "無法刪除包含正在錄製文件的文件夾")
+		return fiber.NewError(fiber.StatusBadRequest, "无法删除包含正在录制文件的文件夹")
 	} else if err := c.fileSvc.DeleteDirectory(path); err != nil {
-		logger.Warnf("error deleting directory at path %s: %v", path, err)
+		logger.Warnf("删除路径 %s 的目录失败：%v", path, err)
 		return c.parseFiberError(err)
 	}
 	return ctx.SendStatus(fiber.StatusNoContent)
@@ -343,15 +343,15 @@ func (c *Controller) deleteDir(ctx fiber.Ctx) error {
 func (c *Controller) parseFiberError(err error) error {
 	switch {
 	case os.IsNotExist(err):
-		return fiber.NewError(fiber.StatusNotFound, "找不到所屬文件夾或檔案")
+		return fiber.NewError(fiber.StatusNotFound, "找不到所属文件夹或文件")
 	case os.IsPermission(err), err == path.ErrAccessDenied:
-		return fiber.NewError(fiber.StatusForbidden, "無法存取該文件路徑")
+		return fiber.NewError(fiber.StatusForbidden, "无法访问该文件路径")
 	case err == path.ErrInvalidFilePath:
-		return fiber.NewError(fiber.StatusBadRequest, "無效文件路徑")
+		return fiber.NewError(fiber.StatusBadRequest, "无效文件路径")
 	case err == file.ErrIsDirectory:
-		return fiber.NewError(fiber.StatusBadRequest, "此路徑為文件夾")
+		return fiber.NewError(fiber.StatusBadRequest, "该路径是文件夹")
 	case err == file.ErrUnsupportedPlaybackMedia:
-		return fiber.NewError(fiber.StatusUnsupportedMediaType, "此檔案格式不支援線上播放")
+		return fiber.NewError(fiber.StatusUnsupportedMediaType, "该文件格式不支持在线播放")
 	default:
 		return fiber.ErrInternalServerError
 	}

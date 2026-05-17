@@ -1,4 +1,4 @@
-package room
+﻿package room
 
 import (
 	"fmt"
@@ -52,7 +52,7 @@ func (r *Service) GetBatchLiveStatus(roomIDs []int) map[string]bool {
 		if err == nil {
 			result[fmt.Sprint(roomID)] = isLive
 		} else {
-			logger.Warnf("error checking live status for room %d: %v", roomID, err)
+			logger.Warnf("检查房间 %d 直播状态失败：%v", roomID, err)
 			result[fmt.Sprint(roomID)] = false
 		}
 	}

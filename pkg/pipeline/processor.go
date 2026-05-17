@@ -1,4 +1,4 @@
-package pipeline
+﻿package pipeline
 
 import (
 	"context"
@@ -80,7 +80,7 @@ func WithRetryOptions[T any](maxRetries int32, retryInterval time.Duration) Proc
 		if retryInterval > 0 {
 			pi.retryInterval = retryInterval
 		} else {
-			pi.logger.Warnf("invalid specified retry interval %v for processor %s, using default", retryInterval, pi.name)
+			pi.logger.Warnf("处理器 %s 指定的重试间隔 %v 无效，使用默认值", retryInterval, pi.name)
 		}
 	}
 }
@@ -90,7 +90,7 @@ func WithTimeout[T any](timeout time.Duration) ProcessorOption[T] {
 		if timeout > 0 {
 			pi.timeout = timeout
 		} else {
-			pi.logger.Warnf("invalid specified timeout %v for processor %s, using default", timeout, pi.name)
+			pi.logger.Warnf("处理器 %s 指定的超时 %v 无效，使用默认值", timeout, pi.name)
 		}
 	}
 }

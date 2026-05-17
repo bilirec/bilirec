@@ -1,4 +1,4 @@
-package db
+﻿package db
 
 import (
 	"fmt"
@@ -28,7 +28,7 @@ func (b *Bucket) Update(fn func(bucket *bbolt.Bucket) error) error {
 	return b.db.Update(func(tx *bbolt.Tx) error {
 		bucket := tx.Bucket(b.Name)
 		if bucket == nil {
-			return fmt.Errorf("bucket %q not found", b.Name)
+			return fmt.Errorf("未找到 bucket %q", b.Name)
 		}
 		return fn(bucket)
 	})
@@ -38,7 +38,7 @@ func (b *Bucket) View(fn func(bucket *bbolt.Bucket) error) error {
 	return b.db.View(func(tx *bbolt.Tx) error {
 		bucket := tx.Bucket(b.Name)
 		if bucket == nil {
-			return fmt.Errorf("bucket %q not found", b.Name)
+			return fmt.Errorf("未找到 bucket %q", b.Name)
 		}
 		return fn(bucket)
 	})

@@ -1,4 +1,4 @@
-package subscribe
+﻿package subscribe
 
 import (
 	"errors"
@@ -19,8 +19,8 @@ const roomSubscribeBucket = "Room_Subscriptions"
 var logger = logrus.WithField("service", "subscribe")
 
 var (
-	ErrRoomNotSubscribed     = errors.New("room not subscribed")
-	ErrRoomAlreadySubscribed = errors.New("room already subscribed")
+	ErrRoomNotSubscribed     = errors.New("房间未订阅")
+	ErrRoomAlreadySubscribed = errors.New("房间已订阅")
 )
 
 type Service struct {
@@ -90,7 +90,7 @@ func (s *Service) ListSubscribedRooms() ([]int, error) {
 	err := s.bucket.ForEach(func(k, v []byte) error {
 		roomID, err := strconv.Atoi(string(k))
 		if err != nil {
-			logger.Warnf("error scaning item: %s: %v, ignored.", string(k), err)
+			logger.Warnf("扫描条目失败：%s：%v，已忽略。", string(k), err)
 			return nil
 		}
 		roomIDs = append(roomIDs, roomID)

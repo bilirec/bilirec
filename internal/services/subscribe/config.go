@@ -1,4 +1,4 @@
-package subscribe
+﻿package subscribe
 
 import (
 	"fmt"
@@ -56,13 +56,13 @@ func (s *Service) ListSubscribedRoomsWithConfig() (map[int]*RoomConfig, error) {
 	err := s.bucket.ForEach(func(k, v []byte) error {
 		roomID, err := strconv.Atoi(string(k))
 		if err != nil {
-			logger.Warnf("error scaning item: %s: %v, ignored.", string(k), err)
+			logger.Warnf("扫描条目失败：%s：%v，已忽略。", string(k), err)
 			return nil
 		}
 
 		cfg, err := parseRoomConfig(v)
 		if err != nil {
-			logger.Warnf("error parsing room config for room %d: %v, using default", roomID, err)
+			logger.Warnf("解析房间 %d 配置失败：%v，使用默认值", roomID, err)
 			cfg = defaultRoomConfig()
 		}
 		result[roomID] = cfg

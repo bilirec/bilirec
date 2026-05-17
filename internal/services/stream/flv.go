@@ -1,4 +1,4 @@
-package stream
+﻿package stream
 
 import (
 	"context"
@@ -25,11 +25,11 @@ func (r *Service) read(ch chan<- []byte, stream io.ReadCloser, ctx context.Conte
 			buf := r.pool.GetBytes()
 			n, err := stream.Read(buf)
 			if err == io.EOF {
-				logger.Info("stream ended")
+				logger.Info("直播流已结束")
 				r.Flush(buf)
 				return
 			} else if err != nil {
-				logger.Errorf("error reading stream: %v", err)
+				logger.Errorf("读取直播流失败：%v", err)
 				r.Flush(buf)
 				return
 			}

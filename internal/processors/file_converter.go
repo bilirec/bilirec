@@ -1,4 +1,4 @@
-package processors
+﻿package processors
 
 import (
 	"context"
@@ -45,7 +45,7 @@ func (p *FileConverterProcessor) Open(ctx context.Context, log *logrus.Entry) er
 		return err
 	}
 	if p.destPath != "" && !strings.HasSuffix(p.destPath, p.format) {
-		return fmt.Errorf("destPath %s does not end with %s", p.destPath, p.format)
+		return fmt.Errorf("destPath %s 未以 %s 结尾", p.destPath, p.format)
 	}
 	return nil
 }

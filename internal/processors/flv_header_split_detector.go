@@ -1,4 +1,4 @@
-package processors
+﻿package processors
 
 import (
 	"context"
@@ -67,7 +67,7 @@ func (p *flvHeaderSplitDetectorProcessor) Process(ctx context.Context, log *logr
 
 	var headerChanged *flv.FlvHeaderChangedError
 	if errors.As(err, &headerChanged) {
-		log.Infof("🔀 video sequence header changed (SPS/PPS diff), triggering pipe rotation")
+		log.Infof("🔀 视频序列头已变化（SPS/PPS 差异），触发管道轮转")
 		// Only return bytes after the changed video seq-header tag.
 		// Bytes before the changed tag belong to the old stream config and should
 		// not be replayed into the next segment.

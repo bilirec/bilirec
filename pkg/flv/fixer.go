@@ -1,4 +1,4 @@
-package flv
+﻿package flv
 
 import (
 	"encoding/binary"
@@ -42,9 +42,9 @@ const (
 var (
 	FlvHeader = []byte{'F', 'L', 'V', 0x01, 0x05, 0x00, 0x00, 0x00, 0x09}
 
-	ErrNotFlvFile      = errors.New("not a valid FLV file")
-	ErrInvalidTag      = errors.New("invalid FLV tag")
-	ErrBufferCorrupted = errors.New("buffer corruption detected")
+	ErrNotFlvFile      = errors.New("不是有效的 FLV 文件")
+	ErrInvalidTag      = errors.New("无效的 FLV 标签")
+	ErrBufferCorrupted = errors.New("检测到缓冲区损坏")
 
 	// Dedicated pool for AccumulateFixer batch processing.
 	accumulateBufferPool = pool.NewBufferPool(DefaultBufferSize, MaxBufferSize)

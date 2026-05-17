@@ -1,4 +1,4 @@
-package convert
+﻿package convert
 
 import (
 	"context"
@@ -18,11 +18,11 @@ import (
 var logger = logrus.WithField("service", "convert")
 
 var (
-	ErrTaskNotFound              = errors.New("convert task not found")
-	ErrNoConvertManager          = errors.New("no convert manager available")
-	ErrFFmpegNotInstalled        = errors.New("ffmpeg is not installed or not found in PATH")
-	ErrCloudConvertNotConfigured = errors.New("cloudconvert client is not initialized")
-	ErrInvalidPublicBaseURL      = errors.New("invalid PUBLIC_BASE_URL for cloudconvert presigned URL")
+	ErrTaskNotFound              = errors.New("转码任务未找到")
+	ErrNoConvertManager          = errors.New("没有可用的转码管理器")
+	ErrFFmpegNotInstalled        = errors.New("ffmpeg 未安装或未在 PATH 中找到")
+	ErrCloudConvertNotConfigured = errors.New("cloudconvert 客户端未初始化")
+	ErrInvalidPublicBaseURL      = errors.New("用于 cloudconvert 预签名 URL 的 PUBLIC_BASE_URL 无效")
 )
 
 type Service struct {
@@ -51,7 +51,7 @@ func NewService(ls fx.Lifecycle, cfg *config.Config, pathSvc *path.Service) *Ser
 			pathSvc,
 		)
 	} else {
-		logger.Info("cloud convert api key not provided, cloud convert disabled")
+		logger.Info("未提供 CloudConvert API Key，CloudConvert 已禁用")
 	}
 
 	ls.Append(fx.StartStopHook(
@@ -63,7 +63,7 @@ func NewService(ls fx.Lifecycle, cfg *config.Config, pathSvc *path.Service) *Ser
 			}
 			for _, manager := range svc.managers {
 				if err := manager.StartWorker(ctx, db); err != nil {
-					return fmt.Errorf("failed to start convert manager: %v", err)
+					return fmt.Errorf("启动转码管理器失败：%v", err)
 				}
 			}
 			svc.db = db
@@ -145,7 +145,7 @@ func (s *Service) SetActiveRecordingsGetter(getter GetActiveRecordings) {
 	} else if utils.FFmpegAvailable() {
 		s.managers["ffmpeg"] = newFFmpegConvertManager(getter)
 	} else {
-		logger.Warn("ffmpeg not available, ffmpeg convert manager not initialized")
+		logger.Warn("ffmpeg 不可用，ffmpeg 转码管理器未初始化")
 	}
 }
 
@@ -164,7 +164,7 @@ func (s *Service) checkAvailableManagers() error {
 func fileSize(path string) *int64 {
 	info, err := os.Stat(path)
 	if err != nil {
-		logger.Warnf("failed to get file info for path %s: %v", path, err)
+		logger.Warnf("获取路径 %s 的文件信息失败：%v", path, err)
 		return nil
 	}
 	return utils.Ptr(info.Size())

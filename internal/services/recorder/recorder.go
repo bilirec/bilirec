@@ -1,4 +1,4 @@
-package recorder
+﻿package recorder
 
 import (
 	"context"
@@ -37,15 +37,15 @@ const Idle RecordStatus = "idle"
 var recordingPtr *RecordStatus = utils.Ptr(Recording)
 var recoveringPtr *RecordStatus = utils.Ptr(Recovering)
 
-var ErrMaxConcurrentRecordingsReached = errors.New("maximum concurrent recordings reached")
-var ErrRecordingStarted = errors.New("recording already started")
-var ErrStreamNotLive = errors.New("the room is not live streaming")
-var ErrEmptyStreamURLs = errors.New("no stream urls available")
-var ErrStreamURLsUnreachable = errors.New("all stream urls are unreachable")
-var ErrRoomBanned = errors.New("the room is banned")
-var ErrRoomEncrypted = errors.New("the room is encrypted")
-var ErrInsufficientDiskSpace = errors.New("insufficient disk space")
-var ErrInvalidStreamProfile = errors.New("invalid stream profile")
+var ErrMaxConcurrentRecordingsReached = errors.New("已达到最大并发录制数")
+var ErrRecordingStarted = errors.New("录制已开始")
+var ErrStreamNotLive = errors.New("该房间当前未在直播")
+var ErrEmptyStreamURLs = errors.New("没有可用的流 URL")
+var ErrStreamURLsUnreachable = errors.New("所有流 URL 均不可达")
+var ErrRoomBanned = errors.New("该房间已被封禁")
+var ErrRoomEncrypted = errors.New("该房间已加密")
+var ErrInsufficientDiskSpace = errors.New("磁盘空间不足")
+var ErrInvalidStreamProfile = errors.New("无效的流配置")
 
 type Service struct {
 	st           *stream.Service
@@ -363,11 +363,11 @@ func (r *Service) Stop(roomId int) bool {
 	if hasRecording {
 		info.cancel()
 	} else {
-		logger.Warnf("recording for room %d not found", roomId)
+		logger.Warnf("未找到房间 %d 的录制任务", roomId)
 	}
 
 	if hasPipe && !hasRecording {
-		logger.Warnf("found orphaned pipe from room %d, closing it...", roomId)
+		logger.Warnf("发现房间 %d 的孤立管道，正在关闭...", roomId)
 		pipe.Close()
 	}
 
@@ -384,7 +384,7 @@ func (r *Service) prepare(roomId int, ch <-chan []byte, strategy rs.StreamRecord
 		defer info.cancel()
 		err := r.rotate(roomId, ch, strategy, info, ctx)
 		if err != nil {
-			logger.Errorf("error rotating recording: %v", err)
+			logger.Errorf("轮转录制失败：%v", err)
 		}
 	})
 
@@ -402,19 +402,19 @@ func (r *Service) rotate(roomId int, ch <-chan []byte, strategy rs.StreamRecordS
 	for {
 		outputPath, err := r.rotateFilePath(info, segment, strategy.FileExtension())
 		if err != nil {
-			return fmt.Errorf("cannot prepare file path: %v", err)
+			return fmt.Errorf("无法准备文件路径：%v", err)
 		}
 		info.SetOutputPath(outputPath)
 
 		pipe, err := strategy.BuildPipeline(ctx, outputPath, state)
 		if err != nil {
-			return fmt.Errorf("cannot build pipeline: %v", err)
+			return fmt.Errorf("无法构建管道：%v", err)
 		}
 
 		startCtx, startCancel := context.WithTimeout(ctx, 10*time.Second)
 		if err := pipe.Open(startCtx); err != nil {
 			startCancel()
-			return fmt.Errorf("cannot open pipeline: %v", err)
+			return fmt.Errorf("无法打开管道：%v", err)
 		}
 		startCancel()
 
@@ -471,7 +471,7 @@ func (r *Service) rev(roomId int, ch <-chan []byte, info *Info, ctx context.Cont
 			//   ~4.6KB — carried bytes from a rotation split; replayed into next segment, not lost
 			// At 6 Mbps, 5000B ≈ 6 ms ≈ <0.25 frame at 60 fps — imperceptible in recordings.
 			if len(result) > 0 {
-				log.Warnf("abandoned flv stream chunk: %dB", len(result))
+				log.Warnf("已丢弃 FLV 流分块：%dB", len(result))
 			}
 			return err
 		}
@@ -484,7 +484,7 @@ func (r *Service) checkRecordingDurationPeriodically(roomId int, ctx context.Con
 
 	// 0 means unlimited — skip the time-limit loop entirely
 	if maxDuration == 0 {
-		log.Info("recording duration: unlimited")
+		log.Info("录制时长：无限制")
 		return
 	}
 
@@ -499,14 +499,14 @@ func (r *Service) checkRecordingDurationPeriodically(roomId int, ctx context.Con
 			}
 			elapsed := time.Since(info.startTime)
 			if elapsed >= maxDuration {
-				log.Infof("maximum recording duration reached (%v), stopping", elapsed.Round(time.Minute))
+				log.Infof("已达到最大录制时长（%v），正在停止", elapsed.Round(time.Minute))
 				r.Stop(roomId)
 				return
 			}
 
 			if int(elapsed.Minutes())%30 == 0 {
 				remaining := maxDuration - elapsed
-				log.Infof("recording: %v elapsed, %v remaining, %d MB", elapsed.Round(time.Minute), remaining.Round(time.Minute), info.bytesRead.Load()/1024/1024)
+				log.Infof("录制中：已用时 %v，剩余 %v，%d MB", elapsed.Round(time.Minute), remaining.Round(time.Minute), info.bytesRead.Load()/1024/1024)
 			}
 
 		case <-ctx.Done():
@@ -591,7 +591,7 @@ func (r *Service) recover(roomId int) {
 
 func (r *Service) finalize(roomId int, outputPath string) {
 	if outputPath == "" {
-		logger.Warnf("skipping finalize for room %d: output path is empty", roomId)
+		logger.Warnf("跳过房间 %d 的收尾：输出路径为空", roomId)
 		return
 	}
 
@@ -599,12 +599,12 @@ func (r *Service) finalize(roomId int, outputPath string) {
 
 	fileInfo, err := os.Stat(outputPath)
 	if err != nil {
-		logger.Errorf("failed to stat recorded file for room %d: %v", roomId, err)
+		logger.Errorf("获取房间 %d 录制文件状态失败：%v", roomId, err)
 		return
 	} else if fileInfo.Size() < 1024 { // less than 1KB
-		logger.Warnf("recorded file for room %d is too small (%d bytes), skipping finallization and removing file", roomId, fileInfo.Size())
+		logger.Warnf("房间 %d 的录制文件过小（%d 字节），跳过收尾并删除文件", roomId, fileInfo.Size())
 		if err := os.Remove(outputPath); err != nil {
-			logger.Errorf("failed to remove empty file %s: %v", outputPath, err)
+			logger.Errorf("删除空文件 %s 失败：%v", outputPath, err)
 		}
 		return
 	}
@@ -622,11 +622,11 @@ func (r *Service) finalize(roomId int, outputPath string) {
 
 	// process finalization via convert service
 	if queue, err := r.cv.Enqueue(outputPath, "mp4", r.cfg.DeleteSourceAfterConvert); err != nil {
-		logger.Errorf("failed to enqueue conversion for room %d: %v", roomId, err)
-		logger.Warnf("you may need to convert mp4 manually for room: %d", roomId)
+		logger.Errorf("为房间 %d 入队转码失败：%v", roomId, err)
+		logger.Warnf("你可能需要为房间 %d 手动转码 mp4", roomId)
 	} else {
-		logger.Infof("enqueued convertion for room %d: %s", roomId, queue.TaskID)
-		logger.Infof("the output path will be: %s", queue.OutputPath)
+		logger.Infof("已为房间 %d 入队转码任务：%s", roomId, queue.TaskID)
+		logger.Infof("输出路径将是：%s", queue.OutputPath)
 	}
 }
 
@@ -643,7 +643,7 @@ func (r *Service) backgroundMaintenance(ctx context.Context) {
 
 			if activeCount == 0 && lastActiveCount > 0 {
 				// Just transitioned from active to idle - cleanup
-				logger.Info("No ongoing recordings, performing maintenance GC")
+				logger.Info("当前无进行中的录制，执行维护性 GC")
 
 				var m runtime.MemStats
 				runtime.ReadMemStats(&m)
@@ -654,7 +654,7 @@ func (r *Service) backgroundMaintenance(ctx context.Context) {
 				debug.FreeOSMemory()
 
 				runtime.ReadMemStats(&m)
-				logger.Infof("After cleanup: Alloc=%d MB, Sys=%d MB",
+				logger.Infof("清理后：Alloc=%d MB，Sys=%d MB",
 					m.Alloc/1024/1024, m.Sys/1024/1024)
 			}
 

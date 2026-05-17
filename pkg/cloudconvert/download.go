@@ -1,4 +1,4 @@
-package cloudconvert
+﻿package cloudconvert
 
 import (
 	"encoding/json"
@@ -28,7 +28,7 @@ func (c *Client) CreateExportURL(payload *ExportURLRequest) (*TaskResponse, erro
 	if err := json.Unmarshal(res.Body(), &exportRes); err != nil {
 		return nil, err
 	} else if res.StatusCode() < 200 || res.StatusCode() >= 400 {
-		return nil, fmt.Errorf("video convert failed with status code %d: %s", res.StatusCode(), res.String())
+		return nil, fmt.Errorf("视频转换失败，状态码 %d：%s", res.StatusCode(), res.String())
 	}
 
 	return &exportRes, nil
@@ -37,10 +37,10 @@ func (c *Client) CreateExportURL(payload *ExportURLRequest) (*TaskResponse, erro
 func (c *Client) DownloadAsFileStream(url string) (io.ReadCloser, error) {
 	res, err := c.streamClient.Get(url)
 	if err != nil {
-		return nil, fmt.Errorf("download request failed: %w", err)
+		return nil, fmt.Errorf("下载请求失败：%w", err)
 	} else if res.StatusCode < 200 || res.StatusCode >= 400 {
 		res.Body.Close()
-		return nil, fmt.Errorf("download failed with status code %d", res.StatusCode)
+		return nil, fmt.Errorf("下载失败，状态码 %d", res.StatusCode)
 	}
 
 	return res.Body, nil

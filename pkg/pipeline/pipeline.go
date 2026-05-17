@@ -1,4 +1,4 @@
-package pipeline
+﻿package pipeline
 
 import (
 	"context"
@@ -82,7 +82,7 @@ func (p *Pipe[T]) closeOpened(count int) {
 	for i := count - 1; i >= 0; i-- {
 		processor := p.processors[i]
 		if err := processor.close(); err != nil {
-			processor.logger.Errorf("error closing processor: %v", err)
+			processor.logger.Errorf("关闭处理器失败：%v", err)
 		}
 	}
 	p.opened.Store(0)
@@ -96,7 +96,7 @@ func (p *Pipe[T]) process(ctx context.Context, tp *ProcessorInfo[T], item T) (T,
 	defer func() {
 		elapsed := time.Since(start)
 		if elapsed > tp.timeout/2 {
-			tp.logger.Warnf("processor took too long to execute: %vms", elapsed.Microseconds())
+			tp.logger.Warnf("处理器执行耗时过长：%vms", elapsed.Microseconds())
 		} else {
 			tp.logger.Tracef("processor executed: %vms", elapsed.Microseconds())
 		}
@@ -109,18 +109,18 @@ func (p *Pipe[T]) process(ctx context.Context, tp *ProcessorInfo[T], item T) (T,
 		case ReturnNextOnError:
 			return next, err
 		case ContinueOnError:
-			tp.logger.Warnf("continuing despite error in processor %s: %v", tp.name, err)
+			tp.logger.Warnf("处理器 %s 出错但继续执行：%v", tp.name, err)
 			return item, nil
 		case RetryOnError:
 			for range tp.maxRetries {
-				tp.logger.Warnf("retrying processor %s due to error: %v", tp.name, err)
+				tp.logger.Warnf("处理器 %s 因错误重试：%v", tp.name, err)
 				select {
 				case <-time.After(tp.retryInterval):
 					c, cancel = context.WithTimeout(ctx, tp.timeout)
 					next, retryErr := tp.process(c, item)
 					cancel()
 					if retryErr == nil {
-						tp.logger.Infof("processor %s succeeded on retry", tp.name)
+						tp.logger.Infof("处理器 %s 重试成功", tp.name)
 						return next, nil
 					}
 					err = retryErr
@@ -128,7 +128,7 @@ func (p *Pipe[T]) process(ctx context.Context, tp *ProcessorInfo[T], item T) (T,
 					return item, ctx.Err()
 				}
 			}
-			tp.logger.Errorf("processor %s failed after %d retries", tp.name, tp.maxRetries)
+			tp.logger.Errorf("处理器 %s 在重试 %d 次后仍失败", tp.name, tp.maxRetries)
 			return item, err
 		}
 	}

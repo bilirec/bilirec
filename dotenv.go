@@ -1,4 +1,4 @@
-package main
+﻿package main
 
 import (
 	_ "embed"
@@ -20,16 +20,16 @@ func init() {
 	// 生成的 .env 文件会放在可执行文件同目录下，方便用户修改
 	if _, err := os.Stat(".env"); os.IsNotExist(err) {
 		if err := os.WriteFile(".env", []byte(dotEnvFile), 0644); err != nil {
-			logger.Warnf("failed to write .env file: %v, please create .env file manually if you are using binary", err)
+			logger.Warnf("写入 .env 文件失败：%v，如果你使用的是二进制版本，请手动创建 .env 文件", err)
 		} else {
-			logger.Info("generated .env file with default values, please restart each time you configure the .env file if you are using binary")
+			logger.Info("已使用默认值生成 .env 文件；如果你使用的是二进制版本，每次修改 .env 后请重启")
 		}
 	}
 
 	if err := godotenv.Load(); err != nil {
-		logger.Warnf("failed to load .env file: %v, please restart if you are using binary", err)
+		logger.Warnf("加载 .env 文件失败：%v，如果你使用的是二进制版本请重启", err)
 	} else {
-		logger.Info("loaded environment variables from .env file")
+		logger.Info("已从 .env 文件加载环境变量")
 	}
 
 }

@@ -1,4 +1,4 @@
-package bilibili
+﻿package bilibili
 
 import (
 	"context"
@@ -21,7 +21,7 @@ import (
 var logger = logrus.WithField("module", "bilibili")
 
 var (
-	ErrRoomNotFound = errors.New("room not found")
+	ErrRoomNotFound = errors.New("房间不存在")
 )
 
 const liveReferer = "https://live.bilibili.com/"
@@ -103,7 +103,7 @@ func ensureBuvid3Cookie(client *resty.Client) {
 
 	uuid, err := utils.NewUUIDv4()
 	if err != nil {
-		logger.Warnf("cannot generate buvid3 cookie: %v", err)
+		logger.Warnf("生成 buvid3 Cookie 失败：%v", err)
 		return
 	}
 

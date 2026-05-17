@@ -51,12 +51,12 @@ func RequiredRoles(roles ...Role) fiber.Handler {
 
 		claims := utils.ToJwtClaims(c)
 		if claims == nil {
-			return fiber.NewError(403, "沒有權限")
+			return fiber.NewError(403, "没有权限")
 		}
 
 		role, ok := utils.GetClaimString(claims, "role")
 		if !ok || !allowedRoles.Contains(Role(role)) {
-			return fiber.NewError(403, "沒有權限")
+			return fiber.NewError(403, "没有权限")
 		}
 
 		return c.Next()

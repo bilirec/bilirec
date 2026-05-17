@@ -1,4 +1,4 @@
-package processors
+﻿package processors
 
 import (
 	"context"
@@ -46,7 +46,7 @@ func (p *Fmp4BoxGuardProcessor) Process(_ context.Context, log *logrus.Entry, da
 		return data, nil
 	}
 	if len(data) < 8 {
-		log.Warnf("fmp4-box-guard: segment too short (%d B), dropping", len(data))
+		log.Warnf("fmp4-box-guard：分片过短（%d B），已丢弃", len(data))
 		return nil, nil
 	}
 
@@ -55,7 +55,7 @@ func (p *Fmp4BoxGuardProcessor) Process(_ context.Context, log *logrus.Entry, da
 	case "ftyp":
 		// Init segment — if we already saw media, it's a discontinuity
 		if p.seenMedia {
-			log.Warnf("fmp4-box-guard: new init segment after media — stream discontinuity, resetting")
+			log.Warnf("fmp4-box-guard：媒体分片后出现新的 init 分片，检测到流不连续，正在重置")
 			*p.bases = make(map[uint32]uint64)
 		}
 	case "styp", "moof":
@@ -64,14 +64,14 @@ func (p *Fmp4BoxGuardProcessor) Process(_ context.Context, log *logrus.Entry, da
 		// NOT treat as an init/discontinuity.
 		p.seenMedia = true
 	default:
-		log.Warnf("fmp4-box-guard: unexpected leading box %q (%d B), dropping", boxType, len(data))
+		log.Warnf("fmp4-box-guard：意外的前导 box %q（%d B），已丢弃", boxType, len(data))
 		return nil, nil
 	}
 
 	// Validate that the declared box size doesn't exceed the segment buffer.
 	_, _, _, ok := hls.ReadBoxHeader(data, 0)
 	if !ok {
-		log.Warnf("fmp4-box-guard: malformed box header (size overflows segment buffer), dropping")
+		log.Warnf("fmp4-box-guard：box 头格式错误（size 超出分片缓冲区），已丢弃")
 		return nil, nil
 	}
 

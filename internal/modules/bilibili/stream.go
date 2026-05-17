@@ -1,4 +1,4 @@
-package bilibili
+﻿package bilibili
 
 import (
 	"encoding/json"
@@ -112,7 +112,7 @@ func (c *Client) GetStreamURLs(roomID int) ([]string, error) {
 	if err != nil {
 		return nil, err
 	} else if resp.StatusCode() != 200 {
-		return nil, fmt.Errorf("status code: %d", resp.StatusCode())
+		return nil, fmt.Errorf("状态码：%d", resp.StatusCode())
 	}
 
 	var sr StreamResponseV1
@@ -122,7 +122,7 @@ func (c *Client) GetStreamURLs(roomID int) ([]string, error) {
 		if sr.Code == 19002003 {
 			return nil, ErrRoomNotFound
 		}
-		return nil, fmt.Errorf("error getting stream url: %s (code %d)", sr.Message, sr.Code)
+		return nil, fmt.Errorf("获取流 URL 失败：%s（代码 %d）", sr.Message, sr.Code)
 	}
 
 	return fp.Map(sr.Data.Durl, func(durl StreamURL) string {
@@ -160,7 +160,7 @@ func (c *Client) GetStreamURLsV2(roomID int, opts ...GetStreamURLsOption) ([]Str
 	})
 	newQueryParam, err := c.wbi.SignQuery(client.QueryParam, time.Now())
 	if err != nil {
-		return nil, fmt.Errorf("cannot sign wbi: %v", err)
+		return nil, fmt.Errorf("无法签名 wbi：%v", err)
 	}
 	client.QueryParam = newQueryParam
 
@@ -168,7 +168,7 @@ func (c *Client) GetStreamURLsV2(roomID int, opts ...GetStreamURLsOption) ([]Str
 	if err != nil {
 		return nil, err
 	} else if resp.StatusCode() != 200 {
-		return nil, fmt.Errorf("status code: %d", resp.StatusCode())
+		return nil, fmt.Errorf("状态码：%d", resp.StatusCode())
 	}
 
 	var sr StreamResponseV2
@@ -178,7 +178,7 @@ func (c *Client) GetStreamURLsV2(roomID int, opts ...GetStreamURLsOption) ([]Str
 		if sr.Code == 19002003 {
 			return nil, ErrRoomNotFound
 		}
-		return nil, fmt.Errorf("error getting stream url: %s (code %d)", sr.Message, sr.Code)
+		return nil, fmt.Errorf("获取流 URL 失败：%s（代码 %d）", sr.Message, sr.Code)
 	}
 
 	if sr.Data.PlayurlInfo == nil || sr.Data.PlayurlInfo.Playurl == nil {

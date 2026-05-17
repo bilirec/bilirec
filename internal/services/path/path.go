@@ -1,4 +1,4 @@
-package path
+﻿package path
 
 import (
 	"fmt"
@@ -17,11 +17,11 @@ import (
 var logger = logrus.WithField("service", "path")
 
 var (
-	ErrFileNotFound    = fmt.Errorf("file not found")
-	ErrInvalidFilePath = fmt.Errorf("invalid file path")
-	ErrAccessDenied    = fmt.Errorf("access denied")
-	ErrTokenExpired    = fmt.Errorf("token expired")
-	ErrInvalidToken    = fmt.Errorf("invalid token")
+	ErrFileNotFound    = fmt.Errorf("文件不存在")
+	ErrInvalidFilePath = fmt.Errorf("无效文件路径")
+	ErrAccessDenied    = fmt.Errorf("访问被拒绝")
+	ErrTokenExpired    = fmt.Errorf("token 已过期")
+	ErrInvalidToken    = fmt.Errorf("无效 token")
 )
 
 type Service struct {
@@ -49,12 +49,12 @@ func (s *Service) GeneratePresignedURL(fullPath string, expireAfter time.Duratio
 	fallbackURL := fmt.Sprintf("/files/tempdownload?presigned=%s", token)
 	baseURL := strings.TrimSpace(s.cfg.PublicBaseUrl)
 	if baseURL == "" {
-		logger.Warn("PUBLIC_BASE_URL is empty, returning relative presigned URL")
+		logger.Warn("PUBLIC_BASE_URL 为空，返回相对预签名 URL")
 		return fallbackURL, nil
 	}
 
 	if !utils.IsValidAbsoluteHTTPURL(baseURL) {
-		logger.Warnf("PUBLIC_BASE_URL is invalid: %q, returning relative presigned URL", s.cfg.PublicBaseUrl)
+		logger.Warnf("PUBLIC_BASE_URL 无效：%q，返回相对预签名 URL", s.cfg.PublicBaseUrl)
 		return fallbackURL, nil
 	}
 
@@ -87,7 +87,7 @@ func (s *Service) ParsePresignedURLToken(token string) (string, error) {
 func (s *Service) ValidatePath(path string) (string, error) {
 	baseAbs, err := filepath.Abs(s.cfg.OutputDir)
 	if err != nil {
-		logger.Errorf("invalid base path for %s: %v", s.cfg.OutputDir, err)
+		logger.Errorf("%s 的基础路径无效：%v", s.cfg.OutputDir, err)
 		return "", ErrInvalidFilePath
 	}
 
@@ -96,13 +96,13 @@ func (s *Service) ValidatePath(path string) (string, error) {
 
 	fullPathAbs, err := filepath.Abs(fullPath)
 	if err != nil {
-		logger.Errorf("invalid path for %s: %v", fullPath, err)
+		logger.Errorf("路径 %s 无效：%v", fullPath, err)
 		return "", ErrInvalidFilePath
 	}
 
 	if !strings.HasPrefix(fullPathAbs, baseAbs+string(os.PathSeparator)) &&
 		fullPathAbs != baseAbs {
-		logger.Errorf("path traversal detected: %s", fullPath)
+		logger.Errorf("检测到路径穿越：%s", fullPath)
 		return "", ErrAccessDenied
 	}
 

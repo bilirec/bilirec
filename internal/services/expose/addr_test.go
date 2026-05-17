@@ -105,7 +105,7 @@ func TestParseServerAddr_ExtraColonSegments(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for malformed addr with extra colon segments, got nil")
 	}
-	if !strings.Contains(err.Error(), "invalid FRP_SERVER format") {
+	if !strings.Contains(err.Error(), "无效的 FRP_SERVER 格式") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
@@ -115,7 +115,7 @@ func TestParseServerAddr_WithScheme(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for addr containing scheme, got nil")
 	}
-	if !strings.Contains(err.Error(), "invalid FRP_SERVER format") {
+	if !strings.Contains(err.Error(), "无效的 FRP_SERVER 格式") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }

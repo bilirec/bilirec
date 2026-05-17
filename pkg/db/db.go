@@ -1,4 +1,4 @@
-package db
+﻿package db
 
 import (
 	"fmt"
@@ -30,12 +30,12 @@ func Open(dbPath string) (*Client, error) {
 func OpenWithOptions(dbPath string, opts *bbolt.Options) (*Client, error) {
 	dir := filepath.Dir(dbPath)
 	if err := os.MkdirAll(dir, 0755); err != nil {
-		return nil, fmt.Errorf("failed to create database directory: %w", err)
+		return nil, fmt.Errorf("创建数据库目录失败：%w", err)
 	}
 
 	db, err := bbolt.Open(dbPath, 0600, opts)
 	if err != nil {
-		return nil, fmt.Errorf("failed to open database: %w", err)
+		return nil, fmt.Errorf("打开数据库失败：%w", err)
 	}
 
 	return &Client{BoltDB: db}, nil

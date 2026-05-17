@@ -1,4 +1,4 @@
-package cloudconvert
+﻿package cloudconvert
 
 import (
 	"encoding/json"
@@ -33,7 +33,7 @@ func (b *JobBuilder) AddTask(task *JobCreateTask) *JobBuilder {
 
 func (b *JobBuilder) Submit() (*JobSubmitResult, error) {
 	if len(b.tasks) == 0 {
-		return nil, fmt.Errorf("no tasks added")
+		return nil, fmt.Errorf("未添加任何任务")
 	}
 
 	payload := map[string]any{
@@ -46,10 +46,10 @@ func (b *JobBuilder) Submit() (*JobSubmitResult, error) {
 	tasksMap := payload["tasks"].(map[string]any)
 	for _, task := range b.tasks {
 		if task.Name == "" {
-			return nil, fmt.Errorf("task name is required")
+			return nil, fmt.Errorf("任务名称为必填项")
 		}
 		if task.Operation == "" {
-			return nil, fmt.Errorf("task %s operation is required", task.Name)
+			return nil, fmt.Errorf("任务 %s 的 operation 为必填项", task.Name)
 		}
 
 		taskMap := map[string]any{
@@ -61,7 +61,7 @@ func (b *JobBuilder) Submit() (*JobSubmitResult, error) {
 		if task.Payload != nil {
 			v, err := payloadToMap(task.Payload)
 			if err != nil {
-				return nil, fmt.Errorf("task %s payload: %w", task.Name, err)
+				return nil, fmt.Errorf("任务 %s 的 payload 错误：%w", task.Name, err)
 			}
 			maps.Copy(taskMap, v)
 		}
@@ -76,7 +76,7 @@ func (b *JobBuilder) Submit() (*JobSubmitResult, error) {
 		return nil, err
 	}
 	if res.StatusCode() < 200 || res.StatusCode() >= 400 {
-		return nil, fmt.Errorf("create job failed with status code %d: %s", res.StatusCode(), res.String())
+		return nil, fmt.Errorf("创建 job 失败，状态码 %d：%s", res.StatusCode(), res.String())
 	}
 
 	var jobRes JobResponse

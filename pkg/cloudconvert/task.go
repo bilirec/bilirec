@@ -1,4 +1,4 @@
-package cloudconvert
+﻿package cloudconvert
 
 import (
 	"encoding/json"
@@ -8,7 +8,7 @@ import (
 	"strings"
 )
 
-var ErrTaskNotFound = errors.New("task not found")
+var ErrTaskNotFound = errors.New("任务未找到")
 
 func (c *Client) GetTask(taskID string, includes ...string) (*TaskResponse, error) {
 	req := c.client.R().
