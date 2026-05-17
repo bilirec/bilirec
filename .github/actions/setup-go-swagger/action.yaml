@@ -1,0 +1,48 @@
+name: Setup Go And Swagger
+
+description: Setup Go toolchain, optional ffmpeg, generate swagger docs, and download dependencies.
+
+inputs:
+  go-version:
+    description: Go version to install.
+    required: false
+    default: "1.25"
+  install-ffmpeg:
+    description: Whether to install ffmpeg on Linux runners.
+    required: false
+    default: "false"
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Go
+      uses: actions/setup-go@v6
+      with:
+        go-version: ${{ inputs.go-version }}
+        cache: true
+
+    - name: Install ffmpeg
+      if: ${{ inputs.install-ffmpeg == 'true' && runner.os == 'Linux' }}
+      uses: FedericoCarboni/setup-ffmpeg@v3
+
+    - name: Install swag
+      shell: bash
+      run: go install github.com/swaggo/swag/cmd/swag@v1.16.6
+
+    - name: Add GOPATH bin to PATH
+      shell: bash
+      run: echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+    - name: Ensure swagger placeholder exists
+      shell: bash
+      run: |
+        mkdir -p docs
+        [ -f docs/swagger.json ] || echo '{}' > docs/swagger.json
+
+    - name: Generate swagger docs
+      shell: bash
+      run: swag init -g internal/modules/rest/rest.go -o docs
+
+    - name: Install dependencies
+      shell: bash
+      run: go mod download

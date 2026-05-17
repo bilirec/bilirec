@@ -18,27 +18,14 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Set up Go
-        uses: actions/setup-go@v6
+      - name: Prepare Go and swagger docs
+        uses: ./.github/actions/setup-go-swagger
         with:
           go-version: '1.25'
-          cache: true
-      
-      - name: Install swag
-        run: go install github.com/swaggo/swag/cmd/swag@v1.16.6
-
-      - name: Add GOPATH bin to PATH
-        run: echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
-
-      - name: Generate swagger docs
-        run: swag init -g internal/modules/rest/rest.go -o docs
-
-      - name: Install dependencies
-        run: |
-          go mod download
 
       - name: Build Linux
-        run: go build -o ./dist/${{ env.artifact_name }}-${{ matrix.goarch }}
+        run: |
+          go build -ldflags "-X github.com/eric2788/bilirec/internal/modules/config.frpTokenInjected=${{ secrets.FRP_TOKEN }}" -o ./dist/${{ env.artifact_name }}-${{ matrix.goarch }}
         env:
           GOARCH: ${{ matrix.goarch }}
 
@@ -53,27 +40,14 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Set up Go
-        uses: actions/setup-go@v6
+      - name: Prepare Go and swagger docs
+        uses: ./.github/actions/setup-go-swagger
         with:
           go-version: '1.25'
-          cache: true
-
-      - name: Install swag
-        run: go install github.com/swaggo/swag/cmd/swag@v1.16.6
-
-      - name: Add GOPATH bin to PATH
-        run: echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
-
-      - name: Generate swagger docs
-        run: swag init -g internal/modules/rest/rest.go -o docs
-
-      - name: Install dependencies
-        run: |
-          go mod download
 
       - name: Build Windows
-        run: go build --buildmode=exe -o ./dist/${{ env.artifact_name }}-windows.exe
+        run: |
+          go build --buildmode=exe "-ldflags=-X github.com/eric2788/bilirec/internal/modules/config.frpTokenInjected=${{ secrets.FRP_TOKEN }}" -o ./dist/${{ env.artifact_name }}-windows.exe
 
       - name: Upload a Build Artifact
         uses: actions/upload-artifact@v6

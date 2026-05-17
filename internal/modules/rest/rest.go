@@ -13,16 +13,16 @@
 // @in header
 // @name Authorization
 
-// @host bilirec-api.ericlamm.com
 // @BasePath /
-// @schemes https
 //
 //go:generate swag init -g rest.go -o ../../docs
 package rest
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
+	"fmt"
 	"os"
 	"strings"
 	"time"
@@ -61,6 +61,7 @@ func provider(ls fx.Lifecycle, cfg *config.Config) *fiber.App {
 		TrustProxyConfig: fiber.TrustProxyConfig{
 			Private:  true,
 			Loopback: true,
+			Proxies:  cfg.TrustedProxies,
 		},
 	})
 
@@ -168,22 +169,54 @@ func provider(ls fx.Lifecycle, cfg *config.Config) *fiber.App {
 		fx.StartStopHook(
 			func(ctx context.Context) error {
 				addr := ":" + cfg.Port
-				logger.Infof("starting http server on %s", addr)
-				go func() {
-					if err := app.Listen(addr); err != nil {
-						logger.Errorf("http server error: %v", err)
-					}
-				}()
-				return nil
+				// Check if both SERVER_CRT and SERVER_KEY are provided
+				if cfg.ServerCrt != "" && cfg.ServerKey != "" {
+					return startHttpsServer(app, addr, cfg.ServerCrt, cfg.ServerKey)
+				} else {
+					return startHttpServer(app, addr)
+				}
 			},
 			func(ctx context.Context) error {
-				logger.Info("stopping http server")
+				logger.Info("stopping server")
 				return app.ShutdownWithContext(ctx)
 			},
 		),
 	)
 
 	return app
+}
+
+func startHttpsServer(app *fiber.App, addr, serverCrt, serverKey string) error {
+	logger.Infof("starting https server on %s", addr)
+	cert, err := tls.LoadX509KeyPair(serverCrt, serverKey)
+	if err != nil {
+		return fmt.Errorf("failed to load certificates: %w", err)
+	}
+
+	tlsConfig := &tls.Config{
+		Certificates: []tls.Certificate{cert},
+	}
+
+	listener, err := tls.Listen("tcp", addr, tlsConfig)
+	if err != nil {
+		return fmt.Errorf("https server error: %w", err)
+	}
+	go func() {
+		if err := app.Listener(listener); err != nil {
+			logger.Errorf("https server error: %v", err)
+		}
+	}()
+	return nil
+}
+
+func startHttpServer(app *fiber.App, addr string) error {
+	logger.Infof("starting http server on %s", addr)
+	go func() {
+		if err := app.Listen(addr); err != nil {
+			logger.Errorf("http server error: %v", err)
+		}
+	}()
+	return nil
 }
 
 func isMediaStreamContentType(contentType string) bool {

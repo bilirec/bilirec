@@ -13,6 +13,7 @@ import (
 	"github.com/eric2788/bilirec/internal/modules/config"
 	"github.com/eric2788/bilirec/internal/modules/rest"
 	co "github.com/eric2788/bilirec/internal/services/convert"
+	ex "github.com/eric2788/bilirec/internal/services/expose"
 	fi "github.com/eric2788/bilirec/internal/services/file"
 	no "github.com/eric2788/bilirec/internal/services/notify"
 	pa "github.com/eric2788/bilirec/internal/services/path"
@@ -40,6 +41,7 @@ func MainModule() fx.Option {
 		fx.Provide(no.NewService),
 		fx.Provide(fi.NewService),
 
+		fx.Invoke(ex.NewService),
 		fx.Invoke(sc.NewService),
 
 		fx.Invoke(room.NewController),

@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/url"
 	"os"
+	"strings"
 
 	"github.com/eric2788/bilirec/utils"
 	"github.com/sirupsen/logrus"
@@ -11,10 +12,27 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
+// FRP token injected at build-time via ldflags; defaults to empty.
+// When empty, FRPToken remains empty unless overridden by FRP_TOKEN env var.
+var frpTokenInjected = ""
+
+const (
+	officialFRPServer = "tunnel.bilirec.org:7000"
+	officialFRPDomain = "tunnel.bilirec.org"
+)
+
 // all config will be loaded from environment variables
 type Config struct {
 	AnonymousLogin bool
 	Port           string
+	TrustedProxies []string
+
+	FRPEnabled     bool
+	FRPServer      string
+	FRPToken       string
+	FRPBaseDomain  string
+	FRPHttps       bool
+	FRPSchemeHttps bool
 
 	MaxConcurrentRecordings int
 	MaxRecordingHours       int
@@ -38,6 +56,9 @@ type Config struct {
 	ViewerUsername     string
 	ViewerPasswordHash string
 	JwtSecret          string
+
+	ServerCrt string
+	ServerKey string
 
 	Debug           bool
 	ProductionMode  bool
@@ -103,9 +124,20 @@ func provider(lc fx.Lifecycle) (*Config, error) {
 		utils.EmptyOrElse(os.Getenv("FFMPEG_ALLOW_DURING_RECORDING_BELOW_ACTIVE_RECORDINGS"), "1"),
 	)
 
+	frpServer := utils.EmptyOrElse(os.Getenv("FRP_SERVER"), officialFRPServer)
+	frpBaseDomain := utils.EmptyOrElse(os.Getenv("FRP_BASE_DOMAIN"), officialFRPDomain)
+	frpToken := resolveFRPToken(frpServer, frpBaseDomain)
+
 	c := &Config{
 		AnonymousLogin:                     os.Getenv("ANONYMOUS_LOGIN") == "true",
 		Port:                               utils.EmptyOrElse(os.Getenv("PORT"), "8080"),
+		TrustedProxies:                     parseCommaSeparatedValues(utils.EmptyOrElse(os.Getenv("TRUSTED_PROXIES"), "161.33.159.26")),
+		FRPEnabled:                         os.Getenv("FRP_ENABLED") == "true",
+		FRPServer:                          frpServer,
+		FRPToken:                           frpToken,
+		FRPBaseDomain:                      frpBaseDomain,
+		FRPHttps:                           os.Getenv("FRP_HTTPS") == "true",
+		FRPSchemeHttps:                     utils.EmptyOrElse(os.Getenv("FRP_SCHEME_HTTPS"), "true") == "true",
 		MaxConcurrentRecordings:            utils.MustAtoi(utils.EmptyOrElse(os.Getenv("MAX_CONCURRENT_RECORDINGS"), "3")),
 		MaxRecordingHours:                  utils.MustAtoi(utils.EmptyOrElse(os.Getenv("MAX_RECORDING_HOURS"), "5")),
 		MaxRecoveryAttempts:                utils.MustAtoi(utils.EmptyOrElse(os.Getenv("MAX_RECOVERY_ATTEMPTS"), "5")),
@@ -125,6 +157,8 @@ func provider(lc fx.Lifecycle) (*Config, error) {
 		ViewerUsername:                     viewerUsername,
 		ViewerPasswordHash:                 string(viewerPasswordHash),
 		JwtSecret:                          utils.EmptyOrElse(os.Getenv("JWT_SECRET"), "bilirec_secret"),
+		ServerCrt:                          os.Getenv("SERVER_CRT"),
+		ServerKey:                          os.Getenv("SERVER_KEY"),
 		Debug:                              debug,
 		ProductionMode:                     os.Getenv("PRODUCTION_MODE") == "true",
 		SilentAccessLog:                    os.Getenv("SILENT_ACCESS_LOG") == "true",
@@ -150,9 +184,11 @@ func provider(lc fx.Lifecycle) (*Config, error) {
 	}
 
 	ReadOnly = &GlobalReadOnly{config: c}
-	ReadOnly.Validate()
 
 	lc.Append(fx.StartHook(func(context.Context) error {
+		if err := ReadOnly.Validate(); err != nil {
+			return err
+		}
 		if err := os.MkdirAll(c.OutputDir, 0755); err != nil {
 			return err
 		}
@@ -179,6 +215,34 @@ func parseUsernameAndPassword(usernameKey, passwordKey string) (string, string, 
 		return "", "", err
 	}
 	return username, string(passwordHash), nil
+}
+
+func parseCommaSeparatedValues(raw string) []string {
+	if strings.TrimSpace(raw) == "" {
+		return nil
+	}
+
+	parts := strings.Split(raw, ",")
+	vals := make([]string, 0, len(parts))
+	for _, part := range parts {
+		v := strings.TrimSpace(part)
+		if v == "" {
+			continue
+		}
+		vals = append(vals, v)
+	}
+	return vals
+}
+
+func resolveFRPToken(server, baseDomain string) string {
+	token := os.Getenv("FRP_TOKEN")
+	if token != "" {
+		return token
+	} else if server == officialFRPServer && baseDomain == officialFRPDomain {
+		return frpTokenInjected
+	} else {
+		return ""
+	}
 }
 
 var Module = fx.Module("config", fx.Provide(provider))

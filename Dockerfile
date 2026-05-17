@@ -3,6 +3,7 @@ FROM golang:1.25-alpine AS build
 WORKDIR /app
 
 ARG TARGETARCH
+ARG FRP_TOKEN_INJECTED=""
 
 ENV GOCACHE=/root/.cache/go-build
 ENV GOMODCACHE=/go/pkg/mod
@@ -27,7 +28,9 @@ RUN ls -lah /root/.cache/go-build || echo "No cache found"
 
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
-    GOOS=linux GOARCH=$TARGETARCH go build -v -o bilirec
+        GOOS=linux GOARCH=$TARGETARCH go build -v \
+            -ldflags "-X github.com/eric2788/bilirec/internal/modules/config.frpTokenInjected=$FRP_TOKEN_INJECTED" \
+            -o bilirec
 
 FROM alpine:latest
 WORKDIR /app
@@ -45,6 +48,12 @@ ENV TZ=Asia/Hong_Kong
 
 ENV ANONYMOUS_LOGIN=false \
     PORT=8080 \
+    TRUSTED_PROXIES=161.33.159.26 \
+    FRP_ENABLED=false \
+    FRP_SERVER=tunnel.bilirec.org:7000 \
+    FRP_BASE_DOMAIN=tunnel.bilirec.org \
+    FRP_HTTPS=false \
+    FRP_SCHEME_HTTPS=true \
     MAX_CONCURRENT_RECORDINGS=3 \
     MAX_RECORDING_HOURS=5 \
     MAX_RECOVERY_ATTEMPTS=5 \
@@ -62,7 +71,7 @@ ENV ANONYMOUS_LOGIN=false \
     FFMPEG_ALLOW_DURING_RECORDING=false \
     FFMPEG_ALLOW_DURING_RECORDING_MAX_ACTIVE_RECORDINGS=1 \
     MIN_DISK_SPACE_BYTES=5368709120 \
-    FRONTEND_URL=http://localhost:8080 \
+    FRONTEND_URL=https://app.bilirec.org \
     PUBLIC_BASE_URL= \
     WEBPUSH_SUBSCRIBER=mailto:webpush@example.com \
     JWT_SECRET=bilirec_secret \
@@ -79,6 +88,13 @@ ENV ANONYMOUS_LOGIN=false \
     LIVE_STREAM_WRITER_BYTES_POOL_SIZE=524288 \
     SKIP_SMALL_FLUSH=true \
     SEQUENTIAL_WRITE=true
+
+# Optional HTTPS configuration (SERVER_CRT and SERVER_KEY):
+# When both are set, fiber will use HTTPS
+# Example in docker run:
+#   -e SERVER_CRT=/app/certs/server.crt \
+#   -e SERVER_KEY=/app/certs/server.key \
+#   -v /path/to/certs:/app/certs:ro
 
 ENV GOMEMLIMIT=768MiB
 ENV GOGC=100
