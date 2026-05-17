@@ -1,0 +1,26 @@
+name: Setup FFmpeg with Cache
+
+description: Install FFmpeg with caching support.
+
+runs:
+  using: composite
+  steps:
+    - name: Load cached FFmpeg
+      id: cache-ffmpeg
+      uses: actions/cache@v4
+      with:
+        path: |
+          /usr/local/bin/ffmpeg
+          /usr/local/bin/ffprobe
+        key: ${{ runner.os }}-ffmpeg-6.0.1
+
+    - name: Install FFmpeg if not cached
+      if: steps.cache-ffmpeg.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        VERSION=6.0.1
+        RELEASE_NAME=ffmpeg-${VERSION}-amd64-static
+        wget --timeout=8 --tries=30 https://www.johnvansickle.com/ffmpeg/old-releases/${RELEASE_NAME}.tar.xz
+        tar -xf ${RELEASE_NAME}.tar.xz
+        mv ${RELEASE_NAME}/ffmpeg ${RELEASE_NAME}/ffprobe /usr/local/bin/
+        rm -rf ${RELEASE_NAME}

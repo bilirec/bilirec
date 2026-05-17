@@ -7,10 +7,6 @@ inputs:
     description: Go version to install.
     required: false
     default: "1.25"
-  install-ffmpeg:
-    description: Whether to install ffmpeg on Linux runners.
-    required: false
-    default: "false"
 
 runs:
   using: composite
@@ -20,10 +16,6 @@ runs:
       with:
         go-version: ${{ inputs.go-version }}
         cache: true
-
-    - name: Install ffmpeg
-      if: ${{ inputs.install-ffmpeg == 'true' && runner.os == 'Linux' }}
-      uses: FedericoCarboni/setup-ffmpeg@v3
 
     - name: Install swag
       shell: bash
