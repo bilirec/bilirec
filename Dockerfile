@@ -46,10 +46,8 @@ RUN chmod +x ./bilirec
 
 ENV TZ=Asia/Hong_Kong
 
-ENV BILIBILI_ANONYMOUS_LOGIN=false \
-    BILIBILI_LOGIN_ON=startup \
+ENV BILIBILI_LOGIN_MODE=startup \
     HOST= \
-    ANONYMOUS_LOGIN=false \
     PORT=8080 \
     TRUSTED_PROXIES=161.33.159.26 \
     FRP_ENABLED=false \

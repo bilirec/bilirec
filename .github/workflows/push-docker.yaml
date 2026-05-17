@@ -30,7 +30,7 @@ jobs:
         id: test
         uses: robherley/go-test-action@v0
         env:
-          ANONYMOUS_LOGIN: true
+          BILIBILI_LOGIN_MODE: anonymous
         with:
           testArguments: '-short ./... -timeout 30m'
 

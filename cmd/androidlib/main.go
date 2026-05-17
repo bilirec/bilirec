@@ -38,9 +38,9 @@ func Start() C.int {
 		_ = os.Setenv("PORT", "8080")
 	}
 
-	_ = os.Setenv("BILIBILI_LOGIN_ON", "controller") // avoid process stucked on foreground service
-	_ = os.Setenv("SKIP_SMALL_FLUSH", "true")        // enable sdcard protection
-	_ = os.Setenv("FRP_ENABLED", "false")            // not expected to expose to public network in android
+	_ = os.Setenv("BILIBILI_LOGIN_MODE", "controller") // avoid process stucked on foreground service
+	_ = os.Setenv("SKIP_SMALL_FLUSH", "true")          // enable sdcard protection
+	_ = os.Setenv("FRP_ENABLED", "false")              // not expected to expose to public network in android
 
 	app := bootstrap.NewApp()
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)

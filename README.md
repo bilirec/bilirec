@@ -98,7 +98,6 @@ docker build -t bilirec:latest .
 docker run -d \
   --name bilirec \
   -p 8080:8080 \
-  -e BILIBILI_LOGIN_ON=controller \
   -e PORT=8080 \
   -e FRONTEND_URL=http://localhost:8080 \
   -v /path/to/records:/app/records \
@@ -116,7 +115,6 @@ docker pull eric1008818/bilirec:latest # 最新测试版本请用 :edge
 docker run -d \
   --name bilirec \
   -p 8080:8080 \
-  -e BILIBILI_LOGIN_ON=controller \
   -e PORT=8080 \
   -e FRONTEND_URL=http://localhost:8080 \
   -v /path/to/records:/app/records \
@@ -133,9 +131,7 @@ docker run -d \
 
 | 环境变量 | 说明 | 默认值 |
 | ------- | ---- | ------ |
-| `BILIBILI_ANONYMOUS_LOGIN` | 是否使用匿名登录（新变量，建议使用） | `false` |
-| `ANONYMOUS_LOGIN` | 是否使用匿名登录（已弃用，保留兼容） | `false` |
-| `BILIBILI_LOGIN_ON` | 登录模式：`startup`（启动时登录）或 `controller`（由 API 控制登录） | `startup` |
+| `BILIBILI_LOGIN_MODE` | 登录模式：`startup`（启动时登录）/ `controller`（由 API 控制登录）/ `anonymous`（匿名登录） | `startup` |
 | `HOST` | API 服务绑定地址（空值时监听所有网卡） | (空字符串) |
 | `PORT` | API 服务端口 | `8080` |
 | `SERVER_CRT` | 可选：HTTPS 证书文件路径；当与 `SERVER_KEY` 同时设置时，Fiber 默认启用 HTTPS | (未设置) |
@@ -241,10 +237,7 @@ FRP enabled in custom-selfhost mode
 ### 示例配置
 
 ```bash
-export BILIBILI_ANONYMOUS_LOGIN=false
-# 兼容旧变量（已弃用，建议改用 BILIBILI_ANONYMOUS_LOGIN）
-# export ANONYMOUS_LOGIN=false
-export BILIBILI_LOGIN_ON=startup
+export BILIBILI_LOGIN_MODE=startup
 # 可选：指定监听网卡；留空表示监听所有网卡
 # export HOST=0.0.0.0
 export PORT=8080
@@ -405,7 +398,7 @@ Content-Type: application/json
 
 #### Bilibili 登录（controller 模式）
 
-当 `BILIBILI_LOGIN_ON=controller` 时，可以通过 `/auth/bilibili` 相关接口在服务运行后触发扫码登录。
+当 `BILIBILI_LOGIN_MODE=controller` 时，可以通过 `/auth/bilibili` 相关接口在服务运行后触发扫码登录。
 
 - `GET /auth/bilibili/status`
   - 用途：查询当前认证状态（`idle` / `awaiting_qr` / `authenticating` / `authenticated` / `failed` 等）

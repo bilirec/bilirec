@@ -2,6 +2,7 @@ package bootstrap
 
 import (
 	"os"
+	"strings"
 	"time"
 
 	"github.com/eric2788/bilirec/internal/controllers/auth"
@@ -55,7 +56,8 @@ func MainModule() fx.Option {
 }
 
 func noQrCodePrompt() bool {
-	return utils.EmptyOrElse(os.Getenv("BILIBILI_ANONYMOUS_LOGIN"), os.Getenv("ANONYMOUS_LOGIN")) == "true" || os.Getenv("BILIBILI_LOGIN_ON") == "controller"
+	loginMode := strings.ToLower(strings.TrimSpace(utils.EmptyOrElse(os.Getenv("BILIBILI_LOGIN_MODE"), "startup")))
+	return loginMode == "controller" || loginMode == "anonymous"
 }
 
 func NewApp() *fx.App {

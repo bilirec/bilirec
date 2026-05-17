@@ -59,7 +59,7 @@ func provider(cfg *config.Config, ls fx.Lifecycle) *Client {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	client := utils.TernaryFunc(
-		cfg.AnonymousLogin,
+		cfg.BilibiliLoginMode == "anonymous",
 		func() *Client {
 			return &Client{Client: bili.NewAnonymousClient()}
 		},
@@ -69,7 +69,7 @@ func provider(cfg *config.Config, ls fx.Lifecycle) *Client {
 	)
 
 	client.ctx = ctx
-	client.loginMode = cfg.BilibiliLoginOn
+	client.loginMode = cfg.BilibiliLoginMode
 	client.wbi = bili.NewDefaultWbi()
 	client.liveClient = client.withLiveClient()
 	client.liveStreamClient = client.withLiveStreamClient()
@@ -80,22 +80,27 @@ func provider(cfg *config.Config, ls fx.Lifecycle) *Client {
 	ls.Append(
 		fx.StartStopHook(
 			func() error {
-				if cfg.AnonymousLogin {
-					logger.Info("using anonymous login, skipping bilibili login process")
+				if cfg.BilibiliLoginMode == "anonymous" {
+					logger.Info("使用匿名登录，跳过哔哩哔哩登录流程")
 					return nil
 				}
 
 				// Handle login timing based on config
-				if cfg.BilibiliLoginOn == "controller" {
+				switch cfg.BilibiliLoginMode {
+				case "controller":
 					// Controller mode: preload only, don't block on QR
-					logger.Info("bilibili login mode: controller (preload only)")
+					logger.Info("哔哩哔哩登录模式：controller（仅预加载）")
 					return client.preloadCookies()
-				} else if cfg.BilibiliLoginOn == "startup" {
+				case "startup":
 					// Startup mode (default): full login flow at startup
-					logger.Info("starting bilibili login process")
+					logger.Info("开始哔哩哔哩登录流程")
 					return client.loadCookiesOrLogin()
-				} else {
-					return fmt.Errorf("unknown bilibili login mode: %s", cfg.BilibiliLoginOn)
+				case "anonymous":
+					// Already handled above, keep this branch as a defensive fallback.
+					logger.Info("使用匿名登录，跳过哔哩哔哩登录流程")
+					return nil
+				default:
+					return fmt.Errorf("未知的哔哩哔哩登录模式：%s", cfg.BilibiliLoginMode)
 				}
 			},
 			func() error {

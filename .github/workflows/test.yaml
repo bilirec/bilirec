@@ -41,7 +41,7 @@ jobs:
       - name: Run tests
         uses: robherley/go-test-action@v0
         env:
-          ANONYMOUS_LOGIN: true
+          BILIBILI_LOGIN_MODE: anonymous
         with:
           testArguments: './... -timeout 2h'
           omit: successful

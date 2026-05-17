@@ -231,6 +231,6 @@ func TestHeaders(t *testing.T) {
 
 func init() {
 	// if os.Getenv("CI") != "" {
-	os.Setenv("BILIBILI_ANONYMOUS_LOGIN", "true")
+	os.Setenv("BILIBILI_LOGIN_MODE", "anonymous")
 	// }
 }

@@ -18,5 +18,5 @@ func TestAppLaunch(t *testing.T) {
 }
 
 func init() {
-	os.Setenv("BILIBILI_ANONYMOUS_LOGIN", "true")
+	os.Setenv("BILIBILI_LOGIN_MODE", "anonymous")
 }
