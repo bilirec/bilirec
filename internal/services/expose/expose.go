@@ -204,29 +204,32 @@ func parseServerAddr(addr string) (string, int, error) {
 		return host, port, nil
 	}
 
-	if shouldFallbackToDefaultPort(err) {
+	if shouldFallbackToDefaultPort(addr, err) {
 		return addr, defaultFRPServerPort, nil
 	}
 
 	return "", 0, fmt.Errorf("invalid FRP_SERVER format: %q: %w", addr, err)
 }
 
-func shouldFallbackToDefaultPort(err error) bool {
-	var addrErr *net.AddrError
-	if errors.As(err, &addrErr) {
-		if strings.Contains(addrErr.Err, "missing ']' in address") ||
-			strings.Contains(addrErr.Err, "unexpected ']' in address") {
-			return false
-		}
+func shouldFallbackToDefaultPort(addr string, err error) bool {
+	if strings.Contains(addr, "://") || strings.Contains(addr, "[") || strings.Contains(addr, "]") || strings.Contains(addr, "%") {
+		return false
+	}
+	if strings.Count(addr, ":") == 0 {
+		return true
+	}
+	// Bare IP literals (including unbracketed IPv6 like ::1) are treated as host-only
+	// and fall back to the default FRP server port.
+	if ip := net.ParseIP(addr); ip != nil {
 		return true
 	}
 
-	errMsg := err.Error()
-	if strings.Contains(errMsg, "missing ']' in address") || strings.Contains(errMsg, "unexpected ']' in address") {
-		return false
+	var addrErr *net.AddrError
+	if errors.As(err, &addrErr) {
+		return strings.Contains(addrErr.Err, "missing port in address")
 	}
 
-	return true
+	return strings.Contains(err.Error(), "missing port in address")
 }
 
 func printTunnelBox(local, remote string) {

@@ -1,6 +1,9 @@
 package expose
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 // --- parseServerAddr (whitebox) ---
 
@@ -94,5 +97,25 @@ func TestParseServerAddr_MalformedIPv6Bracket(t *testing.T) {
 	_, _, err := parseServerAddr("[::1")
 	if err == nil {
 		t.Fatal("expected error for malformed bracketed IPv6, got nil")
+	}
+}
+
+func TestParseServerAddr_ExtraColonSegments(t *testing.T) {
+	_, _, err := parseServerAddr("frp.example.com:7000:bad")
+	if err == nil {
+		t.Fatal("expected error for malformed addr with extra colon segments, got nil")
+	}
+	if !strings.Contains(err.Error(), "invalid FRP_SERVER format") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestParseServerAddr_WithScheme(t *testing.T) {
+	_, _, err := parseServerAddr("http://frp.example.com:7000")
+	if err == nil {
+		t.Fatal("expected error for addr containing scheme, got nil")
+	}
+	if !strings.Contains(err.Error(), "invalid FRP_SERVER format") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
