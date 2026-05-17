@@ -112,12 +112,14 @@ func (s *Service) waitAndPrintTunnelBox(local, proxyName, remoteURL string) {
 					switch status.Phase {
 					case proxy.ProxyPhaseRunning:
 						printTunnelBox(local, remoteURL)
+						return
 					case proxy.ProxyPhaseStartErr:
 						logger.Errorf("proxy %q failed to start: %s", proxyName, status.Err)
+						return
 					case proxy.ProxyPhaseCheckFailed:
 						logger.Errorf("proxy %q check failed: %s", proxyName, status.Err)
+						return
 					}
-					return
 				}
 			}
 		}
