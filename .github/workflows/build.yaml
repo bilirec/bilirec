@@ -47,8 +47,7 @@ jobs:
 
       - name: Build Windows
         run: |
-          $ldflags = "-ldflags `"-X github.com/eric2788/bilirec/internal/modules/config.frpTokenInjected=${{ secrets.FRP_TOKEN }}`""
-          go build --buildmode=exe $ldflags -o ./dist/${{ env.artifact_name }}-windows.exe
+          go build --buildmode=exe "-ldflags=-X github.com/eric2788/bilirec/internal/modules/config.frpTokenInjected=${{ secrets.FRP_TOKEN }}" -o ./dist/${{ env.artifact_name }}-windows.exe
 
       - name: Upload a Build Artifact
         uses: actions/upload-artifact@v6
