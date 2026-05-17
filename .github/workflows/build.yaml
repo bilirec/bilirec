@@ -18,24 +18,10 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Set up Go
-        uses: actions/setup-go@v6
+      - name: Prepare Go and swagger docs
+        uses: ./.github/actions/setup-go-swagger
         with:
           go-version: '1.25'
-          cache: true
-      
-      - name: Install swag
-        run: go install github.com/swaggo/swag/cmd/swag@v1.16.6
-
-      - name: Add GOPATH bin to PATH
-        run: echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
-
-      - name: Generate swagger docs
-        run: swag init -g internal/modules/rest/rest.go -o docs
-
-      - name: Install dependencies
-        run: |
-          go mod download
 
       - name: Build Linux
         run: |
@@ -54,24 +40,10 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Set up Go
-        uses: actions/setup-go@v6
+      - name: Prepare Go and swagger docs
+        uses: ./.github/actions/setup-go-swagger
         with:
           go-version: '1.25'
-          cache: true
-
-      - name: Install swag
-        run: go install github.com/swaggo/swag/cmd/swag@v1.16.6
-
-      - name: Add GOPATH bin to PATH
-        run: echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
-
-      - name: Generate swagger docs
-        run: swag init -g internal/modules/rest/rest.go -o docs
-
-      - name: Install dependencies
-        run: |
-          go mod download
 
       - name: Build Windows
         run: |
