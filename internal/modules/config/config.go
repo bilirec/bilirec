@@ -184,9 +184,11 @@ func provider(lc fx.Lifecycle) (*Config, error) {
 	}
 
 	ReadOnly = &GlobalReadOnly{config: c}
-	ReadOnly.Validate()
 
 	lc.Append(fx.StartHook(func(context.Context) error {
+		if err := ReadOnly.Validate(); err != nil {
+			return err
+		}
 		if err := os.MkdirAll(c.OutputDir, 0755); err != nil {
 			return err
 		}
