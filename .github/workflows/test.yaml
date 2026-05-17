@@ -57,3 +57,4 @@ jobs:
           ANONYMOUS_LOGIN: true
         with:
           testArguments: './... -timeout 2h'
+          omit: successful
