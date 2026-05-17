@@ -57,6 +57,9 @@ type Config struct {
 	ViewerPasswordHash string
 	JwtSecret          string
 
+	ServerCrt string
+	ServerKey string
+
 	Debug           bool
 	ProductionMode  bool
 	SilentAccessLog bool
@@ -150,6 +153,8 @@ func provider(lc fx.Lifecycle) (*Config, error) {
 		ViewerUsername:                     viewerUsername,
 		ViewerPasswordHash:                 string(viewerPasswordHash),
 		JwtSecret:                          utils.EmptyOrElse(os.Getenv("JWT_SECRET"), "bilirec_secret"),
+		ServerCrt:                          os.Getenv("SERVER_CRT"),
+		ServerKey:                          os.Getenv("SERVER_KEY"),
 		Debug:                              debug,
 		ProductionMode:                     os.Getenv("PRODUCTION_MODE") == "true",
 		SilentAccessLog:                    os.Getenv("SILENT_ACCESS_LOG") == "true",

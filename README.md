@@ -133,6 +133,8 @@ docker run -d \
 | ------- | ---- | ------ |
 | `ANONYMOUS_LOGIN` | 是否使用匿名登录 | `false` |
 | `PORT` | API 服务端口 | `8080` |
+| `SERVER_CRT` | 可选：HTTPS 证书文件路径；当与 `SERVER_KEY` 同时设置时，Fiber 默认启用 HTTPS | (未设置) |
+| `SERVER_KEY` | 可选：HTTPS 私钥文件路径；当与 `SERVER_CRT` 同时设置时，Fiber 默认启用 HTTPS | (未设置) |
 | `TRUSTED_PROXIES` | 受信任反向代理 IP/CIDR 列表（逗号分隔），可填写 Nginx/FRP 等代理 IP，用于安全信任 `X-Forwarded-For`；默认 `161.33.159.26` 为公共 FRP 服务 IP。 | `161.33.159.26` |
 | `FRP_ENABLED` | 是否启用 FRP 内网穿透 | `false` |
 | `FRP_SERVER` | FRP 服务器地址（格式：`host:port`） | `tunnel.bilirec.org:7000` |
@@ -196,6 +198,7 @@ docker run -d \
 - `FRP_HTTPS`：FRP 代理使用的协议
   - `false`（默认）：使用 HTTP 代理（适合内部自架、有前置 HTTPS 层的情况）
   - `true`：使用 HTTPS 代理（适合公开 FRP 服务）
+  - **⚠️ 警告**：如果启用 FRP (`FRP_ENABLED=true`) 且设置 `FRP_HTTPS=false`，在不安全的网络环境下应用数据可能暴露，请确保 FRP 代理运行在安全的网络中或使用前置 HTTPS 层（如 Caddy、Nginx）保护。
 - `FRP_SCHEME_HTTPS`：生成的公网 URL scheme（默认 `true`）
   - `false`：公网 URL 为 `http://<random>.<FRP_BASE_DOMAIN>`
   - `true`：公网 URL 为 `https://<random>.<FRP_BASE_DOMAIN>`
@@ -232,6 +235,9 @@ docker run -d \
 ```bash
 export ANONYMOUS_LOGIN=false
 export PORT=8080
+# 可选：启用 HTTPS（当两者都设置时，Fiber 默认启用 HTTPS）
+# export SERVER_CRT=/path/to/server.crt
+# export SERVER_KEY=/path/to/server.key
 # 可选：FRP 内网穿透（只开启 FRP_ENABLED=true 时默认走官方公共服务）
 export FRP_ENABLED=true
 export FRP_SERVER=tunnel.bilirec.org:7000

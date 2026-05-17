@@ -20,6 +20,7 @@ package rest
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"os"
 	"strings"
@@ -167,22 +168,52 @@ func provider(ls fx.Lifecycle, cfg *config.Config) *fiber.App {
 		fx.StartStopHook(
 			func(ctx context.Context) error {
 				addr := ":" + cfg.Port
-				logger.Infof("starting http server on %s", addr)
-				go func() {
-					if err := app.Listen(addr); err != nil {
-						logger.Errorf("http server error: %v", err)
-					}
-				}()
+				// Check if both SERVER_CRT and SERVER_KEY are provided
+				if cfg.ServerCrt != "" && cfg.ServerKey != "" {
+					go startHttpsServer(app, addr, cfg.ServerCrt, cfg.ServerKey)
+				} else {
+					go startHttpServer(app, addr)
+				}
 				return nil
 			},
 			func(ctx context.Context) error {
-				logger.Info("stopping http server")
+				logger.Info("stopping server")
 				return app.ShutdownWithContext(ctx)
 			},
 		),
 	)
 
 	return app
+}
+
+func startHttpsServer(app *fiber.App, addr, serverCrt, serverKey string) {
+	logger.Infof("starting https server on %s", addr)
+	cert, err := tls.LoadX509KeyPair(serverCrt, serverKey)
+	if err != nil {
+		logger.Errorf("failed to load certificates: %v", err)
+		return
+	}
+
+	tlsConfig := &tls.Config{
+		Certificates: []tls.Certificate{cert},
+	}
+
+	listener, err := tls.Listen("tcp", addr, tlsConfig)
+	if err != nil {
+		logger.Errorf("https server error: %v", err)
+		return
+	}
+
+	if err := app.Listener(listener); err != nil {
+		logger.Errorf("https server error: %v", err)
+	}
+}
+
+func startHttpServer(app *fiber.App, addr string) {
+	logger.Infof("starting http server on %s", addr)
+	if err := app.Listen(addr); err != nil {
+		logger.Errorf("http server error: %v", err)
+	}
 }
 
 func isMediaStreamContentType(contentType string) bool {

@@ -89,6 +89,13 @@ ENV ANONYMOUS_LOGIN=false \
     SKIP_SMALL_FLUSH=true \
     SEQUENTIAL_WRITE=true
 
+# Optional HTTPS configuration (SERVER_CRT and SERVER_KEY):
+# When both are set, fiber will use HTTPS
+# Example in docker run:
+#   -e SERVER_CRT=/app/certs/server.crt \
+#   -e SERVER_KEY=/app/certs/server.key \
+#   -v /path/to/certs:/app/certs:ro
+
 ENV GOMEMLIMIT=768MiB
 ENV GOGC=100
 

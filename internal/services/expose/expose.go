@@ -156,7 +156,7 @@ func initService(cfg *config.Config) (*client.Service, string, string, error) {
 			func() v1.ProxyConfigurer {
 				return &v1.HTTPProxyConfig{
 					ProxyBaseConfig: v1.ProxyBaseConfig{
-						Name: fmt.Sprintf("bilirec-%s", random),
+						Name: proxyName,
 						Type: string(v1.ProxyTypeHTTP),
 						ProxyBackend: v1.ProxyBackend{
 							LocalIP:   defaultLoopbackIP,

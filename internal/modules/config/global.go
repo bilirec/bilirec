@@ -140,4 +140,8 @@ func (g *GlobalReadOnly) Validate() {
 	if g.config.liveStreamWriterFlushPeriod <= 0 {
 		logger.Warnf("LIVE_STREAM_WRITER_FLUSH_PERIOD_SECS is invalid (%d), using default %d seconds", g.config.liveStreamWriterFlushPeriod, defaultLiveStreamWriterFlushPeriodSecs)
 	}
+	// Warn if fiber uses HTTPS and FRP is enabled but not using HTTPS protocol
+	if g.config.ServerCrt != "" && g.config.ServerKey != "" && g.config.FRPEnabled && !g.config.FRPHttps {
+		logger.Warnf("SERVER_CRT and SERVER_KEY are configured (HTTPS enabled), but FRP_ENABLED=true with FRP_HTTPS=false; FRP proxy uses HTTP protocol which may expose traffic between Fiber and FRP proxy")
+	}
 }
