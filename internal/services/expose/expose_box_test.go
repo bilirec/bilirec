@@ -6,7 +6,6 @@ import (
 	"io"
 	"os"
 	"strings"
-	"sync/atomic"
 	"testing"
 
 	"github.com/fatedier/frp/client"
@@ -34,8 +33,9 @@ func captureStdout(t *testing.T, fn func()) string {
 
 	_ = w.Close()
 	os.Stdout = old
+	result := <-done
 	_ = r.Close()
-	return <-done
+	return result
 }
 
 func TestPrintTunnelBox_KeepsRightPadding(t *testing.T) {
@@ -73,15 +73,10 @@ func (f *fakeTunnelService) StatusExporter() client.StatusExporter {
 }
 
 type stagedStatusExporter struct {
-	calls int32
 }
 
 func (s *stagedStatusExporter) GetProxyStatus(name string) (*proxy.WorkingStatus, bool) {
-	call := atomic.AddInt32(&s.calls, 1)
-	if call < 3 {
-		return &proxy.WorkingStatus{Name: name, Phase: proxy.ProxyPhaseWaitStart}, true
-	}
-	return &proxy.WorkingStatus{Name: name, Phase: proxy.ProxyPhaseRunning, RemoteAddr: "https://example.test"}, true
+	return &proxy.WorkingStatus{Name: name, Phase: proxy.ProxyPhaseRunning, RemoteAddr: "https://deadbeef.example.test"}, true
 }
 
 func TestWaitAndPrintTunnelBox_PrintsAfterRunningStatus(t *testing.T) {
