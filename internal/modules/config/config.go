@@ -124,14 +124,18 @@ func provider(lc fx.Lifecycle) (*Config, error) {
 		utils.EmptyOrElse(os.Getenv("FFMPEG_ALLOW_DURING_RECORDING_BELOW_ACTIVE_RECORDINGS"), "1"),
 	)
 
+	frpServer := utils.EmptyOrElse(os.Getenv("FRP_SERVER"), officialFRPServer)
+	frpBaseDomain := utils.EmptyOrElse(os.Getenv("FRP_BASE_DOMAIN"), officialFRPDomain)
+	frpToken := resolveFRPToken(frpServer, frpBaseDomain)
+
 	c := &Config{
 		AnonymousLogin:                     os.Getenv("ANONYMOUS_LOGIN") == "true",
 		Port:                               utils.EmptyOrElse(os.Getenv("PORT"), "8080"),
 		TrustedProxies:                     parseCommaSeparatedValues(utils.EmptyOrElse(os.Getenv("TRUSTED_PROXIES"), "161.33.159.26")),
 		FRPEnabled:                         os.Getenv("FRP_ENABLED") == "true",
-		FRPServer:                          utils.EmptyOrElse(os.Getenv("FRP_SERVER"), officialFRPServer),
-		FRPToken:                           utils.EmptyOrElse(os.Getenv("FRP_TOKEN"), frpTokenInjected),
-		FRPBaseDomain:                      utils.EmptyOrElse(os.Getenv("FRP_BASE_DOMAIN"), officialFRPDomain),
+		FRPServer:                          frpServer,
+		FRPToken:                           frpToken,
+		FRPBaseDomain:                      frpBaseDomain,
 		FRPHttps:                           os.Getenv("FRP_HTTPS") == "true",
 		FRPSchemeHttps:                     utils.EmptyOrElse(os.Getenv("FRP_SCHEME_HTTPS"), "true") == "true",
 		MaxConcurrentRecordings:            utils.MustAtoi(utils.EmptyOrElse(os.Getenv("MAX_CONCURRENT_RECORDINGS"), "3")),
@@ -226,6 +230,17 @@ func parseCommaSeparatedValues(raw string) []string {
 		vals = append(vals, v)
 	}
 	return vals
+}
+
+func resolveFRPToken(server, baseDomain string) string {
+	token := os.Getenv("FRP_TOKEN")
+	if token != "" {
+		return token
+	} else if server == officialFRPServer && baseDomain == officialFRPDomain {
+		return frpTokenInjected
+	} else {
+		return ""
+	}
 }
 
 var Module = fx.Module("config", fx.Provide(provider))
