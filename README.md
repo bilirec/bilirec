@@ -221,13 +221,15 @@ docker run -d \
    FRP_SCHEME_HTTPS=true           # Caddy 或前置代理提供 HTTPS
    ```
 
-3. **启动日志示例**
-   ```
-  FRP enabled in official-public mode
-  FRP enabled in custom-selfhost mode
-   ```
-  - `official-public`：当前使用官方免费的公共 FRP 服务
-  - `custom-selfhost`：当前使用自定义 FRP 配置
+### 启动日志示例
+
+```
+FRP enabled in official-public mode
+FRP enabled in custom-selfhost mode
+```
+
+- `official-public`：当前使用官方免费的公共 FRP 服务
+- `custom-selfhost`：当前使用自定义 FRP 配置
 
 使用 FRP 后，你可以把本机的 Bilirec 系统暴露到外网。这样无论你在家里、办公室，还是外出时，只要打开 Web 界面，就能随时登录和管理自己的录制任务、查看录制状态、处理文件与通知。
 
