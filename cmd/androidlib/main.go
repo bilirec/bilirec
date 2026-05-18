@@ -10,6 +10,8 @@ import "C"
 import (
 	"context"
 	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -22,13 +24,22 @@ var (
 	appMu      sync.Mutex
 )
 
-//export Start
-func Start() C.int {
+func start(basePath string) C.int {
 	appMu.Lock()
 	defer appMu.Unlock()
 
 	if androidApp != nil {
 		return 0
+	}
+
+	if os.Getenv("OUTPUT_DIR") == "" {
+		_ = os.Setenv("OUTPUT_DIR", filepath.Join(basePath, "records"))
+	}
+	if os.Getenv("SECRET_DIR") == "" {
+		_ = os.Setenv("SECRET_DIR", filepath.Join(basePath, "secrets"))
+	}
+	if os.Getenv("DATABASE_DIR") == "" {
+		_ = os.Setenv("DATABASE_DIR", filepath.Join(basePath, "database"))
 	}
 
 	if os.Getenv("HOST") == "" {
@@ -52,6 +63,20 @@ func Start() C.int {
 
 	androidApp = app
 	return 0
+}
+
+//export Start
+func Start(base *C.char) C.int {
+	if base == nil {
+		return 1
+	}
+
+	basePath := strings.TrimSpace(C.GoString(base))
+	if basePath == "" {
+		return 1
+	}
+
+	return start(basePath)
 }
 
 //export Stop
