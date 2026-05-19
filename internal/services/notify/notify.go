@@ -54,6 +54,7 @@ const (
 	LiveStateAutoRecordStarted LiveState = "live_auto_record_started"
 	LiveStateAutoRecordFailed  LiveState = "live_auto_record_failed"
 	LiveStateLiveEnded         LiveState = "live_ended"
+	LiveStateRecordStopped     LiveState = "live_record_stopped"
 )
 
 func NewService(lc fx.Lifecycle, cfg *config.Config) (*Service, error) {
@@ -102,10 +103,6 @@ func NewService(lc fx.Lifecycle, cfg *config.Config) (*Service, error) {
 	return s, nil
 }
 
-func (s *Service) Publish(event Event) {
-	go s.PublishJSON(event)
-}
-
 func (s *Service) WebPushServiceState() *ServiceState {
 	state := s.state.Load()
 	if state == nil {
@@ -144,7 +141,7 @@ func (s *Service) RemoveWebPushSubscription(endpoint string) error {
 	return nil
 }
 
-func (s *Service) PublishJSON(v any) {
+func (s *Service) publishJSON(v any) {
 	payload, err := json.Marshal(v)
 	if err != nil {
 		return
@@ -232,7 +229,7 @@ func loadOrCreateVAPIDKeys(secretDir string) (string, string, error) {
 	return generatedPublicKey, generatedPrivateKey, nil
 }
 
-func (s *Service) PublishLive(roomID int, streamer string, roomTitle string, state LiveState) {
+func (s *Service) PublishLiveState(roomID int, streamer string, roomTitle string, state LiveState) {
 	var message string
 	switch state {
 	case LiveStateLiveDetected:
@@ -243,11 +240,13 @@ func (s *Service) PublishLive(roomID int, streamer string, roomTitle string, sta
 		message = "直播間已開播但錄製啟動失敗"
 	case LiveStateLiveEnded:
 		message = "直播間已結束"
+	case LiveStateRecordStopped:
+		message = "直播間錄製已停止"
 	}
 
 	logger.Infof("正在推送房间 %d（%s）通知：%s", roomID, streamer, message)
 
-	s.Publish(Event{
+	go s.publishJSON(Event{
 		Type:      string(state),
 		RoomID:    roomID,
 		Streamer:  streamer,

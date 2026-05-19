@@ -174,7 +174,7 @@ func (s *Service) tryStartAllAutoRecordRooms() {
 		}
 
 		if cfg.Notify {
-			s.notifySvc.PublishLive(roomID, info.Uname, info.Title, state)
+			s.notifySvc.PublishLiveState(roomID, info.Uname, info.Title, state)
 		}
 
 		s.markSessionState(roomID, currentSessionKey)

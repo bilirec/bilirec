@@ -16,6 +16,7 @@ import (
 	"github.com/eric2788/bilirec/internal/modules/config"
 	rs "github.com/eric2788/bilirec/internal/record_strategies"
 	"github.com/eric2788/bilirec/internal/services/convert"
+	"github.com/eric2788/bilirec/internal/services/notify"
 	"github.com/eric2788/bilirec/internal/services/stream"
 	"github.com/eric2788/bilirec/pkg/ds"
 	"github.com/eric2788/bilirec/pkg/pipeline"
@@ -50,6 +51,7 @@ var ErrInvalidStreamProfile = errors.New("无效的流配置")
 type Service struct {
 	st           *stream.Service
 	cv           *convert.Service
+	nt           *notify.Service
 	bilic        *bilibili.Client
 	recording    *xsync.Map[int, *Info]
 	writingFiles ds.Set[string]
@@ -64,6 +66,7 @@ func NewService(
 	lc fx.Lifecycle,
 	st *stream.Service,
 	cv *convert.Service,
+	nt *notify.Service,
 	bilic *bilibili.Client,
 	cfg *config.Config,
 ) *Service {
@@ -73,6 +76,7 @@ func NewService(
 	s := &Service{
 		st:           st,
 		cv:           cv,
+		nt:           nt,
 		bilic:        bilic,
 		recording:    xsync.NewMap[int, *Info](),
 		writingFiles: ds.NewSyncedSet[string](),
@@ -500,7 +504,7 @@ func (r *Service) checkRecordingDurationPeriodically(roomId int, ctx context.Con
 			elapsed := time.Since(info.startTime)
 			if elapsed >= maxDuration {
 				log.Infof("已达到最大录制时长（%v），正在停止", elapsed.Round(time.Minute))
-				r.Stop(roomId)
+				r.stopAndPublish(roomId, info)
 				return
 			}
 
@@ -543,11 +547,11 @@ func (r *Service) recover(roomId int) {
 		switch err {
 		case ErrMaxConcurrentRecordingsReached:
 			l.Infof("stop recovery due to: %v", err)
-			r.Stop(roomId)
+			r.stopAndPublish(roomId, info)
 			return
 		case ErrRoomEncrypted, ErrRoomBanned:
 			l.Infof("stream is banned or premium, will not recover.")
-			r.Stop(roomId)
+			r.stopAndPublish(roomId, info)
 			return
 		default:
 
@@ -562,12 +566,12 @@ func (r *Service) recover(roomId int) {
 				// use r.cfg.MaxRetryMinutes to limit the total retry duration, instead of max attempts, since the stream may be live again after some time
 				if time.Since(retryStart) >= time.Duration(r.cfg.MaxRetryMinutes)*time.Minute {
 					l.Infof("stop recovery after retrying for %d minutes", r.cfg.MaxRetryMinutes)
-					r.Stop(roomId)
+					r.stopAndPublish(roomId, info)
 					return
 				}
 			} else if attempt >= r.cfg.MaxRecoveryAttempts {
 				l.Infof("maximum recovery attempts reached (%d), will not recover", r.cfg.MaxRecoveryAttempts)
-				r.Stop(roomId)
+				r.stopAndPublish(roomId, info)
 				return
 			} else {
 				l.Warnf("recovery attempt #%d failed: %v", attempt, err)
@@ -664,6 +668,11 @@ func (r *Service) backgroundMaintenance(ctx context.Context) {
 			return
 		}
 	}
+}
+
+func (r *Service) stopAndPublish(roomId int, info *Info) {
+	r.Stop(roomId)
+	r.nt.PublishLiveState(roomId, info.room.Uname, info.room.Title, notify.LiveStateRecordStopped)
 }
 
 // the time should be the time you start the record, not live start
