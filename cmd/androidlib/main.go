@@ -12,6 +12,8 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"sync"
@@ -28,10 +30,13 @@ var (
 )
 
 type StartConfig struct {
-	BasePath    string `json:"basePath"`
+	BasePath    string `json:"basePath"` // only this is required, others have defaults
 	Port        int    `json:"port"`
 	Host        string `json:"host"`
 	FrontendURL string `json:"frontendUrl"`
+	OutputDir   string `json:"outputDir"`
+	Username    string `json:"username"`
+	Password    string `json:"password"`
 }
 
 //export Start
@@ -87,6 +92,9 @@ func start(config StartConfig) C.int {
 		return 0
 	}
 
+	runtime.GOMAXPROCS(2)                   // 限制 2 個核心，防止手機過熱降頻
+	debug.SetMemoryLimit(180 * 1024 * 1024) // 軟性記憶體天花板 180MiB (確保 3 路穩定)
+
 	// Set default values if not provided
 	if config.Port == 0 {
 		config.Port = 8080
@@ -97,17 +105,40 @@ func start(config StartConfig) C.int {
 	if config.FrontendURL == "" {
 		config.FrontendURL = "https://app.bilirec.org"
 	}
+	if config.OutputDir == "" {
+		config.OutputDir = filepath.Join(config.BasePath, "records")
+	}
 
-	_ = os.Setenv("OUTPUT_DIR", filepath.Join(config.BasePath, "records"))
+	if config.Username != "" && config.Password != "" {
+		_ = os.Setenv("USERNAME", config.Username)
+		_ = os.Setenv("PASSWORD", config.Password)
+	}
+
 	_ = os.Setenv("SECRET_DIR", filepath.Join(config.BasePath, "secrets"))
 	_ = os.Setenv("DATABASE_DIR", filepath.Join(config.BasePath, "database"))
+	_ = os.Setenv("OUTPUT_DIR", config.OutputDir)
 	_ = os.Setenv("HOST", config.Host)
 	_ = os.Setenv("PORT", strconv.Itoa(config.Port))
 	_ = os.Setenv("FRONTEND_URL", config.FrontendURL)
 
 	_ = os.Setenv("BILIBILI_LOGIN_MODE", "controller") // avoid process stucked on foreground service
-	_ = os.Setenv("SKIP_SMALL_FLUSH", "true")          // enable sdcard protection
 	_ = os.Setenv("FRP_ENABLED", "false")              // not expected to expose to public network in android
+
+	_ = os.Setenv("MIN_DISK_SPACE_BYTES", "2147483648") // 2GB
+
+	_ = os.Setenv("STREAM_WRITER_BUFFER_SIZE", "262144")       // 256KB
+	_ = os.Setenv("LIVE_STREAM_WRITER_BUFFER_SIZE", "1048576") // 1MB
+	_ = os.Setenv("LIVE_STREAM_WRITER_CHAN_BUFFER_SIZE", "10")
+	_ = os.Setenv("LIVE_STREAM_WRITER_SYNC_PERIOD_SECS", "45") // sync every 45 seconds, prevent data loss while keeping reasonable performance
+	_ = os.Setenv("LIVE_STREAM_WRITER_FLUSH_PERIOD_SECS", "5")
+
+	_ = os.Setenv("SKIP_SMALL_FLUSH", "false")
+	_ = os.Setenv("SILENT_ACCESS_LOG", "true")
+	_ = os.Setenv("CONVERT_TO_MP4", "false")
+
+	// 顯式設定
+	_ = os.Setenv("SEQUENTIAL_WRITE", "true")       // Android I/O scheduler 友好，防止並發寫入搶佔前台 UI
+	_ = os.Setenv("MAX_CONCURRENT_RECORDINGS", "3") // 顯式鎖定，防止默認值將來靜默變更
 
 	// Setup file logging for Android
 	if err := setupFileLogging(config.BasePath); err != nil {
