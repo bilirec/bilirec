@@ -7,16 +7,16 @@ type syncedSet[T comparable] struct {
 	lock sync.RWMutex
 }
 
-func (s *syncedSet[T]) Add(item T) {
+func (s *syncedSet[T]) Add(item T) bool {
 	s.lock.Lock()
 	defer s.lock.Unlock()
-	s.set.Add(item)
+	return s.set.Add(item)
 }
 
-func (s *syncedSet[T]) Remove(item T) {
+func (s *syncedSet[T]) Remove(item T) bool {
 	s.lock.Lock()
 	defer s.lock.Unlock()
-	s.set.Remove(item)
+	return s.set.Remove(item)
 }
 
 func (s *syncedSet[T]) Contains(item T) bool {
@@ -41,24 +41,4 @@ func (s *syncedSet[T]) Clear() {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 	s.set.Clear()
-}
-
-func (s *syncedSet[T]) LoadAndStore(item T) bool {
-	s.lock.Lock()
-	defer s.lock.Unlock()
-	if s.set.Contains(item) {
-		return true
-	}
-	s.set.Add(item)
-	return false
-}
-
-func (s *syncedSet[T]) LoadAndDelete(item T) bool {
-	s.lock.Lock()
-	defer s.lock.Unlock()
-	if !s.set.Contains(item) {
-		return false
-	}
-	s.set.Remove(item)
-	return true
 }

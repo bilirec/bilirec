@@ -52,7 +52,7 @@ func newCloudConvertManager(client *cloudconvert.Client, pathSvc *path.Service) 
 		logger:           logger.WithField("manager", "cloudconvert"),
 		client:           client,
 		serializer:       pool.NewSerializer(),
-		processing:       ds.NewAtomicSet[string](),
+		processing:       ds.NewSyncedSet[string](),
 		downloadPool:     pool.NewBytesPool(config.ReadOnly.DownloadBufferSize()),
 		concurrent:       semaphore.NewWeighted(int64(config.ReadOnly.CloudConvertMaxConcurrentDownloads())),
 		presignedUrlPool: xsync.NewMap[string, string](),
@@ -177,7 +177,7 @@ func (c *cloudConvertManager) checkTaskStatusPeriodically(ctx context.Context) {
 			} else {
 				for _, queue := range list {
 					id := queue.TaskID
-					if c.processing.LoadAndStore(id) {
+					if c.processing.Add(id) {
 						c.logger.Debugf("task id=%v is being handled, skip status check", id)
 						continue
 					}
@@ -190,7 +190,7 @@ func (c *cloudConvertManager) checkTaskStatusPeriodically(ctx context.Context) {
 							go c.asyncOnFailed(queue, cloudconvert.TaskData{Message: utils.Ptr("任务未找到")})
 						} else {
 							c.logger.Errorf("获取任务 id=%v 信息失败：%v", id, err)
-							c.processing.LoadAndDelete(id)
+							c.processing.Remove(id)
 						}
 						continue
 					}
@@ -203,7 +203,7 @@ func (c *cloudConvertManager) checkTaskStatusPeriodically(ctx context.Context) {
 					case cloudconvert.TaskStatusError:
 						go c.asyncOnFailed(queue, info.Data)
 					default:
-						c.processing.LoadAndDelete(id)
+						c.processing.Remove(id)
 					}
 				}
 			}
@@ -215,14 +215,14 @@ func (c *cloudConvertManager) checkTaskStatusPeriodically(ctx context.Context) {
 }
 
 func (c *cloudConvertManager) asyncOnFinished(ctx context.Context, queue *TaskQueue, data cloudconvert.TaskData) {
-	defer c.processing.LoadAndDelete(queue.TaskID)
+	defer c.processing.Remove(queue.TaskID)
 	if err := c.handleFinished(ctx, queue, &data); err != nil {
 		c.logger.Errorf("处理任务 id=%v 状态=%v 失败：%v", queue.TaskID, data.Status, err)
 	}
 }
 
 func (c *cloudConvertManager) asyncOnFailed(queue *TaskQueue, data cloudconvert.TaskData) {
-	defer c.processing.LoadAndDelete(queue.TaskID)
+	defer c.processing.Remove(queue.TaskID)
 	if err := c.handleFailed(queue, &data); err != nil {
 		c.logger.Errorf("处理任务 id=%v 状态=%v 失败：%v", queue.TaskID, data.Status, err)
 	}

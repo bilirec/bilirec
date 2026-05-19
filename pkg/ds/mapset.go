@@ -4,12 +4,20 @@ type mapSet[T comparable] struct {
 	data map[T]void
 }
 
-func (s *mapSet[T]) Add(item T) {
+func (s *mapSet[T]) Add(item T) bool {
+	if s.Contains(item) {
+		return true
+	}
 	s.data[item] = empty
+	return false
 }
 
-func (s *mapSet[T]) Remove(item T) {
+func (s *mapSet[T]) Remove(item T) bool {
+	if !s.Contains(item) {
+		return false
+	}
 	delete(s.data, item)
+	return true
 }
 
 func (s *mapSet[T]) Contains(item T) bool {
