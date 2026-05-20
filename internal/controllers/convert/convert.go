@@ -149,6 +149,8 @@ func (c *Controller) parseFiberError(err error) error {
 		return fiber.NewError(fiber.StatusForbidden, "无法访问该文件路径")
 	case err == path.ErrInvalidFilePath:
 		return fiber.NewError(fiber.StatusBadRequest, "无效文件路径")
+	case err == convert.ErrNoConvertManager:
+		return fiber.NewError(fiber.StatusBadRequest, "没有可用的转码管理器")
 	default:
 		return fiber.ErrInternalServerError
 	}

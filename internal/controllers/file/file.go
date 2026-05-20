@@ -299,7 +299,7 @@ func (c *Controller) deleteFiles(ctx fiber.Ctx) error {
 		} else if fullPath, err := c.pathSvc.ValidatePath(p); err != nil {
 			logger.Warnf("校验路径 %s 失败：%v", p, err)
 			return c.parseFiberError(err)
-		} else if inQueue, err := c.convertSvc.IsInQueue(fullPath); err != nil {
+		} else if inQueue, err := c.convertSvc.IsInQueue(fullPath); err != nil && err != convert.ErrNoConvertManager {
 			logger.Warnf("检查路径 %s 的转码队列失败：%v", p, err)
 			return fiber.ErrInternalServerError
 		} else if inQueue {
