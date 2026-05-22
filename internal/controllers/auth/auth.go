@@ -4,7 +4,6 @@ import (
 	"errors"
 
 	"github.com/eric2788/bilirec/internal/modules/bilibili"
-	"github.com/eric2788/bilirec/internal/modules/config"
 	"github.com/eric2788/bilirec/internal/modules/rest"
 	"github.com/eric2788/bilirec/utils"
 	"github.com/gofiber/fiber/v3"
@@ -15,7 +14,6 @@ var logger = logrus.WithField("controller", "auth")
 
 type Controller struct {
 	client *bilibili.Client
-	cfg    *config.Config
 }
 
 func NewController(app *fiber.App, client *bilibili.Client) *Controller {
