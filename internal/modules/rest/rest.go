@@ -23,6 +23,7 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -173,7 +174,7 @@ func provider(ls fx.Lifecycle, cfg *config.Config) *fiber.App {
 	ls.Append(
 		fx.StartStopHook(
 			func(ctx context.Context) error {
-				addr := ":" + cfg.Port
+				addr := net.JoinHostPort(cfg.Host, cfg.Port)
 				// Check if both SERVER_CRT and SERVER_KEY are provided
 				if cfg.ServerCrt != "" && cfg.ServerKey != "" {
 					return startHttpsServer(app, addr, cfg.ServerCrt, cfg.ServerKey)
