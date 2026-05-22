@@ -23,7 +23,7 @@ const (
 
 // all config will be loaded from environment variables
 type Config struct {
-	BilibiliLoginMode string // startup, controller, or anonymous (default: startup)
+	BilibiliLoginMode string // startup, controller, or anonymous (default: controller)
 	Host              string
 	Port              string
 	TrustedProxies    []string
