@@ -13,7 +13,7 @@ dev:
 
 ## build: compile backend.exe for Windows
 build:
-	go build --buildmode=exe -o ./dist/$(BINARY_NAME)-windows.exe $(BACKEND_PKG)
+	GOOS=windows go build --buildmode=exe -o ./dist/$(BINARY_NAME)-windows.exe $(BACKEND_PKG)
 
 ## android: compile Android shared libraries (.so) for arm64-v8a and x86_64
 android:
