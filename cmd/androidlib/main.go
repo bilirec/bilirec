@@ -10,6 +10,7 @@ import "C"
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -26,6 +27,7 @@ import (
 
 var (
 	androidApp *fx.App
+	androidLog *os.File
 	appMu      sync.Mutex
 )
 
@@ -75,6 +77,10 @@ func Stop() C.int {
 	defer cancel()
 
 	if err := androidApp.Stop(ctx); err != nil {
+		return 1
+	}
+
+	if err := cleanupLogging(); err != nil {
 		return 1
 	}
 
@@ -150,6 +156,7 @@ func start(config StartConfig) C.int {
 	defer cancel()
 
 	if err := app.Start(ctx); err != nil {
+		cleanupLogging() // attempt to cleanup logging if app fails to start
 		return 1
 	}
 
@@ -177,6 +184,19 @@ func setupFileLogging(basePath string) error {
 	})
 	logrus.SetOutput(file)
 
+	androidLog = file
+	return nil
+}
+
+func cleanupLogging() error {
+	if androidLog == nil {
+		return nil
+	}
+	logrus.SetOutput(io.Discard)
+	if err := androidLog.Close(); err != nil {
+		return err
+	}
+	androidLog = nil
 	return nil
 }
 
