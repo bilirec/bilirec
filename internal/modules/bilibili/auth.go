@@ -1,6 +1,7 @@
 ﻿package bilibili
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
@@ -12,9 +13,11 @@ import (
 )
 
 var (
-	ErrNotControllerMode = errors.New("后端没有启用 controller 模式")
+	ErrNotControllerMode     = errors.New("后端没有启用 controller 模式")
+	ErrQRCodeLoginInProgress = errors.New("已有进行中的二维码登录")
 )
 
+// loadCookiesOrLogin run on startup mode
 func (c *Client) loadCookiesOrLogin() error {
 	defer c.syncCookies()
 
@@ -25,7 +28,12 @@ func (c *Client) loadCookiesOrLogin() error {
 
 		if acc, err := c.GetAccountInformation(); err == nil {
 			logger.Infof("已加载用户 Cookie：%s（mid：%d）", acc.Uname, acc.Mid)
-			return c.refreshCookiesIfRequired()
+			c.updateSession(func(as *AuthSession) {
+				as.State = StatePreloaded
+				as.Account = acc
+				as.Error = nil
+			})
+			return c.autoRefreshIfSuccess(c.ctx, c.refreshCookiesIfRequired())
 		} else {
 			logger.Warnf("使用已加载 Cookie 获取账号信息失败：%v", err)
 		}
@@ -59,17 +67,21 @@ func (c *Client) loadCookiesOrLogin() error {
 		return fmt.Errorf("登录后获取账号信息失败：%v，请重试。", err)
 	} else {
 		logger.Infof("登录成功，当前账号：%s（mid：%d）", acc.Uname, acc.Mid)
+		c.updateSession(func(as *AuthSession) {
+			as.State = StateAuthenticated
+			as.Account = acc
+			as.Error = nil
+		})
 	}
 
 	if err := c.writeRefreshTokenToFile(result.RefreshToken); err != nil {
 		return err
 	}
-	go c.refreshCookiesPeriodically(10 * time.Minute)
-	return c.writerCookiesToFile()
+
+	return c.autoRefreshIfSuccess(c.ctx, c.writerCookiesToFile())
 }
 
-// preloadCookies tries to load offline credentials without blocking on QR login
-// Used in controller mode to allow fast startup
+// preloadCookies run on controller mode
 func (c *Client) preloadCookies() error {
 	if c.loginMode != "controller" {
 		logger.Warnf("在 %s 模式下调用 preloadCookies，已跳过", c.loginMode)
@@ -92,15 +104,18 @@ func (c *Client) preloadCookies() error {
 
 	if acc, err := c.GetAccountInformation(); err == nil {
 		logger.Infof("已加载用户 Cookie：%s（mid：%d）", acc.Uname, acc.Mid)
+		refreshCtx, cancel := context.WithCancel(c.ctx)
 		c.updateSession(func(s *AuthSession) {
 			s.State = StatePreloaded
 			s.Account = acc
 			s.Error = nil
+			s.cookieRefreshCancel = cancel
 		})
 		// Best effort refresh, don't fail if it doesn't work
 		if err := c.refreshCookiesIfRequired(); err != nil {
 			logger.Debugf("预加载刷新检查失败（非阻塞）：%v", err)
 		}
+		go c.refreshCookiesPeriodically(refreshCtx, 10*time.Minute)
 		return nil
 	}
 
@@ -110,35 +125,38 @@ func (c *Client) preloadCookies() error {
 }
 
 func (c *Client) refreshCookiesIfRequired() error {
-	info, err := c.GetWebCookieRefreshInfo()
-	if err != nil {
-		return fmt.Errorf("获取 cookie 刷新信息失败：%v", err)
-	}
-	if !info.Refresh {
-		logger.Info("Cookie 无需刷新")
-		return nil
-	}
-	csrfResult, err := c.GetWebCookieRefreshCsrf(bili.GetWebCookieRefreshCsrfParam{
-		Timestamp: info.Timestamp,
-	})
-	if err != nil {
-		return fmt.Errorf("获取 cookie 刷新 csrf 失败：%v", err)
-	}
-	refreshed, err := c.RefreshCookie(bili.RefreshCookieParam{
-		RefreshToken: c.refreshToken,
-		RefreshCsrf:  csrfResult.RefreshCsrf,
-	})
-	if err != nil {
-		return fmt.Errorf("刷新 cookie 失败：%v", err)
-	} else {
-		logger.Info("Cookie 刷新成功")
-		c.syncCookies()
-	}
+	_, err, _ := c.refreshSF.Do("bilibili_refresh_cookies", func() (any, error) {
+		info, err := c.GetWebCookieRefreshInfo()
+		if err != nil {
+			return nil, fmt.Errorf("获取 cookie 刷新信息失败：%v", err)
+		}
+		if !info.Refresh {
+			logger.Info("Cookie 无需刷新")
+			return nil, nil
+		}
+		csrfResult, err := c.GetWebCookieRefreshCsrf(bili.GetWebCookieRefreshCsrfParam{
+			Timestamp: info.Timestamp,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("获取 cookie 刷新 csrf 失败：%v", err)
+		}
+		refreshed, err := c.RefreshCookie(bili.RefreshCookieParam{
+			RefreshToken: c.refreshToken,
+			RefreshCsrf:  csrfResult.RefreshCsrf,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("刷新 cookie 失败：%v", err)
+		} else {
+			logger.Info("Cookie 刷新成功")
+			c.syncCookies()
+		}
 
-	if err := c.writeRefreshTokenToFile(refreshed.RefreshToken); err != nil {
-		return err
-	}
-	return c.writerCookiesToFile()
+		if err := c.writeRefreshTokenToFile(refreshed.RefreshToken); err != nil {
+			return nil, err
+		}
+		return nil, c.writerCookiesToFile()
+	})
+	return err
 }
 
 func (c *Client) writerCookiesToFile() error {
@@ -180,7 +198,7 @@ func (c *Client) loadOfflineCredentials() (cookie string, refreshToken string, e
 	return
 }
 
-func (c *Client) refreshCookiesPeriodically(interval time.Duration) {
+func (c *Client) refreshCookiesPeriodically(ctx context.Context, interval time.Duration) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
@@ -189,7 +207,7 @@ func (c *Client) refreshCookiesPeriodically(interval time.Duration) {
 			if err := c.refreshCookiesIfRequired(); err != nil {
 				logger.Error(err)
 			}
-		case <-c.ctx.Done():
+		case <-ctx.Done():
 			return
 		}
 	}
@@ -220,7 +238,7 @@ func syncCookieToClient(client *resty.Client, cookies []*http.Cookie) {
 }
 
 // InitQRLogin initiates a new QR login session for controller mode (non-blocking)
-// Returns QR code URL and key.
+// Returns a QR code payload. When reusing an existing pending session, only Url is populated.
 // If already authenticated, starts a new login session (allowing account switching).
 func (c *Client) InitQRLogin() (*bili.QRCode, error) {
 	if c.loginMode != "controller" {
@@ -237,6 +255,11 @@ func (c *Client) InitQRLogin() (*bili.QRCode, error) {
 		}
 	}
 
+	if !c.qrcodeHolding.CompareAndSwap(false, true) {
+		logger.Warn("已有进行中的二维码登录，已跳过")
+		return nil, ErrQRCodeLoginInProgress
+	}
+
 	qrcode, err := c.GetQRCode()
 	if err != nil {
 		wrapped := fmt.Errorf("获取二维码失败：%v", err)
@@ -244,14 +267,18 @@ func (c *Client) InitQRLogin() (*bili.QRCode, error) {
 			s.State = StateFailed
 			s.Error = wrapped
 		})
+		c.qrcodeHolding.Store(false)
 		return nil, wrapped
 	}
+
+	session.cancelAutoRefreshCookies() // Cancel any ongoing cookie refresh from previous session, if applicable
 
 	// Each init creates a fresh session and supersedes previous pending QR sessions.
 	c.updateSession(func(s *AuthSession) {
 		s.State = StateAwaitingQR
 		s.QrcodeURL = qrcode.Url
 		s.Error = nil
+		s.cookieRefreshCancel = nil
 	})
 
 	go c.performQRLogin(qrcode.QrcodeKey)
@@ -263,6 +290,8 @@ func (c *Client) InitQRLogin() (*bili.QRCode, error) {
 // performQRLogin is called in a background goroutine to handle the blocking QR login
 func (c *Client) performQRLogin(qrcodeKey string) {
 	_, _, _ = c.loginSF.Do("bilibili_qr_login_"+qrcodeKey, func() (any, error) {
+		defer c.qrcodeHolding.Store(false)
+
 		result, err := c.LoginWithQRCode(bili.LoginWithQRCodeParam{
 			QrcodeKey: qrcodeKey,
 		})
@@ -278,18 +307,6 @@ func (c *Client) performQRLogin(qrcodeKey string) {
 		}
 
 		switch result.Code {
-		case 86101: // 未扫码
-			c.updateSession(func(s *AuthSession) {
-				s.State = StateAwaitingQR
-				s.Error = nil
-			})
-			return nil, nil
-		case 86090: // 二维码已扫码未确认
-			c.updateSession(func(s *AuthSession) {
-				s.State = StateAuthenticating
-				s.Error = nil
-			})
-			return nil, nil
 		case 86038: // 二维码已失效
 			wrapped := fmt.Errorf("登录失败：%s（代码 %d）", result.Message, result.Code)
 			c.updateSession(func(s *AuthSession) {
@@ -332,18 +349,19 @@ func (c *Client) performQRLogin(qrcodeKey string) {
 			return nil, nil
 		}
 
-		// Start periodic refresh
-		go c.refreshCookiesPeriodically(10 * time.Minute)
-
 		// Get account info and update state
 		if acc, err := c.GetAccountInformation(); err == nil {
+			refreshCtx, cancel := context.WithCancel(c.ctx)
 			c.updateSession(func(s *AuthSession) {
 				s.State = StateAuthenticated
 				s.QrcodeURL = ""
 				s.Account = acc
 				s.Error = nil
+				s.cookieRefreshCancel = cancel
 			})
 			logger.Infof("登录成功，当前账号：%s（mid：%d）", acc.Uname, acc.Mid)
+			// Start periodic refresh
+			go c.refreshCookiesPeriodically(refreshCtx, 10*time.Minute)
 		} else {
 			wrapped := fmt.Errorf("登录后获取账号信息失败：%v", err)
 			c.updateSession(func(s *AuthSession) {
@@ -355,4 +373,12 @@ func (c *Client) performQRLogin(qrcodeKey string) {
 
 		return nil, nil
 	})
+}
+
+func (c *Client) autoRefreshIfSuccess(ctx context.Context, err error) error {
+	if err != nil {
+		return err
+	}
+	go c.refreshCookiesPeriodically(ctx, 10*time.Minute)
+	return nil
 }

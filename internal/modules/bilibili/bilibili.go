@@ -50,8 +50,10 @@ type Client struct {
 	liveHlsSegmentClient  *resty.Client
 
 	// Auth session management for controller mode
-	session atomic.Pointer[AuthSession]
-	loginSF singleflight.Group
+	qrcodeHolding atomic.Bool
+	session       atomic.Pointer[AuthSession]
+	loginSF       singleflight.Group
+	refreshSF     singleflight.Group
 }
 
 func provider(cfg *config.Config, ls fx.Lifecycle) *Client {

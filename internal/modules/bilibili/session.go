@@ -23,6 +23,8 @@ type AuthSession struct {
 	QrcodeURL string
 	Account   *bili.AccountInformation
 	Error     error
+
+	cookieRefreshCancel func() // Optional function to cancel ongoing cookie refresh, if applicable
 }
 
 // GetSession returns a snapshot of the current session
@@ -37,22 +39,31 @@ func (c *Client) GetSession() *AuthSession {
 
 func (c *Client) updateSession(fn func(*AuthSession)) {
 	for {
-		current := c.session.Load()
-		if current == nil {
-			current = &AuthSession{State: StateIdle}
+		loaded := c.session.Load()
+		base := loaded
+		if base == nil {
+			base = &AuthSession{State: StateIdle}
 		}
 
-		next := *current
+		next := *base
 		fn(&next)
 		nextPtr := &next
 
-		if current == nil {
-			c.session.Store(nextPtr)
-			return
+		if loaded == nil {
+			if c.session.CompareAndSwap(nil, nextPtr) {
+				return
+			}
+			continue
 		}
 
-		if c.session.CompareAndSwap(current, nextPtr) {
+		if c.session.CompareAndSwap(loaded, nextPtr) {
 			return
 		}
+	}
+}
+
+func (s *AuthSession) cancelAutoRefreshCookies() {
+	if s.cookieRefreshCancel != nil {
+		s.cookieRefreshCancel()
 	}
 }
