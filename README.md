@@ -72,6 +72,7 @@
 - `bilirec-amd64`：适用于 x86_64 架构的 Linux 系统
 - `bilirec-arm64`：适用于 ARM64 架构的 Linux 系统
 - `bilirec-windows`：适用于 Windows 系统（包含 .exe 后缀）
+- `libbilirec.so`：适用于 Android（由 `cmd/androidlib` 以 c-shared 方式编译）
 
 启动服务：
 
@@ -83,6 +84,46 @@
 ```
 
 如果你是 Windows 用户，直接双击 `bilirec-windows.exe` 启动服务。
+
+### Android（嵌入 App）
+
+`feat/android` 分支新增了 Android 嵌入入口（`cmd/androidlib`），可将后端以 `.so` 方式集成到 Android App。
+
+构建示例（需安装 Android NDK）：
+
+```bash
+make android
+```
+
+输出目录：`dist/android/<abi>/libbilirec.so`（默认构建 `arm64-v8a` 与 `x86_64`）。
+
+Android 库导出两个方法：
+
+- `Start(configJson)`：启动服务（传入 JSON 配置）
+- `Stop()`：停止服务
+
+`Start` 支持字段：
+
+```json
+{
+  "basePath": "/data/user/0/your.app/files",
+  "port": 8080,
+  "host": "127.0.0.1",
+  "frontendUrl": "https://app.bilirec.org",
+  "outputDir": "/data/user/0/your.app/files/records",
+  "username": "admin",
+  "password": "changeme"
+}
+```
+
+其中 `basePath` 必填，其余字段可省略并使用默认值。Android 模式下会强制启用以下行为（与服务器版区分）：
+
+- `BILIBILI_LOGIN_MODE=controller`
+- `FRP_ENABLED=false`
+- `SILENT_ACCESS_LOG=true`
+- `CONVERT_TO_MP4=false`
+
+并使用更保守的移动端 I/O / 内存参数（例如较小写入缓冲、较低磁盘空间阈值）以避免前台卡顿。
 
 ### 使用 Docker
 
@@ -98,6 +139,7 @@ docker build -t bilirec:latest .
 docker run -d \
   --name bilirec \
   -p 8080:8080 \
+  -e BILIBILI_LOGIN_MODE=controller \
   -e PORT=8080 \
   -e FRONTEND_URL=http://localhost:8080 \
   -v /path/to/records:/app/records \
@@ -115,6 +157,7 @@ docker pull eric1008818/bilirec:latest # 最新测试版本请用 :edge
 docker run -d \
   --name bilirec \
   -p 8080:8080 \
+  -e BILIBILI_LOGIN_MODE=controller \
   -e PORT=8080 \
   -e FRONTEND_URL=http://localhost:8080 \
   -v /path/to/records:/app/records \
