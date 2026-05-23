@@ -9,7 +9,7 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-var logger = logrus.WithField("package", "main")
+var logger = logrus.WithField("package", "root")
 
 //go:embed .env
 var dotEnvFile string

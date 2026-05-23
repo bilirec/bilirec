@@ -127,7 +127,7 @@ func start(config StartConfig) C.int {
 	_ = os.Setenv("PORT", strconv.Itoa(config.Port))
 	_ = os.Setenv("FRONTEND_URL", config.FrontendURL)
 
-	_ = os.Setenv("BILIBILI_LOGIN_MODE", "controller") // avoid process stucked on foreground service
+	_ = os.Setenv("BILIBILI_LOGIN_MODE", "controller") // avoid the process getting stuck in foreground service
 	_ = os.Setenv("FRP_ENABLED", "false")              // not expected to expose to public network in android
 
 	_ = os.Setenv("MIN_DISK_SPACE_BYTES", "2147483648") // 2GB
