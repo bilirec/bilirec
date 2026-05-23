@@ -2,6 +2,20 @@
 
 一个专为树莓派优化的 Bilibili 直播录制后端。
 
+## 目录
+
+- [功能特性](#功能特性)
+- [效能指标](#效能指标)
+- [安装](#安装)
+- [配置](#配置)
+- [使用方法](#使用方法)
+- [开发与调试](#开发与调试)
+- [项目结构](#项目结构)
+- [核心实现](#核心实现)
+- [依赖项](#依赖项)
+- [许可证](#许可证)
+- [贡献](#贡献)
+
 ## 功能特性
 
 - ✅ 手动触发录制任务，实时录制直播流
@@ -13,7 +27,8 @@
 - ✅ 支持多个直播间同时录制
 - ✅ 自动修复flv流，处理流中断和恢复（默认自动选择可用流格式，也支持手动指定格式）
 - ✅ 自动转换到MP4 - 支援透过cloudconvert或本地ffmpeg
-- ✅ RESTful API 管理录制任务或使用 [Web 界面](https://github.com/eric2788/bilirec-web)
+- ✅ RESTful API 管理录制任务或使用 [Web 界面](https://github.com/bilirec/bilirec-web)
+- ✅ Android 嵌入支持 - 提供 `cmd/androidlib` 的 c-shared 动态库输出，可将后端能力集成到 [Android App](https://github.com/bilirec/bilirec-mobile)
 - ✅ FRP 内网穿透 - 把录制后端安全暴露到外网，随时随地用 Web 界面 管理录制任务、文件和通知
 - ✅ 文件管理和下载功能
 - ✅ 在线播放 - 在 App 中直接预览和播放已录制的视频(仅限MP4)
@@ -67,7 +82,7 @@
 
 ### 使用二进制文件
 
-可以从 [GitHub Releases](https://github.com/eric2788/bilirec/releases) 页面下载预编译的二进制文件，选择适合你系统的版本:
+可以从 [GitHub Releases](https://github.com/bilirec/bilirec/releases) 页面下载预编译的二进制文件，选择适合你系统的版本:
 
 - `bilirec-amd64`：适用于 x86_64 架构的 Linux 系统
 - `bilirec-arm64`：适用于 ARM64 架构的 Linux 系统
@@ -84,46 +99,6 @@
 ```
 
 如果你是 Windows 用户，直接双击 `bilirec-windows.exe` 启动服务。
-
-### Android（嵌入 App）
-
-`feat/android` 分支新增了 Android 嵌入入口（`cmd/androidlib`），可将后端以 `.so` 方式集成到 Android App。
-
-构建示例（需安装 Android NDK）：
-
-```bash
-make android
-```
-
-输出目录：`dist/android/<abi>/libbilirec.so`（默认构建 `arm64-v8a` 与 `x86_64`）。
-
-Android 库导出两个方法：
-
-- `Start(configJson)`：启动服务（传入 JSON 配置）
-- `Stop()`：停止服务
-
-`Start` 支持字段：
-
-```json
-{
-  "basePath": "/data/user/0/your.app/files",
-  "port": 8080,
-  "host": "127.0.0.1",
-  "frontendUrl": "https://app.bilirec.org",
-  "outputDir": "/data/user/0/your.app/files/records",
-  "username": "admin",
-  "password": "changeme"
-}
-```
-
-其中 `basePath` 必填，其余字段可省略并使用默认值。Android 模式下会强制启用以下行为（与服务器版区分）：
-
-- `BILIBILI_LOGIN_MODE=controller`
-- `FRP_ENABLED=false`
-- `SILENT_ACCESS_LOG=true`
-- `CONVERT_TO_MP4=false`
-
-并使用更保守的移动端 I/O / 内存参数（例如较小写入缓冲、较低磁盘空间阈值）以避免前台卡顿。
 
 ### 使用 Docker
 
@@ -167,6 +142,50 @@ docker run -d \
   -e CLOUDCONVERT_API_KEY=your_api_key \
   eric1008818/bilirec:latest
 ```
+
+### Android（嵌入 App）
+
+Bilirec 已内置 Android 嵌入入口（`cmd/androidlib`），可将后端以 `.so` 方式集成到 Android App。
+
+推荐直接参考官方 Android 客户端项目进行集成与使用：
+
+- [bilirec-mobile](https://github.com/bilirec/bilirec-mobile)
+
+构建示例（需安装 Android NDK）：
+
+```bash
+make android
+```
+
+输出目录：`dist/android/<abi>/libbilirec.so`（默认构建 `arm64-v8a` 与 `x86_64`）。
+
+Android 库导出两个方法：
+
+- `Start(configJson)`：启动服务（传入 JSON 配置）
+- `Stop()`：停止服务
+
+`Start` 支持字段：
+
+```json
+{
+  "basePath": "/data/user/0/your.app/files",
+  "port": 8080,
+  "host": "127.0.0.1",
+  "frontendUrl": "https://app.bilirec.org",
+  "outputDir": "/data/user/0/your.app/files/records",
+  "username": "admin",
+  "password": "changeme"
+}
+```
+
+其中 `basePath` 必填，其余字段可省略并使用默认值。Android 模式下会强制启用以下行为（与服务器版区分）：
+
+- `BILIBILI_LOGIN_MODE=controller`
+- `FRP_ENABLED=false`
+- `SILENT_ACCESS_LOG=true`
+- `CONVERT_TO_MP4=false`
+
+并使用更保守的移动端 I/O / 内存参数（例如较小写入缓冲、较低磁盘空间阈值）以避免前台卡顿。
 
 ## 配置
 
@@ -406,6 +425,18 @@ export MAX_CONCURRENT_RECORDINGS=5              # 视硬盘转速适度调整
 
 首次启动如果未使用匿名登录，会显示二维码，使用 Bilibili 手机 APP 扫码登录。
 
+### Android App
+
+推荐使用官方 Android 客户端：
+
+- [bilirec-mobile](https://github.com/bilirec/bilirec-mobile)
+
+使用方式：
+
+1. 优先从 `bilirec-mobile` 的 Releases 下载并安装 APK。
+2. 安装后通过 App 完成后端初始化、登录、录制管理与文件播放。
+3. 若你需要自行开发或定制，再按 `bilirec-mobile` 文档选择源码构建/库集成；库模式可先执行 `make android` 生成 `libbilirec.so`。
+
 ### Web 页面
 
 1. 设置你的 `FRONTEND_URL` 为 `https://app.bilirec.org/`
@@ -471,7 +502,7 @@ Content-Type: application/json
 - `POST /auth/bilibili/init`
   - 用途：创建新的二维码登录会话（支持账号切换，即使已登录也可重新发起登录）
   - 成功：`201 Created`
-  - 错误：`400 Bad Request`（当前不在 controller 模式）或 `500 Internal Server Error`（获取二维码失败）
+  - 错误：`400 Bad Request` (当前不在 controller 模式) / `409 Conflict` (已存在未完成的登录会话) / `500 Internal Server Error`（获取二维码失败）
   - 响应示例（成功）：
     ```json
     {
