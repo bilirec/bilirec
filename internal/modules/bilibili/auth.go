@@ -300,6 +300,7 @@ func (c *Client) performQRLogin(qrcodeKey string) {
 			wrapped := fmt.Errorf("二维码登录出错：%v", err)
 			c.updateSession(func(s *AuthSession) {
 				s.State = StateFailed
+				s.QrcodeURL = ""
 				s.Error = wrapped
 			})
 			logger.Errorf("二维码登录出错：%v", err)
