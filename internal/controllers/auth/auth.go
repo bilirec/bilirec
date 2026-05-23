@@ -1,11 +1,8 @@
 package auth
 
 import (
-	"errors"
-
 	"github.com/eric2788/bilirec/internal/modules/bilibili"
 	"github.com/eric2788/bilirec/internal/modules/rest"
-	"github.com/eric2788/bilirec/utils"
 	"github.com/gofiber/fiber/v3"
 	"github.com/sirupsen/logrus"
 )
@@ -78,17 +75,19 @@ func (r *Controller) initLogin(ctx fiber.Ctx) error {
 	qrResp, err := r.client.InitQRLogin()
 	if err != nil {
 		logger.Warnf("failed to init QR login: %v", err)
-		return ctx.Status(
-			utils.Ternary(
-				errors.Is(err, bilibili.ErrNotControllerMode),
-				400,
-				500,
-			)).
-			JSON(InitLoginResponse{
-				Error: err.Error(),
-			})
+		var status int
+		switch err {
+		case bilibili.ErrNotControllerMode:
+			status = fiber.StatusBadRequest
+		case bilibili.ErrQRCodeLoginInProgress:
+			status = fiber.StatusConflict
+		default:
+			status = fiber.StatusInternalServerError
+		}
+		return ctx.Status(status).JSON(InitLoginResponse{
+			Error: err.Error(),
+		})
 	}
-
 	return ctx.Status(fiber.StatusCreated).JSON(InitLoginResponse{
 		QR: &QRInfo{
 			URL: qrResp.Url,
