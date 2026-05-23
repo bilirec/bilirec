@@ -7,8 +7,9 @@
 - [功能特性](#功能特性)
 - [效能指标](#效能指标)
 - [安装](#安装)
-- [配置](#配置)
 - [使用方法](#使用方法)
+- [配置](#配置)
+- [REST API](#rest-api)
 - [开发与调试](#开发与调试)
 - [项目结构](#项目结构)
 - [核心实现](#核心实现)
@@ -186,6 +187,52 @@ Android 库导出两个方法：
 - `CONVERT_TO_MP4=false`
 
 并使用更保守的移动端 I/O / 内存参数（例如较小写入缓冲、较低磁盘空间阈值）以避免前台卡顿。
+
+## 使用方法
+
+### 启动服务
+
+请先参阅上面的安装部分完成部署，再按下方[配置](#配置)设置环境变量后启动服务。
+
+默认使用 `controller` 模式登录。服务启动后，请打开 Web 界面并点击“登入”，再到右上角点击头像按钮完成 Bilibili 扫码登录。
+
+你也可以使用 `startup` 模式改为在终端显示二维码然后扫码登录，或者使用 `anonymous` 模式直接匿名登录（未登录可能无法录制 1080p 直播）。
+
+### Web 界面
+
+1. 设置你的 `FRONTEND_URL` 为 `https://app.bilirec.org/`
+
+2. 直接访问 `https://app.bilirec.org/` 进入登入界面
+
+3. 根据你所设置的 `USERNAME` 和 `PASSWORD` 进行登录（如果未设置则直接进入）
+
+### 远程访问（FRP）
+
+如果启用 FRP 内网穿透：
+
+1. 启动内网穿透后，日志中会显示 FRP 连接状态和公网访问地址（如 `https://abc1234567.tunnel.bilirec.org`）
+
+2. 进入 `https://app.bilirec.org/` 后，在登录界面的服务器地址栏位输入公网访问地址（如 `https://abc1234567.tunnel.bilirec.org`）
+
+3. 使用 `USERNAME` 和 `PASSWORD` 登录（暴露到公网后请务必设置 `USERNAME` 和 `PASSWORD`）
+
+### Android App
+
+推荐使用官方 Android 客户端：
+
+- [bilirec-mobile](https://github.com/bilirec/bilirec-mobile)
+
+使用方式：
+
+1. 优先从 `bilirec-mobile` 的 Releases 下载并安装 APK。
+2. 打开 App 后，先在界面中点击启动按钮；启动成功后会出现“打开录制程序”按钮。
+3. 点击“打开录制程序”后，会跳转到 `https://app.bilirec.org/`，如果已安装 PWA 则会优先打开 PWA。
+4. 进入页面后直接点击“登入”即可；Android 默认连接 `http://localhost:8080`，且默认不启用账号密码。
+5. 若你需要自行开发或定制，再按 `bilirec-mobile` 文档选择源码构建或库集成；库模式可先执行 `make android` 生成 `libbilirec.so`。
+
+### 其他接入方式
+
+除 Web 界面与 Android App 外，Bilirec 也提供 REST API 供程序调用、脚本控制或自行集成，详见下方 [REST API](#rest-api) 章节。
 
 ## 配置
 
@@ -417,43 +464,7 @@ export MAX_CONCURRENT_RECORDINGS=5              # 视硬盘转速适度调整
 > 
 > 
 
-## 使用方法
-
-### 启动服务
-
-请参阅上面的安装和配置部分，设置好环境变量后启动服务。
-
-首次启动如果未使用匿名登录，会显示二维码，使用 Bilibili 手机 APP 扫码登录。
-
-### Android App
-
-推荐使用官方 Android 客户端：
-
-- [bilirec-mobile](https://github.com/bilirec/bilirec-mobile)
-
-使用方式：
-
-1. 优先从 `bilirec-mobile` 的 Releases 下载并安装 APK。
-2. 安装后通过 App 完成后端初始化、登录、录制管理与文件播放。
-3. 若你需要自行开发或定制，再按 `bilirec-mobile` 文档选择源码构建/库集成；库模式可先执行 `make android` 生成 `libbilirec.so`。
-
-### Web 页面
-
-1. 设置你的 `FRONTEND_URL` 为 `https://app.bilirec.org/`
-
-2. 直接访问 `https://app.bilirec.org/` 进入登入界面
-
-3. 根据你所设置的 `USERNAME` 和 `PASSWORD` 进行登录（如果未设置则直接进入）
-
-**如果启用 FRP 内网穿透**
-
-1. 启动内网穿透后，日志中会显示 FRP 连接状态和公网访问地址 (如 `https://abc1234567.tunnel.bilirec.org`)
-
-2. 进入 `https://app.bilirec.org/` 后，在登录界面的服务器地址栏位输入公网访问地址（如 `https://abc1234567.tunnel.bilirec.org`）
-
-3. 使用 `USERNAME` 和 `PASSWORD` 登录 (暴露到公网后请务必设置 `USERNAME` 和 `PASSWORD`!)
-
-### API 接口
+## REST API
 
 > Swagger UI 会在服务器运行时于根路径 `/` 提供 — 在浏览器中打开该地址即可查看与测试 API。
 
