@@ -18,9 +18,9 @@ func NewController(app *fiber.App, client *bilibili.Client) *Controller {
 		client: client,
 	}
 
-	auth := app.Group("/auth/bilibili")
+	auth := app.Group("/auth/bilibili", rest.AdminOnly)
 	auth.Get("/status", rc.getStatus)
-	auth.Post("/init", rest.AdminOnly, rc.initLogin)
+	auth.Post("/init", rc.initLogin)
 
 	return rc
 }
@@ -69,6 +69,7 @@ func (r *Controller) getStatus(ctx fiber.Ctx) error {
 // @Produce json
 // @Success 201 {object} InitLoginResponse "QR session created"
 // @Failure 400 {object} InitLoginResponse "Not in controller mode"
+// @Failure 409 {object} InitLoginResponse "QR login already in progress"
 // @Failure 500 {object} InitLoginResponse "Failed to generate QR code or other server error"
 // @Router /auth/bilibili/init [post]
 func (r *Controller) initLogin(ctx fiber.Ctx) error {
