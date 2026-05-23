@@ -11,7 +11,6 @@ const (
 	StateIdle           AuthState = "idle"           // No authentication yet
 	StatePreloaded      AuthState = "preloaded"      // Offline credentials loaded
 	StateAwaitingQR     AuthState = "awaiting_qr"    // QR generated, waiting for scan
-	StateAuthenticating AuthState = "authenticating" // QR scanned, authenticating
 	StateAuthenticated  AuthState = "authenticated"  // Successfully authenticated
 	StateFailed         AuthState = "failed"         // Authentication failed
 	StateQRExpired      AuthState = "qr_expired"     // QR code expired, needs re-authentication

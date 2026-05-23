@@ -81,7 +81,6 @@ func TestAuth_InitQRLogin_ReusesExistingQRCode(t *testing.T) {
 		state AuthState
 	}{
 		{name: "awaiting_qr", state: StateAwaitingQR},
-		{name: "authenticating", state: StateAuthenticating},
 	}
 
 	for _, tc := range tests {

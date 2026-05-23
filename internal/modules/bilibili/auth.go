@@ -256,7 +256,7 @@ func (c *Client) InitQRLogin() (*bili.QRCode, error) {
 
 	session := c.GetSession()
 	// Allow reusing existing QR code if we're still in the awaiting/authenticating state
-	if session.State == StateAwaitingQR || session.State == StateAuthenticating {
+	if session.State == StateAwaitingQR {
 		if session.QrcodeURL != "" {
 			logger.Debug("reusing existing QR code for pending login session")
 			return &bili.QRCode{Url: session.QrcodeURL}, nil
