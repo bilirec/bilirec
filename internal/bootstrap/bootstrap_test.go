@@ -1,4 +1,4 @@
-package main_test
+package bootstrap_test
 
 import (
 	"os"

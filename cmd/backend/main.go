@@ -1,12 +1,15 @@
 package main
 
 import (
+	root "github.com/eric2788/bilirec"
 	"github.com/eric2788/bilirec/internal/bootstrap"
 	"github.com/sirupsen/logrus"
 )
 
-var logger = logrus.WithField("package", "backend")
-
 func main() {
+	root.InitDotEnv()
+	root.InitSwaggerDocs()
+
+	logrus.Info("Starting bilirec backend...")
 	bootstrap.NewApp().Run()
 }
