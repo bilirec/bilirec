@@ -526,13 +526,13 @@ func (r *Service) recover(roomId int) {
 	l := logger.WithField("room", roomId)
 	info, ok := r.recording.Load(roomId)
 	if !ok {
-		l.Debugf("recording not found, skip recovery")
+		l.Debugf("未找到录制任务，跳过恢复")
 		return
 	} else if status := info.status.Load(); status == recoveringPtr {
-		l.Infof("stream is recovering, skipped.")
+		l.Infof("当前正在恢复流，跳过本次恢复")
 		return
 	}
-	l.Infof("trying to recover stream capture...")
+	l.Infof("正在尝试恢复流录制...")
 
 	info.status.Store(recoveringPtr)
 	attempt := 1
@@ -540,24 +540,24 @@ func (r *Service) recover(roomId int) {
 	for {
 		err := r.Start(roomId)
 		if err == nil {
-			l.Info("start live stream recovery: success")
+			l.Info("直播流恢复成功")
 			return
 		}
 
 		switch err {
 		case ErrMaxConcurrentRecordingsReached:
-			l.Infof("stop recovery due to: %v", err)
+			l.Infof("因以下原因停止恢复：%v", err)
 			r.stopAndPublish(roomId, info)
 			return
 		case ErrRoomEncrypted, ErrRoomBanned:
-			l.Infof("stream is banned or premium, will not recover.")
+			l.Infof("直播间已封禁或为付费直播，不再恢复")
 			r.stopAndPublish(roomId, info)
 			return
 		default:
 
 			// Should check if recording was manually stopped
 			if _, ok := r.recording.Load(roomId); !ok {
-				l.Infof("recording removed during retry, will not recover.")
+				l.Infof("重试期间录制任务已移除，不再恢复")
 				return
 			}
 
@@ -565,17 +565,17 @@ func (r *Service) recover(roomId int) {
 			if err == ErrStreamNotLive {
 				// use r.cfg.MaxRetryMinutes to limit the total retry duration, instead of max attempts, since the stream may be live again after some time
 				if time.Since(retryStart) >= time.Duration(r.cfg.MaxRetryMinutes)*time.Minute {
-					l.Infof("stop recovery after retrying for %d minutes", r.cfg.MaxRetryMinutes)
+					l.Infof("已达到最长重试时间 (%d 分钟)，不再恢复", r.cfg.MaxRetryMinutes)
 					r.stopAndPublish(roomId, info)
 					return
 				}
 			} else if attempt >= r.cfg.MaxRecoveryAttempts {
-				l.Infof("maximum recovery attempts reached (%d), will not recover", r.cfg.MaxRecoveryAttempts)
+				l.Infof("已达到最大恢复次数（%d），不再恢复", r.cfg.MaxRecoveryAttempts)
 				r.stopAndPublish(roomId, info)
 				return
 			} else {
-				l.Warnf("recovery attempt #%d failed: %v", attempt, err)
-				l.Infof("will retry stream recovery in 15 seconds...")
+				l.Warnf("第 %d 次恢复失败：%v", attempt, err)
+				l.Infof("将在 15 秒后重试恢复流录制...")
 			}
 
 			timer := time.NewTimer(15 * time.Second)
@@ -584,7 +584,7 @@ func (r *Service) recover(roomId int) {
 				attempt++
 				continue
 			case <-r.ctx.Done():
-				l.Infof("service is stopping, aborting recovery")
+				l.Infof("服务正在停止，终止恢复流程")
 				timer.Stop()
 				return
 			}
