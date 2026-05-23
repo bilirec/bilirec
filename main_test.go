@@ -13,7 +13,7 @@ func TestAppLaunch(t *testing.T) {
 	app := fxtest.New(t, bootstrap.MainModule())
 	app.RequireStart()
 	defer app.RequireStop()
-	<-time.After(10 * time.Second)
+	<-time.After(5 * time.Second)
 	t.Log("REST app started successfully")
 }
 
