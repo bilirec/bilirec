@@ -1,13 +1,11 @@
 package bilibili
 
 import (
-	"context"
 	"errors"
 	"net/http"
 	"os"
 	"path/filepath"
 	"testing"
-	"time"
 
 	"github.com/go-resty/resty/v2"
 )
@@ -90,8 +88,8 @@ func TestAuth_InitQRLogin_ReusesExistingQRCode(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			c := &Client{loginMode: "controller"}
 			c.session.Store(&AuthSession{
-				State:               tc.state,
-				QrcodeURL:           "https://example.com/qr",
+				State:     tc.state,
+				QrcodeURL: "https://example.com/qr",
 			})
 
 			qrcode, err := c.InitQRLogin()
@@ -103,29 +101,6 @@ func TestAuth_InitQRLogin_ReusesExistingQRCode(t *testing.T) {
 			}
 		})
 	}
-}
-
-func TestAuth_AutoRefreshIfSuccess_ReturnsInputError(t *testing.T) {
-	c := &Client{}
-	wantErr := errors.New("boom")
-
-	gotErr := c.autoRefreshIfSuccess(context.Background(), wantErr)
-	if !errors.Is(gotErr, wantErr) {
-		t.Fatalf("expected original error, got: %v", gotErr)
-	}
-}
-
-func TestAuth_AutoRefreshIfSuccess_WithCanceledContext(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-
-	c := &Client{}
-	if err := c.autoRefreshIfSuccess(ctx, nil); err != nil {
-		t.Fatalf("autoRefreshIfSuccess should return nil when input err is nil: %v", err)
-	}
-
-	// Give goroutine a short window to observe canceled context and exit.
-	time.Sleep(10 * time.Millisecond)
 }
 
 func TestAuth_SyncCookieToClient_UpdateAndAppend(t *testing.T) {

@@ -33,7 +33,11 @@ func (c *Client) loadCookiesOrLogin() error {
 				as.Account = acc
 				as.Error = nil
 			})
-			return c.autoRefreshIfSuccess(c.ctx, c.refreshCookiesIfRequired())
+			if err := c.refreshCookiesIfRequired(); err != nil {
+				logger.Warnf("预加载刷新检查失败：%v", err)
+			}
+			go c.refreshCookiesPeriodically(c.ctx, 10*time.Minute)
+			return nil
 		} else {
 			logger.Warnf("使用已加载 Cookie 获取账号信息失败：%v", err)
 		}
@@ -75,10 +79,14 @@ func (c *Client) loadCookiesOrLogin() error {
 	}
 
 	if err := c.writeRefreshTokenToFile(result.RefreshToken); err != nil {
-		return err
+		logger.Warn(err)
+	}
+	if err := c.writerCookiesToFile(); err != nil {
+		logger.Warn(err)
 	}
 
-	return c.autoRefreshIfSuccess(c.ctx, c.writerCookiesToFile())
+	go c.refreshCookiesPeriodically(c.ctx, 10*time.Minute)
+	return nil
 }
 
 // preloadCookies run on controller mode
@@ -323,6 +331,7 @@ func (c *Client) performQRLogin(qrcodeKey string) {
 			wrapped := fmt.Errorf("登录失败：%s（代码 %d）", result.Message, result.Code)
 			c.updateSession(func(s *AuthSession) {
 				s.State = StateFailed
+				s.QrcodeURL = ""
 				s.Error = wrapped
 			})
 			logger.Errorf("登录失败：%s（代码 %d）", result.Message, result.Code)
@@ -331,24 +340,6 @@ func (c *Client) performQRLogin(qrcodeKey string) {
 
 		// Successful login, save credentials and sync
 		defer c.syncCookies()
-
-		if err := c.writeRefreshTokenToFile(result.RefreshToken); err != nil {
-			c.updateSession(func(s *AuthSession) {
-				s.State = StateFailed
-				s.Error = err
-			})
-			logger.Error(err)
-			return nil, nil
-		}
-
-		if err := c.writerCookiesToFile(); err != nil {
-			c.updateSession(func(s *AuthSession) {
-				s.State = StateFailed
-				s.Error = err
-			})
-			logger.Error(err)
-			return nil, nil
-		}
 
 		// Get account info and update state
 		if acc, err := c.GetAccountInformation(); err == nil {
@@ -360,13 +351,23 @@ func (c *Client) performQRLogin(qrcodeKey string) {
 				s.Error = nil
 				s.cookieRefreshCancel = cancel
 			})
+
 			logger.Infof("登录成功，当前账号：%s（mid：%d）", acc.Uname, acc.Mid)
-			// Start periodic refresh
+
+			if err := c.writeRefreshTokenToFile(result.RefreshToken); err != nil {
+				logger.Warn(err)
+			}
+
+			if err := c.writerCookiesToFile(); err != nil {
+				logger.Warn(err)
+			}
+
 			go c.refreshCookiesPeriodically(refreshCtx, 10*time.Minute)
 		} else {
 			wrapped := fmt.Errorf("登录后获取账号信息失败：%v", err)
 			c.updateSession(func(s *AuthSession) {
 				s.State = StateFailed
+				s.QrcodeURL = ""
 				s.Error = wrapped
 			})
 			logger.Errorf("登录后获取账号信息失败：%v", err)
@@ -374,12 +375,4 @@ func (c *Client) performQRLogin(qrcodeKey string) {
 
 		return nil, nil
 	})
-}
-
-func (c *Client) autoRefreshIfSuccess(ctx context.Context, err error) error {
-	if err != nil {
-		return err
-	}
-	go c.refreshCookiesPeriodically(ctx, 10*time.Minute)
-	return nil
 }
