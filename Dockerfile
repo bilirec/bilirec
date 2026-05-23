@@ -30,7 +30,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
         GOOS=linux GOARCH=$TARGETARCH go build -v \
             -ldflags "-X github.com/eric2788/bilirec/internal/modules/config.frpTokenInjected=$FRP_TOKEN_INJECTED" \
-            -o bilirec
+            -o bilirec ./cmd/backend
 
 FROM alpine:latest
 WORKDIR /app
@@ -46,11 +46,13 @@ RUN chmod +x ./bilirec
 
 ENV TZ=Asia/Hong_Kong
 
-ENV ANONYMOUS_LOGIN=false \
+ENV BILIBILI_LOGIN_MODE=controller \
+    HOST= \
     PORT=8080 \
     TRUSTED_PROXIES=161.33.159.26 \
     FRP_ENABLED=false \
     FRP_SERVER=tunnel.bilirec.org:7000 \
+    FRP_TOKEN= \
     FRP_BASE_DOMAIN=tunnel.bilirec.org \
     FRP_HTTPS=false \
     FRP_SCHEME_HTTPS=true \
@@ -64,6 +66,7 @@ ENV ANONYMOUS_LOGIN=false \
     CONVERT_TO_MP4=false \
     DELETE_SOURCE_AFTER_CONVERT=false \
     CLOUDCONVERT_THRESHOLD=1073741824 \
+    CLOUDCONVERT_API_KEY= \
     CLOUDCONVERT_CHECK_INTERVAL_SECS=180 \
     CLOUDCONVERT_MAX_CONCURRENT_DOWNLOADS=1 \
     FFMPEG_CHECK_INTERVAL_SECS=60 \

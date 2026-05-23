@@ -28,7 +28,7 @@ jobs:
 
       - name: Build Linux
         run: |
-          go build -ldflags "-X github.com/eric2788/bilirec/internal/modules/config.frpTokenInjected=${{ secrets.FRP_TOKEN }}" -o ./dist/${{ env.artifact_name }}-${{ matrix.goarch }}
+          go build -ldflags "-X github.com/eric2788/bilirec/internal/modules/config.frpTokenInjected=${{ secrets.FRP_TOKEN }}" -o ./dist/${{ env.artifact_name }}-${{ matrix.goarch }} ./cmd/backend
         env:
           GOARCH: ${{ matrix.goarch }}
 
@@ -50,7 +50,7 @@ jobs:
 
       - name: Build Windows
         run: |
-          go build --buildmode=exe "-ldflags=-X github.com/eric2788/bilirec/internal/modules/config.frpTokenInjected=${{ secrets.FRP_TOKEN }}" -o ./dist/${{ env.artifact_name }}-windows.exe
+          go build --buildmode=exe "-ldflags=-X github.com/eric2788/bilirec/internal/modules/config.frpTokenInjected=${{ secrets.FRP_TOKEN }}" -o ./dist/${{ env.artifact_name }}-windows.exe ./cmd/backend
 
       - name: Upload a Build Artifact
         uses: actions/upload-artifact@v6
@@ -58,13 +58,67 @@ jobs:
           name: ${{ env.artifact_name }}-windows
           path: 'dist'
 
+  build_android:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        target:
+          - abi: arm64-v8a
+            goarch: arm64
+            cc: aarch64-linux-android21-clang
+          - abi: x86_64
+            goarch: amd64
+            cc: x86_64-linux-android21-clang
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Prepare Go and swagger docs
+        uses: ./.github/actions/setup-go-swagger
+        with:
+          go-version: '1.25'
+
+      - name: Setup Android NDK
+        uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: r27c
+
+      - name: Resolve Android clang path
+        run: |
+          NDK_HOME="${ANDROID_NDK_LATEST_HOME:-${ANDROID_NDK_ROOT:-$ANDROID_NDK_HOME}}"
+          if [ -z "$NDK_HOME" ]; then
+            echo "Unable to find Android NDK path from ANDROID_NDK_LATEST_HOME/ANDROID_NDK_ROOT/ANDROID_NDK_HOME"
+            exit 1
+          fi
+
+          CLANG_BIN="$NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/${{ matrix.target.cc }}"
+          if [ ! -x "$CLANG_BIN" ]; then
+            echo "Android clang not found or not executable: $CLANG_BIN"
+            exit 1
+          fi
+
+          echo "CC=$CLANG_BIN" >> "$GITHUB_ENV"
+
+      - name: Build Android shared library
+        run: |
+          go build -buildmode=c-shared -ldflags "-checklinkname=0" -o ./dist/android/${{ matrix.target.abi }}/lib${{ env.artifact_name }}.so ./cmd/androidlib
+        env:
+          GOOS: android
+          GOARCH: ${{ matrix.target.goarch }}
+          CGO_ENABLED: "1"
+
+      - name: Upload a Build Artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: ${{ env.artifact_name }}-android-${{ matrix.target.abi }}
+          path: ./dist/android/${{ matrix.target.abi }}
+
   upload_release:
     runs-on: ubuntu-latest
-    needs: [ build_windows, build_linux ]
+    needs: [ build_windows, build_linux, build_android ]
     if: github.event_name == 'release' && github.event.action == 'created'
     strategy:
       matrix:
-        goarch: [ "amd64", "arm64", "windows" ]
+        goarch: [ "amd64", "arm64", "windows", "android-arm64-v8a", "android-x86_64" ]
     permissions:
         contents: write
     steps:

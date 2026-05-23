@@ -121,6 +121,11 @@ func (g *GlobalReadOnly) FFmpegAllowDuringRecordingMaxActiveRecordings() int {
 }
 
 func (g *GlobalReadOnly) Validate() error {
+	switch g.config.BilibiliLoginMode {
+	case "startup", "controller", "anonymous":
+	default:
+		return fmt.Errorf("配置无效：BILIBILI_LOGIN_MODE 仅支持 startup、controller、anonymous，当前值：%s", g.config.BilibiliLoginMode)
+	}
 	if g.config.CloudConvertCheckIntervalSecs <= 0 {
 		logger.Warnf("CLOUDCONVERT_CHECK_INTERVAL_SECS 无效（%d），使用默认值 %d 秒", g.config.CloudConvertCheckIntervalSecs, defaultCloudConvertCheckIntervalSecs)
 	}

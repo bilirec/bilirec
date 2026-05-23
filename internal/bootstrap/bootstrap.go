@@ -1,9 +1,11 @@
-package main
+package bootstrap
 
 import (
 	"os"
+	"strings"
 	"time"
 
+	"github.com/eric2788/bilirec/internal/controllers/auth"
 	"github.com/eric2788/bilirec/internal/controllers/convert"
 	"github.com/eric2788/bilirec/internal/controllers/file"
 	nc "github.com/eric2788/bilirec/internal/controllers/notify"
@@ -48,17 +50,26 @@ func MainModule() fx.Option {
 		fx.Invoke(nc.NewController),
 		fx.Invoke(record.NewController),
 		fx.Invoke(file.NewController),
+		fx.Invoke(auth.NewController),
 		fx.Invoke(convert.NewController),
 	)
 }
 
-func main() {
+func noQrCodePrompt() bool {
+	loginMode := strings.ToLower(strings.TrimSpace(utils.EmptyOrElse(os.Getenv("BILIBILI_LOGIN_MODE"), "controller")))
+	return loginMode == "controller" || loginMode == "anonymous"
+}
 
-	app := fx.New(
+func NewApp() *fx.App {
+	return fx.New(
 		MainModule(),
-		fx.StartTimeout(utils.Ternary(os.Getenv("ANONYMOUS_LOGIN") == "true", 15*time.Second, 1*time.Minute)),
+		fx.StartTimeout(
+			utils.Ternary(
+				noQrCodePrompt(),
+				15*time.Second,
+				1*time.Minute,
+			),
+		),
 		fx.StopTimeout(1*time.Minute),
 	)
-
-	app.Run()
 }

@@ -1,22 +1,22 @@
-package main_test
+package bootstrap_test
 
 import (
 	"os"
 	"testing"
 	"time"
 
-	main "github.com/eric2788/bilirec"
+	"github.com/eric2788/bilirec/internal/bootstrap"
 	"go.uber.org/fx/fxtest"
 )
 
 func TestAppLaunch(t *testing.T) {
-	app := fxtest.New(t, main.MainModule())
+	app := fxtest.New(t, bootstrap.MainModule())
 	app.RequireStart()
 	defer app.RequireStop()
-	<-time.After(10 * time.Second)
+	<-time.After(5 * time.Second)
 	t.Log("REST app started successfully")
 }
 
 func init() {
-	os.Setenv("ANONYMOUS_LOGIN", "true")
+	os.Setenv("BILIBILI_LOGIN_MODE", "anonymous")
 }

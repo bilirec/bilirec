@@ -1,0 +1,14 @@
+{
+  "go.toolsEnvVars": {
+    "CGO_ENABLED": "1"
+  },
+  "gopls": {
+    "build.env": {
+      "CGO_ENABLED": "1"
+    }
+  },
+  "go.buildFlags": ["-tags=cgo"],
+  "terminal.integrated.env.windows": {
+    "CGO_ENABLED": "1"
+  }
+}

@@ -23,7 +23,9 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"net"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -91,12 +93,16 @@ func provider(ls fx.Lifecycle, cfg *config.Config) *fiber.App {
 		},
 	}))
 
-	app.Use(swagger.New(swagger.Config{
-		BasePath: "/",
-		FilePath: "./docs/swagger.json",
-		Path:     "/",
-		Title:    "BiliRec API Documentation",
-	}))
+	if swaggerPath, ok := resolveSwaggerFilePath(); ok {
+		app.Use(swagger.New(swagger.Config{
+			BasePath: "/",
+			FilePath: swaggerPath,
+			Path:     "/",
+			Title:    "BiliRec API Documentation",
+		}))
+	} else {
+		logger.Warn("swagger 文件未找到，禁用 swagger 路由")
+	}
 
 	app.Use(cors.New(cors.Config{
 		AllowOrigins: utils.Ternary(
@@ -168,7 +174,7 @@ func provider(ls fx.Lifecycle, cfg *config.Config) *fiber.App {
 	ls.Append(
 		fx.StartStopHook(
 			func(ctx context.Context) error {
-				addr := ":" + cfg.Port
+				addr := net.JoinHostPort(cfg.Host, cfg.Port)
 				// Check if both SERVER_CRT and SERVER_KEY are provided
 				if cfg.ServerCrt != "" && cfg.ServerKey != "" {
 					return startHttpsServer(app, addr, cfg.ServerCrt, cfg.ServerKey)
@@ -225,6 +231,26 @@ func isMediaStreamContentType(contentType string) bool {
 		strings.HasPrefix(contentType, "application/vnd.apple.mpegurl") ||
 		strings.HasPrefix(contentType, "application/x-mpegurl") ||
 		strings.HasPrefix(contentType, "application/dash+xml")
+}
+
+func resolveSwaggerFilePath() (string, bool) {
+	const relativeSwaggerPath = "./docs/swagger.json"
+
+	if _, err := os.Stat(relativeSwaggerPath); err == nil {
+		return relativeSwaggerPath, true
+	}
+
+	exe, err := os.Executable()
+	if err != nil {
+		return "", false
+	}
+
+	exeSwaggerPath := filepath.Join(filepath.Dir(exe), "docs", "swagger.json")
+	if _, err := os.Stat(exeSwaggerPath); err != nil {
+		return "", false
+	}
+
+	return exeSwaggerPath, true
 }
 
 var Module = fx.Module("rest", fx.Provide(provider))

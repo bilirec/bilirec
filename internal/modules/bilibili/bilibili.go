@@ -8,6 +8,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"go.uber.org/fx"
 
@@ -16,6 +17,7 @@ import (
 	"github.com/eric2788/bilirec/utils"
 	"github.com/go-resty/resty/v2"
 	"github.com/sirupsen/logrus"
+	"golang.org/x/sync/singleflight"
 )
 
 var logger = logrus.WithField("module", "bilibili")
@@ -30,10 +32,13 @@ const liveUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537
 
 type Client struct {
 	*bili.Client
+
+	loginMode        string
 	refreshToken     string
 	wbi              *bili.WBI
 	liveClient       *resty.Client
 	liveStreamClient *resty.Client
+	ctx              context.Context
 
 	cookiePath       string
 	refreshTokenPath string
@@ -43,12 +48,20 @@ type Client struct {
 	liveHlsPlaylistClient *resty.Client
 	hlsSegmentClientOnce  sync.Once
 	liveHlsSegmentClient  *resty.Client
+
+	// Auth session management for controller mode
+	qrcodeHolding atomic.Bool
+	session       atomic.Pointer[AuthSession]
+	loginSF       singleflight.Group
+	refreshSF     singleflight.Group
 }
 
 func provider(cfg *config.Config, ls fx.Lifecycle) *Client {
 
+	ctx, cancel := context.WithCancel(context.Background())
+
 	client := utils.TernaryFunc(
-		cfg.AnonymousLogin,
+		cfg.BilibiliLoginMode == "anonymous",
 		func() *Client {
 			return &Client{Client: bili.NewAnonymousClient()}
 		},
@@ -57,16 +70,46 @@ func provider(cfg *config.Config, ls fx.Lifecycle) *Client {
 		},
 	)
 
+	client.ctx = ctx
+	client.loginMode = cfg.BilibiliLoginMode
 	client.wbi = bili.NewDefaultWbi()
 	client.liveClient = client.withLiveClient()
 	client.liveStreamClient = client.withLiveStreamClient()
 	client.cookiePath = fmt.Sprintf("%s%c_cookies", cfg.SecretDir, os.PathSeparator)
 	client.refreshTokenPath = fmt.Sprintf("%s%c_refresh_token", cfg.SecretDir, os.PathSeparator)
+	client.session.Store(&AuthSession{State: StateIdle})
 
 	ls.Append(
-		fx.StartHook(func(ctx context.Context) error {
-			return client.loadCookiesOrLogin(ctx, cfg)
-		}),
+		fx.StartStopHook(
+			func() error {
+				if cfg.BilibiliLoginMode == "anonymous" {
+					logger.Info("使用匿名登录，跳过哔哩哔哩登录流程")
+					return nil
+				}
+
+				// Handle login timing based on config
+				switch cfg.BilibiliLoginMode {
+				case "controller":
+					// Controller mode: preload only, don't block on QR
+					logger.Info("哔哩哔哩登录模式：controller（仅预加载）")
+					return client.preloadCookies()
+				case "startup":
+					// Startup mode (default): full login flow at startup
+					logger.Info("开始哔哩哔哩登录流程")
+					return client.loadCookiesOrLogin()
+				case "anonymous":
+					// Already handled above, keep this branch as a defensive fallback.
+					logger.Info("使用匿名登录，跳过哔哩哔哩登录流程")
+					return nil
+				default:
+					return fmt.Errorf("未知的哔哩哔哩登录模式：%s", cfg.BilibiliLoginMode)
+				}
+			},
+			func() error {
+				cancel()
+				return nil
+			},
+		),
 	)
 
 	return client

@@ -19,7 +19,7 @@ import (
 func init() {
 	logrus.SetLevel(logrus.DebugLevel)
 	if os.Getenv("CI") != "" {
-		os.Setenv("ANONYMOUS_LOGIN", "true")
+		os.Setenv("BILIBILI_LOGIN_MODE", "anonymous")
 	}
 }
 
