@@ -85,18 +85,18 @@
 
 可以从 [GitHub Releases](https://github.com/bilirec/bilirec/releases) 页面下载预编译的二进制文件，选择适合你系统的版本:
 
-- `bilirec-amd64`：适用于 x86_64 架构的 Linux 系统
-- `bilirec-arm64`：适用于 ARM64 架构的 Linux 系统
-- `bilirec-windows`：适用于 Windows 系统（包含 .exe 后缀）
-- `libbilirec.so`：适用于 Android（由 `cmd/androidlib` 以 c-shared 方式编译）
+- `bilirec-linux-amd64`：适用于 x86_64 架构的 Linux 系统
+- `bilirec-linux-arm64`：适用于 ARM64 架构的 Linux 系统
+- `bilirec-windows.exe`：适用于 Windows 系统
+- `libbilirec-android-arm64-v8a.so` / `libbilirec-android-x86_64.so`：适用于 Android（由 `cmd/androidlib` 以 c-shared 方式编译）
 
 启动服务：
 
 ```bash
 # 如果你下载了 amd64 版本
-./bilirec-amd64
+./bilirec-linux-amd64
 # 或者如果你下载了 arm64 版本
-./bilirec-arm64
+./bilirec-linux-arm64
 ```
 
 如果你是 Windows 用户，直接双击 `bilirec-windows.exe` 启动服务。
