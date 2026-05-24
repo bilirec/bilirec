@@ -139,7 +139,7 @@ func (c *Client) refreshCookiesIfRequired() error {
 			return nil, fmt.Errorf("获取 cookie 刷新信息失败：%v", err)
 		}
 		if !info.Refresh {
-			logger.Info("Cookie 无需刷新")
+			logger.Debug("Cookie 无需刷新")
 			return nil, nil
 		}
 		csrfResult, err := c.GetWebCookieRefreshCsrf(bili.GetWebCookieRefreshCsrfParam{
