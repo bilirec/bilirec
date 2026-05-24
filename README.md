@@ -263,6 +263,7 @@ Android 库导出两个方法：
 | `PUBLIC_BASE_URL` | 后端公开基址（仅用于生成预签名 URL，需为完整 URL） | (空字符串) |
 | `FRONTEND_URL` | 前端 URL（用于 CORS） | `http://localhost:8080` |
 | `WEBPUSH_SUBSCRIBER` | Web Push VAPID 的 subject（建议使用 `mailto:you@example.com`） | `mailto:webpush@example.com` |
+| `NOTIFY_SSE_TOKEN` | SSE 通知订阅 token（用于 `/notify/sse?token=...`；为空则禁用 SSE） | (空字符串) |
 | `USERNAME` | 可选：启用用户名/密码认证时的用户名 | (未设置) |
 | `PASSWORD` | 可选：启用用户名/密码认证时的密码 | (未设置) |
 | `VIEWER_USERNAME` | 可选：仅查看权限的访客用户名 | (未设置) |
@@ -979,6 +980,18 @@ curl -s -b cookies.txt http://127.0.0.1:8080/auth/bilibili/status
 
   可通过 query 参数 `endpoint` 或 JSON body 提供 endpoint。
 
+- **SSE 实时订阅（Android backend / libbilirec.so 推荐）**
+
+  ```http
+  GET /notify/sse?token=YOUR_NOTIFY_SSE_TOKEN
+  Accept: text/event-stream
+  ```
+
+  - 该端点用于无法依赖 Google FCM 的场景（例如中国大陆网络环境），可由 Android 后端应用通过 SSE 获取通知，再由 Android 创建本地通知。
+  - `token` 必填，来源于环境变量 `NOTIFY_SSE_TOKEN`。
+  - 当 `NOTIFY_SSE_TOKEN` 为空时，SSE 端点返回 `503`（禁用状态）。
+  - 建议通过 HTTPS 使用 SSE，避免 token 在传输链路中明文暴露。
+
 ## 开发与调试
 
 - **启用调试**：设置环境变量 `DEBUG=true` 启用调试模式，服务器启动时会在日志中打印一个临时十六进制令牌（hex token）。
@@ -1002,7 +1015,7 @@ curl -s -b cookies.txt http://127.0.0.1:8080/auth/bilibili/status
 │   ├── controllers/                  # HTTP 控制器
 │   │   ├── convert/                  # 转换任务管理
 │   │   ├── file/                     # 文件管理
-│   │   ├── notify/                   # 实时通知（Web Push）
+│   │   ├── notify/                   # 实时通知（Web Push + SSE）
 │   │   ├── record/                   # 录制管理
 │   │   └── room/                     # 房间信息与订阅
 │   ├── modules/                      # 核心模块
@@ -1055,7 +1068,7 @@ curl -s -b cookies.txt http://127.0.0.1:8080/auth/bilibili/status
 - **自动恢复**: 当流中断时自动重连，详见 [`recorder.Service`](internal/services/recorder/recorder.go)
 - **自动分段轮转（HTTP-FLV）**: 仅适用于 HTTP-FLV 格式；当检测到 FLV 文件头变更（直播 PK 等分辨率切换）时，自动轮转到新的分段文件并重写文件头，降低画质切换导致输出异常的风险。HLS-TS / HLS-fMP4 格式不使用文件轮转，不连续性由 HLS 播放列表层自然处理
 - **自动录制**: 为订阅的直播间配置自动开播录制，后台定期检查直播间状态并自动启动录制，详见 [`subcheck.Service`](internal/services/subcheck/check.go)
-- **实时通知**: 通过 Web Push 推送直播开播通知和自动录制状态，详见 [`notify.Service`](internal/services/notify/notify.go)
+- **实时通知**: 支持 Web Push 与 SSE 两种通知方式，推送直播开播通知和自动录制状态，详见 [`notify.Service`](internal/services/notify/notify.go)
 - **内存池**: 使用 [`pool.BufferPool`](pkg/pool/pool.go) 减少内存分配
 - **SWR 缓存**: 房间信息缓存采用 Stale-While-Revalidate 策略（[`pkg/swr`](pkg/swr/)），结合 singleflight 去重，缓存命中时立即返回旧数据并在后台异步刷新，软 TTL 5 分钟、硬 TTL 30 分钟，有效降低 Bilibili API 请求压力
 - **低资源占用**: 设计注重低内存，低SD卡磨損和低 CPU 使用，适合树莓派等资源受限设备

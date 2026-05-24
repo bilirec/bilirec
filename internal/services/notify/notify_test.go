@@ -1,10 +1,12 @@
 package notify_test
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"runtime"
 	"testing"
+	"time"
 
 	webpush "github.com/SherClockHolmes/webpush-go"
 	"github.com/eric2788/bilirec/internal/modules/config"
@@ -104,6 +106,63 @@ func TestService_WebPushConfigAndSubscriptions(t *testing.T) {
 	if err := svc.RemoveWebPushSubscription("https://push.example/send/xyz"); err != nil {
 		t.Fatalf("expected removing non-existing subscription to succeed but got error: %v", err)
 	}
+}
+
+func TestService_PublishLiveStateFanoutToSSE(t *testing.T) {
+	setEnv(t, "NOTIFY_SSE_TOKEN", "sse-token")
+	svc := newNotifyService(t, "")
+
+	clientID, ch, err := svc.SubscribeSSE("sse-token")
+	if err != nil {
+		t.Fatalf("expected subscribing sse to succeed but got error: %v", err)
+	}
+	defer svc.UnsubscribeSSE(clientID)
+
+	svc.PublishLiveState(7788, "tester", "room title", ns.LiveStateLiveDetected)
+
+	select {
+	case payload := <-ch:
+		var event ns.Event
+		if err := json.Unmarshal(payload, &event); err != nil {
+			t.Fatalf("expected valid event json but got error: %v", err)
+		}
+		if event.RoomID != 7788 {
+			t.Fatalf("expected room id 7788 but got %d", event.RoomID)
+		}
+		if event.Type != string(ns.LiveStateLiveDetected) {
+			t.Fatalf("expected type %s but got %s", ns.LiveStateLiveDetected, event.Type)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("expected SSE payload but timed out")
+	}
+}
+
+func TestService_SubscribeSSEValidation(t *testing.T) {
+	t.Run("disabled", func(t *testing.T) {
+		svc := newNotifyService(t, "")
+		_, _, err := svc.SubscribeSSE("token")
+		if err != ns.ErrSSEDisabled {
+			t.Fatalf("expected ErrSSEDisabled but got %v", err)
+		}
+	})
+
+	t.Run("missing token", func(t *testing.T) {
+		setEnv(t, "NOTIFY_SSE_TOKEN", "server-token")
+		svc := newNotifyService(t, "")
+		_, _, err := svc.SubscribeSSE("")
+		if err != ns.ErrSSETokenMissing {
+			t.Fatalf("expected ErrSSETokenMissing but got %v", err)
+		}
+	})
+
+	t.Run("invalid token", func(t *testing.T) {
+		setEnv(t, "NOTIFY_SSE_TOKEN", "server-token")
+		svc := newNotifyService(t, "")
+		_, _, err := svc.SubscribeSSE("bad-token")
+		if err != ns.ErrSSETokenInvalid {
+			t.Fatalf("expected ErrSSETokenInvalid but got %v", err)
+		}
+	})
 }
 
 func repoRootFromThisFile(tb testing.TB) string {

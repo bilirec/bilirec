@@ -1,18 +1,22 @@
 ﻿package notify
 
 import (
+	"errors"
 	"strings"
+	"time"
 
 	webpush "github.com/SherClockHolmes/webpush-go"
 	ns "github.com/eric2788/bilirec/internal/services/notify"
 	"github.com/gofiber/fiber/v3"
+	"github.com/gofiber/fiber/v3/middleware/sse"
 	"github.com/sirupsen/logrus"
 )
 
 var logger = logrus.WithField("controller", "notify")
 
 type Controller struct {
-	notifySvc *ns.Service
+	notifySvc  *ns.Service
+	sseHandler fiber.Handler
 }
 
 func NewController(app *fiber.App, notifySvc *ns.Service) *Controller {
@@ -21,6 +25,7 @@ func NewController(app *fiber.App, notifySvc *ns.Service) *Controller {
 	group.Get("/public-key", c.webPushPublicKey)
 	group.Post("/subscribe", c.webPushSubscribe)
 	group.Delete("/subscribe", c.webPushUnsubscribe)
+	group.Get("/sse", c.sse)
 	return c
 }
 
@@ -110,4 +115,64 @@ func (c *Controller) webPushUnsubscribe(ctx fiber.Ctx) error {
 	}
 
 	return ctx.SendStatus(fiber.StatusNoContent)
+}
+
+// @Summary Subscribe notification stream via SSE
+// @Description Subscribe to live notification events via Server-Sent Events with query token
+// @Tags notify
+// @Param token query string true "SSE access token"
+// @Produce text/event-stream
+// @Success 200 {string} string "SSE stream opened"
+// @Failure 401 {string} string "Unauthorized"
+// @Failure 503 {string} string "SSE disabled"
+// @Router /notify/sse [get]
+func (c *Controller) sse(ctx fiber.Ctx) error {
+	clientID, ch, err := c.notifySvc.SubscribeSSE(strings.TrimSpace(ctx.Query("token")))
+	if err != nil {
+		return c.mapSSEError(err)
+	}
+	ctx.Locals("sseClientID", clientID)
+	ctx.Locals("sseChan", ch)
+	return c.sseHandle(ctx)
+}
+
+func (c *Controller) sseHandle(ctx fiber.Ctx) error {
+	if c.sseHandler == nil {
+		c.sseHandler = sse.New(sse.Config{
+			HeartbeatInterval: 25 * time.Second,
+			Handler: func(ctx fiber.Ctx, stream *sse.Stream) error {
+				clientID := ctx.Locals("sseClientID").(uint64)
+				ch := ctx.Locals("sseChan").(<-chan []byte)
+
+				defer c.notifySvc.UnsubscribeSSE(clientID)
+				_ = stream.Comment("connected")
+
+				for {
+					select {
+					case payload, ok := <-ch:
+						if !ok {
+							return nil // Channel closed, end stream
+						}
+						if err := stream.Event(sse.Event{Data: payload}); err != nil {
+							return err
+						}
+					case <-stream.Done():
+						return stream.Err() // Client disconnected, end stream
+					}
+				}
+			},
+		})
+	}
+	return c.sseHandler(ctx)
+}
+
+func (c *Controller) mapSSEError(err error) error {
+	switch {
+	case errors.Is(err, ns.ErrSSEDisabled):
+		return fiber.NewError(fiber.StatusServiceUnavailable, err.Error())
+	case errors.Is(err, ns.ErrSSETokenMissing), errors.Is(err, ns.ErrSSETokenInvalid):
+		return fiber.NewError(fiber.StatusUnauthorized, err.Error())
+	default:
+		return fiber.NewError(fiber.StatusInternalServerError, err.Error())
+	}
 }

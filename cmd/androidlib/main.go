@@ -39,6 +39,7 @@ type StartConfig struct {
 	OutputDir   string `json:"outputDir"`
 	Username    string `json:"username"`
 	Password    string `json:"password"`
+	SSEToken    string `json:"sseToken"`
 }
 
 //export Start
@@ -126,6 +127,7 @@ func start(config StartConfig) C.int {
 	_ = os.Setenv("HOST", config.Host)
 	_ = os.Setenv("PORT", strconv.Itoa(config.Port))
 	_ = os.Setenv("FRONTEND_URL", config.FrontendURL)
+	_ = os.Setenv("NOTIFY_SSE_TOKEN", config.SSEToken) // for android local notifications
 
 	_ = os.Setenv("BILIBILI_LOGIN_MODE", "controller") // avoid the process getting stuck in foreground service
 	_ = os.Setenv("FRP_ENABLED", "false")              // not expected to expose to public network in android

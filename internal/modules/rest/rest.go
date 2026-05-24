@@ -144,6 +144,7 @@ func provider(ls fx.Lifecycle, cfg *config.Config) *fiber.App {
 				// paths that don't require JWT authentication
 				exemptPaths := []string{
 					"/files/tempdownload",
+					"/notify/sse",
 				}
 				// allow CORS preflight requests
 				if c.Method() == "OPTIONS" {
