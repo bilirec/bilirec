@@ -185,7 +185,10 @@ func provider(ls fx.Lifecycle, cfg *config.Config) *fiber.App {
 			},
 			func(ctx context.Context) error {
 				logger.Info("正在停止服务器")
-				return app.ShutdownWithContext(ctx)
+				if err := app.ShutdownWithContext(ctx); err != nil {
+					logger.Warnf("服务器关闭错误：%v", err)
+				}
+				return nil
 			},
 		),
 	)

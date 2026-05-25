@@ -29,6 +29,8 @@ var (
 	androidApp *fx.App
 	androidLog *os.File
 	appMu      sync.Mutex
+
+	devNull *os.File
 )
 
 type StartConfig struct {
@@ -69,24 +71,25 @@ func Start(configJson *C.char) C.int {
 func Stop() C.int {
 	appMu.Lock()
 	defer appMu.Unlock()
+	defer cleanupLogging()
 
 	if androidApp == nil {
 		return 0
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
+	exitCode := 0
 	if err := androidApp.Stop(ctx); err != nil {
-		return 1
+		logrus.Errorf("failed to stop app: %v\n", err)
+		exitCode = 1
 	}
 
-	if err := cleanupLogging(); err != nil {
-		return 1
-	}
+	logrus.Infof("Android App 结束并返回了 exit code=%v", exitCode)
 
 	androidApp = nil
-	return 0
+	return C.int(exitCode)
 }
 
 // private functions
@@ -153,8 +156,8 @@ func start(config StartConfig) C.int {
 		return 1
 	}
 
-	app := bootstrap.NewApp()
-	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	app := bootstrap.NewAndroidApp()
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
 	if err := app.Start(ctx); err != nil {
@@ -178,6 +181,13 @@ func setupFileLogging(basePath string) error {
 		return err
 	}
 
+	if devNull != nil {
+		devNull.Close()
+		devNull = nil
+	}
+
+	os.Stdout = file
+	os.Stderr = file
 	// Set logrus to write to file with timestamp and level
 	logrus.SetFormatter(&logrus.TextFormatter{
 		TimestampFormat: "2006-01-02 15:04:05",
@@ -194,6 +204,11 @@ func cleanupLogging() error {
 	if androidLog == nil {
 		return nil
 	}
+	if devNull == nil {
+		devNull, _ = os.OpenFile(os.DevNull, os.O_WRONLY, 0644)
+	}
+	os.Stdout = devNull
+	os.Stderr = devNull
 	logrus.SetOutput(io.Discard)
 	if err := androidLog.Close(); err != nil {
 		return err

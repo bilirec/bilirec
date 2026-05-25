@@ -73,3 +73,11 @@ func NewApp() *fx.App {
 		fx.StopTimeout(1*time.Minute),
 	)
 }
+
+func NewAndroidApp() *fx.App {
+	return fx.New(
+		MainModule(),
+		fx.StartTimeout(10*time.Second),
+		fx.StopTimeout(10*time.Second),
+	)
+}
