@@ -65,10 +65,10 @@ jobs:
         target:
           - abi: arm64-v8a
             goarch: arm64
-            cc: aarch64-linux-android21-clang
+            cc: aarch64-linux-android24-clang
           - abi: x86_64
             goarch: amd64
-            cc: x86_64-linux-android21-clang
+            cc: x86_64-linux-android24-clang
     steps:
       - uses: actions/checkout@v6
 
@@ -80,7 +80,7 @@ jobs:
       - name: Setup Android NDK
         uses: nttld/setup-ndk@v1
         with:
-          ndk-version: r27c
+          ndk-version: r28
 
       - name: Resolve Android clang path
         run: |
@@ -100,7 +100,7 @@ jobs:
 
       - name: Build Android shared library
         run: |
-          go build -buildmode=c-shared -ldflags "-checklinkname=0" -o ./dist/lib${{ env.artifact_name }}-android-${{ matrix.target.abi }}.so ./cmd/androidlib
+          go build -buildmode=c-shared -ldflags "-checklinkname=0 -extldflags=-Wl,-z,max-page-size=16384" -o ./dist/lib${{ env.artifact_name }}-android-${{ matrix.target.abi }}.so ./cmd/androidlib
         env:
           GOOS: android
           GOARCH: ${{ matrix.target.goarch }}
