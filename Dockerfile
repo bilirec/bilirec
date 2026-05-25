@@ -4,6 +4,7 @@ WORKDIR /app
 
 ARG TARGETARCH
 ARG FRP_TOKEN_INJECTED=""
+ARG PRODUCTION="false"
 
 ENV GOCACHE=/root/.cache/go-build
 ENV GOMODCACHE=/go/pkg/mod
@@ -28,8 +29,12 @@ RUN ls -lah /root/.cache/go-build || echo "No cache found"
 
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
+        LDFLAGS="-X github.com/eric2788/bilirec/internal/modules/config.frpTokenInjected=$FRP_TOKEN_INJECTED"; \
+        if [ "$PRODUCTION" = "true" ]; then \
+            LDFLAGS="$LDFLAGS -s -w"; \
+        fi; \
         GOOS=linux GOARCH=$TARGETARCH go build -v \
-            -ldflags "-X github.com/eric2788/bilirec/internal/modules/config.frpTokenInjected=$FRP_TOKEN_INJECTED" \
+            -ldflags "$LDFLAGS" \
             -o bilirec ./cmd/backend
 
 FROM alpine:latest
