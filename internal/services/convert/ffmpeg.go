@@ -215,7 +215,7 @@ func (f *ffmpegConvertManager) processTask(ctx context.Context, queue *TaskQueue
 		"-i",
 		queue.InputPath,
 		"-map",
-		"0:v",
+		"0:v?",
 		"-map",
 		"0:a?",
 		"-movflags",

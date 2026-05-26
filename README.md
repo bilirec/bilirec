@@ -260,6 +260,7 @@ Android 库导出两个方法：
 | `SECRET_DIR` | Cookie 和 Token 保存目录 | `secrets` |
 | `CONVERT_TO_MP4` | 录制完成后是否将可转换源文件（如 FLV/TS）转为 MP4 | `false` |
 | `DELETE_SOURCE_AFTER_CONVERT` | 转换后是否删除原始源文件 | `false` |
+| `NO_CONVERT_IF_INVALID` | 当源文件缺少音视频流时是否停止转码；`true` 时会阻止转换并返回错误，`false` 时只记录警告并继续转换。若当前系统未安装 `ffprobe`，原始视频检查会自动放行，转换仍会继续执行。 | `false` |
 | `PUBLIC_BASE_URL` | 后端公开基址（仅用于生成预签名 URL，需为完整 URL） | (空字符串) |
 | `FRONTEND_URL` | 前端 URL（用于 CORS） | `http://localhost:8080` |
 | `WEBPUSH_SUBSCRIBER` | Web Push VAPID 的 subject（建议使用 `mailto:you@example.com`） | `mailto:webpush@example.com` |
@@ -368,6 +369,7 @@ export MAX_RECOVERY_ATTEMPTS=5
 export MAX_RETRY_MINUTES=10
 export OUTPUT_DIR=/path/to/records
 export SECRET_DIR=/path/to/secrets
+export NO_CONVERT_IF_INVALID=false
 export DATABASE_DIR=/path/to/database
 export CONVERT_TO_MP4=false
 export DELETE_SOURCE_AFTER_CONVERT=false

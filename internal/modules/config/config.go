@@ -46,6 +46,7 @@ type Config struct {
 
 	ConvertToMp4             bool
 	DeleteSourceAfterConvert bool
+	NoConvertIfInvalid       bool
 	CloudConvertThreshold    int64
 	CloudConvertApiKey       string
 
@@ -151,6 +152,7 @@ func provider(lc fx.Lifecycle) (*Config, error) {
 		CloudConvertThreshold:              utils.MustAtoi64(utils.EmptyOrElse(os.Getenv("CLOUDCONVERT_THRESHOLD"), "1073741824")), // 1 GB
 		CloudConvertApiKey:                 os.Getenv("CLOUDCONVERT_API_KEY"),                                                      // empty to disable
 		ConvertToMp4:                       os.Getenv("CONVERT_TO_MP4") == "true" || os.Getenv("CONVERT_FLV_TO_MP4") == "true",
+		NoConvertIfInvalid:                 os.Getenv("NO_CONVERT_IF_INVALID") == "true",
 		DeleteSourceAfterConvert:           os.Getenv("DELETE_SOURCE_AFTER_CONVERT") == "true" || os.Getenv("DELETE_FLV_AFTER_CONVERT") == "true",
 		FrontendURL:                        url,
 		PublicBaseUrl:                      utils.EmptyOrElse(os.Getenv("PUBLIC_BASE_URL"), utils.EmptyOrElse(os.Getenv("BACKEND_HOST"), "")),

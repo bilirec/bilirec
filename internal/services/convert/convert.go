@@ -30,15 +30,18 @@ type Service struct {
 	managers       map[string]ConvertManager
 	ctx            context.Context
 	db             *db.Client
+
+	noConvertIfInvalid bool
 }
 
 func NewService(ls fx.Lifecycle, cfg *config.Config, pathSvc *path.Service) *Service {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	svc := &Service{
-		cloudthreshold: cfg.CloudConvertThreshold,
-		managers:       make(map[string]ConvertManager),
-		ctx:            ctx,
+		cloudthreshold:     cfg.CloudConvertThreshold,
+		managers:           make(map[string]ConvertManager),
+		ctx:                ctx,
+		noConvertIfInvalid: cfg.NoConvertIfInvalid,
 	}
 
 	if cfg.CloudConvertApiKey != "" {
@@ -91,6 +94,12 @@ func (s *Service) Enqueue(path, format string, deleteSource bool) (*TaskQueue, e
 		manager = s.managers["cloudconvert"]
 	} else {
 		manager = s.managers["ffmpeg"]
+	}
+	if pass, err := s.checkOriginalFile(path); err != nil {
+		if !pass && s.noConvertIfInvalid {
+			return nil, err
+		}
+		logger.Warn(err)
 	}
 	return manager.Enqueue(path, outputFormat, format, deleteSource)
 }
