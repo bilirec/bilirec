@@ -14,6 +14,7 @@ import (
 	"github.com/eric2788/bilirec/internal/modules/bilibili"
 	"github.com/eric2788/bilirec/internal/modules/config"
 	"github.com/eric2788/bilirec/internal/services/convert"
+	"github.com/eric2788/bilirec/internal/services/notify"
 	"github.com/eric2788/bilirec/internal/services/path"
 	"github.com/eric2788/bilirec/internal/services/recorder"
 	"github.com/eric2788/bilirec/internal/services/stream"
@@ -40,6 +41,7 @@ func TestFlvRecord(t *testing.T) {
 		fx.Provide(path.NewService),
 		fx.Provide(stream.NewService),
 		fx.Provide(convert.NewService),
+		fx.Provide(notify.NewService),
 		fx.Provide(recorder.NewService),
 		fx.Populate(&recorderService),
 	)
@@ -105,6 +107,7 @@ func TestTsRecord(t *testing.T) {
 		fx.Provide(path.NewService),
 		fx.Provide(stream.NewService),
 		fx.Provide(convert.NewService),
+		fx.Provide(notify.NewService),
 		fx.Provide(recorder.NewService),
 		fx.Populate(&recorderService),
 	)
@@ -170,6 +173,7 @@ func TestFmp4Record(t *testing.T) {
 		fx.Provide(path.NewService),
 		fx.Provide(stream.NewService),
 		fx.Provide(convert.NewService),
+		fx.Provide(notify.NewService),
 		fx.Provide(recorder.NewService),
 		fx.Populate(&recorderService),
 	)
@@ -237,6 +241,7 @@ func TestFlvRecord_AutoStopAfterDuration(t *testing.T) {
 		fx.Provide(path.NewService),
 		fx.Provide(stream.NewService),
 		fx.Provide(convert.NewService),
+		fx.Provide(notify.NewService),
 		fx.Provide(recorder.NewService),
 		fx.Populate(&recorderService),
 	)
