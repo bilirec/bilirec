@@ -225,8 +225,11 @@ func (f *ffmpegConvertManager) processTask(ctx context.Context, queue *TaskQueue
 		queue.OutputPath,
 	)
 
-	cmd.Stdout = taskLog.WriterLevel(logrus.DebugLevel)
-	cmd.Stderr = taskLog.WriterLevel(logrus.DebugLevel)
+	ffmpegLogger := taskLog.WriterLevel(logrus.DebugLevel)
+	defer ffmpegLogger.Close()
+
+	cmd.Stdout = ffmpegLogger
+	cmd.Stderr = ffmpegLogger
 
 	if err := cmd.Run(); err != nil {
 		return err
