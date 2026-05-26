@@ -15,6 +15,7 @@ type ConvertManager interface {
 	Enqueue(inputPath, outputPath, format string, deleteSource bool) (*TaskQueue, error)
 	Cancel(taskID string) error
 	ListInProgress() ([]*TaskQueue, error)
+	InProgressSize() int // InProgressSize returns the number of tasks currently in progress, mainly for janitor service to check if the manager is idle.
 }
 
 type TaskQueue struct {

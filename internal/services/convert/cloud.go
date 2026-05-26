@@ -165,6 +165,11 @@ func (c *cloudConvertManager) ListInProgress() ([]*TaskQueue, error) {
 	return queues, err
 }
 
+func (c *cloudConvertManager) InProgressSize() int {
+	count, _ := c.bucket.Count()
+	return count
+}
+
 func (c *cloudConvertManager) checkTaskStatusPeriodically(ctx context.Context) {
 	ticker := time.NewTicker(time.Duration(config.ReadOnly.CloudConvertCheckIntervalSecs()) * time.Second)
 	defer ticker.Stop()

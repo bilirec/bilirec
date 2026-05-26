@@ -36,6 +36,12 @@ func (r *Service) ListRecording() []int {
 	return rooms
 }
 
+// ListRecordingSize returns the number of bytes written for the recording of the given room ID.
+// it avoids slice copy by directly accessing the atomic uint64 in the Info struct.
+func (r *Service) ListRecordingSize() int {
+	return r.recording.Size()
+}
+
 func (r *Service) GetStats(roomId int) (*Stats, bool) {
 	info, ok := r.recording.Load(roomId)
 	if !ok {

@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
-	"runtime/debug"
 	"sort"
 	"sync"
 	"time"
@@ -86,8 +84,6 @@ func NewService(
 	}
 
 	cv.SetActiveRecordingsGetter(s.recording.Size)
-
-	go s.backgroundMaintenance(ctx)
 
 	lc.Append(fx.StopHook(func() {
 		cancel()
@@ -634,41 +630,6 @@ func (r *Service) finalize(roomId int, outputPath string) {
 	}
 }
 
-func (r *Service) backgroundMaintenance(ctx context.Context) {
-	ticker := time.NewTicker(5 * time.Minute)
-	defer ticker.Stop()
-
-	lastActiveCount := 0
-
-	for {
-		select {
-		case <-ticker.C:
-			activeCount := r.recording.Size()
-
-			if activeCount == 0 && lastActiveCount > 0 {
-				// Just transitioned from active to idle - cleanup
-				logger.Info("当前无进行中的录制，执行维护性 GC")
-
-				var m runtime.MemStats
-				runtime.ReadMemStats(&m)
-				logger.Debugf("Before cleanup: Alloc=%d MB, Sys=%d MB, NumGC=%d",
-					m.Alloc/1024/1024, m.Sys/1024/1024, m.NumGC)
-
-				runtime.GC()
-				debug.FreeOSMemory()
-
-				runtime.ReadMemStats(&m)
-				logger.Infof("清理后：Alloc=%d MB，Sys=%d MB",
-					m.Alloc/1024/1024, m.Sys/1024/1024)
-			}
-
-			lastActiveCount = activeCount
-
-		case <-ctx.Done():
-			return
-		}
-	}
-}
 
 func (r *Service) stopAndPublish(roomId int, info *Info) {
 	r.Stop(roomId)

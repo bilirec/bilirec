@@ -17,6 +17,7 @@ import (
 	co "github.com/eric2788/bilirec/internal/services/convert"
 	ex "github.com/eric2788/bilirec/internal/services/expose"
 	fi "github.com/eric2788/bilirec/internal/services/file"
+	ja "github.com/eric2788/bilirec/internal/services/janitor"
 	no "github.com/eric2788/bilirec/internal/services/notify"
 	pa "github.com/eric2788/bilirec/internal/services/path"
 	re "github.com/eric2788/bilirec/internal/services/recorder"
@@ -43,6 +44,7 @@ func MainModule() fx.Option {
 		fx.Provide(no.NewService),
 		fx.Provide(fi.NewService),
 
+		fx.Invoke(ja.NewService),
 		fx.Invoke(ex.NewService),
 		fx.Invoke(sc.NewService),
 

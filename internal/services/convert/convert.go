@@ -148,6 +148,17 @@ func (s *Service) ListInProgress() ([]*TaskQueue, error) {
 	return allQueues, nil
 }
 
+func (s *Service) InProgressSize() int {
+	if err := s.checkAvailableManagers(); err != nil {
+		return 0
+	}
+	var count int
+	for _, manager := range s.managers {
+		count += manager.InProgressSize()
+	}
+	return count
+}
+
 func (s *Service) SetActiveRecordingsGetter(getter GetActiveRecordings) {
 	if _, ok := s.managers["ffmpeg"]; ok {
 		return

@@ -99,6 +99,11 @@ func (f *ffmpegConvertManager) ListInProgress() ([]*TaskQueue, error) {
 	return queues, err
 }
 
+func (f *ffmpegConvertManager) InProgressSize() int {
+	count, _ := f.bucket.Count()
+	return count
+}
+
 func (f *ffmpegConvertManager) runTaskPeriodically(ctx context.Context) {
 	ticker := time.NewTicker(time.Duration(config.ReadOnly.FFmpegCheckIntervalSecs()) * time.Second)
 	defer ticker.Stop()
