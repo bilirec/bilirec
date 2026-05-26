@@ -7,24 +7,38 @@ import (
 )
 
 type Bucket struct {
-	db   *bbolt.DB
+	*Client
 	Name []byte
 }
 
 func (c *Client) Bucket(name string) (*Bucket, error) {
-	if err := c.BoltDB.Update(func(tx *bbolt.Tx) error {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	if c.closed {
+		return nil, fmt.Errorf("database is closed")
+	}
+
+	if err := c.db.Update(func(tx *bbolt.Tx) error {
 		_, err := tx.CreateBucketIfNotExists([]byte(name))
 		return err
 	}); err != nil {
 		return nil, err
 	}
 	return &Bucket{
-		db:   c.BoltDB,
-		Name: []byte(name),
+		Client: c,
+		Name:   []byte(name),
 	}, nil
 }
 
 func (b *Bucket) Update(fn func(bucket *bbolt.Bucket) error) error {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+
+	if b.closed {
+		return fmt.Errorf("database is closed")
+	}
+
 	return b.db.Update(func(tx *bbolt.Tx) error {
 		bucket := tx.Bucket(b.Name)
 		if bucket == nil {
@@ -35,6 +49,13 @@ func (b *Bucket) Update(fn func(bucket *bbolt.Bucket) error) error {
 }
 
 func (b *Bucket) View(fn func(bucket *bbolt.Bucket) error) error {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+
+	if b.closed {
+		return fmt.Errorf("database is closed")
+	}
+
 	return b.db.View(func(tx *bbolt.Tx) error {
 		bucket := tx.Bucket(b.Name)
 		if bucket == nil {
@@ -108,11 +129,18 @@ func (b *Bucket) Count() (int, error) {
 }
 
 func (b *Bucket) DeleteBucket() error {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+
+	if b.closed {
+		return fmt.Errorf("database is closed")
+	}
+
 	return b.db.Update(func(tx *bbolt.Tx) error {
 		return tx.DeleteBucket(b.Name)
 	})
 }
 
 func (b *Bucket) Close() error {
-	return b.db.Close()
+	return b.Client.Close()
 }

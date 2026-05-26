@@ -4,20 +4,24 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 
 	"go.etcd.io/bbolt"
 )
 
 type Client struct {
-	BoltDB *bbolt.DB
+	db     *bbolt.DB
+	mu     sync.RWMutex
+	closed bool
 }
 
 // DefaultOptions returns the standard bbolt options used across the application
 func DefaultOptions() *bbolt.Options {
 	return &bbolt.Options{
-		PageSize:     16 * 1024,
-		NoGrowSync:   true,
-		FreelistType: bbolt.FreelistArrayType,
+		PageSize:       16 * 1024,
+		NoGrowSync:     true,
+		FreelistType:   bbolt.FreelistArrayType,
+		NoFreelistSync: true,
 	}
 }
 
@@ -38,9 +42,15 @@ func OpenWithOptions(dbPath string, opts *bbolt.Options) (*Client, error) {
 		return nil, fmt.Errorf("打开数据库失败：%w", err)
 	}
 
-	return &Client{BoltDB: db}, nil
+	return &Client{db: db}, nil
 }
 
 func (c *Client) Close() error {
-	return c.BoltDB.Close()
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.closed {
+		return nil
+	}
+	c.closed = true
+	return c.db.Close()
 }
