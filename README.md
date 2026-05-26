@@ -1,6 +1,6 @@
-# Bilirec - Bilibili 直播录制后端
+# Bilirec
 
-一个专为树莓派优化的 Bilibili 直播录制后端。
+一个专为低配设备优化的 Bilibili 直播录制后端。
 
 ## 目录
 
