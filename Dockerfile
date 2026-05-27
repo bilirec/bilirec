@@ -40,9 +40,10 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 FROM alpine:latest
 WORKDIR /app
 
-RUN apk update && \
-    apk add --no-cache ffmpeg \
-    && rm -rf /var/cache/apk/*
+COPY --from=mwader/static-ffmpeg:8.1.1 /ffmpeg /usr/local/bin/
+COPY --from=mwader/static-ffmpeg:8.1.1 /ffprobe /usr/local/bin/
+
+RUN ffmpeg -version && ffprobe -version
 
 COPY --from=build /usr/share/zoneinfo /usr/share/zoneinfo
 COPY --from=build /app/bilirec .
