@@ -14,5 +14,6 @@ dist
 *.txt
 *.py
 *.exe
+*.log
 
 .env.local
