@@ -8,10 +8,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/eric2788/bilirec/internal/modules/config"
-	"github.com/eric2788/bilirec/internal/services/file"
-	"github.com/eric2788/bilirec/internal/services/path"
-	"github.com/eric2788/bilirec/utils"
+	"github.com/bilirec/bilirec/internal/modules/config"
+	"github.com/bilirec/bilirec/internal/services/file"
+	"github.com/bilirec/bilirec/internal/services/path"
+	"github.com/bilirec/bilirec/utils"
 	"go.uber.org/fx"
 	"go.uber.org/fx/fxtest"
 )

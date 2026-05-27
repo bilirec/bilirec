@@ -3,9 +3,9 @@ package rest
 import (
 	"crypto/subtle"
 
-	"github.com/eric2788/bilirec/internal/modules/config"
-	"github.com/eric2788/bilirec/pkg/ds"
-	"github.com/eric2788/bilirec/utils"
+	"github.com/bilirec/bilirec/internal/modules/config"
+	"github.com/bilirec/bilirec/pkg/ds"
+	"github.com/bilirec/bilirec/utils"
 	"github.com/gofiber/fiber/v3"
 	"golang.org/x/crypto/bcrypt"
 )

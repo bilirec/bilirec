@@ -7,8 +7,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/eric2788/bilirec/internal/services/convert"
-	"github.com/eric2788/bilirec/internal/services/recorder"
+	"github.com/bilirec/bilirec/internal/services/convert"
+	"github.com/bilirec/bilirec/internal/services/recorder"
 	"github.com/sirupsen/logrus"
 	"go.uber.org/fx"
 )

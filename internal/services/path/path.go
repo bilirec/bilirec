@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/eric2788/bilirec/internal/modules/config"
-	"github.com/eric2788/bilirec/pkg/signeddownload"
-	"github.com/eric2788/bilirec/utils"
+	"github.com/bilirec/bilirec/internal/modules/config"
+	"github.com/bilirec/bilirec/pkg/signeddownload"
+	"github.com/bilirec/bilirec/utils"
 	"github.com/sirupsen/logrus"
 )
 

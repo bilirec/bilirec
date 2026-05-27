@@ -4,7 +4,7 @@
 // @termsOfService http://swagger.io/terms/
 
 // @contact.name API Support
-// @contact.url http://github.com/eric2788/bilirec
+// @contact.url http://github.com/bilirec/bilirec
 
 // @license.name MIT
 // @license.url https://opensource.org/licenses/MIT
@@ -30,9 +30,9 @@ import (
 	"sync"
 	"time"
 
-	_ "github.com/eric2788/bilirec/docs"
-	"github.com/eric2788/bilirec/internal/modules/config"
-	"github.com/eric2788/bilirec/utils"
+	_ "github.com/bilirec/bilirec/docs"
+	"github.com/bilirec/bilirec/internal/modules/config"
+	"github.com/bilirec/bilirec/utils"
 
 	"github.com/sirupsen/logrus"
 	"go.uber.org/fx"

@@ -5,13 +5,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/eric2788/bilirec/internal/modules/bilibili"
-	"github.com/eric2788/bilirec/internal/modules/rest"
-	"github.com/eric2788/bilirec/internal/services/recorder"
+	"github.com/bilirec/bilirec/internal/modules/bilibili"
+	"github.com/bilirec/bilirec/internal/modules/rest"
+	"github.com/bilirec/bilirec/internal/services/recorder"
 	"github.com/gofiber/fiber/v3"
 	"github.com/sirupsen/logrus"
 
-	"github.com/eric2788/bilirec/utils"
+	"github.com/bilirec/bilirec/utils"
 )
 
 var logger = logrus.WithField("controller", "record")

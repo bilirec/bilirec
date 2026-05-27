@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/eric2788/bilirec/internal/processors"
+	"github.com/bilirec/bilirec/internal/processors"
 	"github.com/sirupsen/logrus"
 )
 

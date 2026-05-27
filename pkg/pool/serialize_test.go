@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/eric2788/bilirec/pkg/pool"
+	"github.com/bilirec/bilirec/pkg/pool"
 )
 
 type TaskQueue struct {

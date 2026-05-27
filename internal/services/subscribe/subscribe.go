@@ -6,9 +6,9 @@ import (
 	"os"
 	"strconv"
 
-	"github.com/eric2788/bilirec/internal/modules/config"
-	"github.com/eric2788/bilirec/internal/services/room"
-	"github.com/eric2788/bilirec/pkg/db"
+	"github.com/bilirec/bilirec/internal/modules/config"
+	"github.com/bilirec/bilirec/internal/services/room"
+	"github.com/bilirec/bilirec/pkg/db"
 	"github.com/sirupsen/logrus"
 	"go.etcd.io/bbolt"
 	"go.uber.org/fx"

@@ -4,9 +4,9 @@ import (
 	"context"
 	"testing"
 
-	"github.com/eric2788/bilirec/internal/processors"
-	"github.com/eric2788/bilirec/pkg/flv"
-	"github.com/eric2788/bilirec/pkg/pipeline"
+	"github.com/bilirec/bilirec/internal/processors"
+	"github.com/bilirec/bilirec/pkg/flv"
+	"github.com/bilirec/bilirec/pkg/pipeline"
 )
 
 func TestFlvHeaderWriterProcessor_BootstrapsHeaders(t *testing.T) {

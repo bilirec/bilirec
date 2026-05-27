@@ -3,7 +3,7 @@ package convert_test
 import (
 	"testing"
 
-	"github.com/eric2788/bilirec/internal/services/convert"
+	"github.com/bilirec/bilirec/internal/services/convert"
 )
 
 func TestIsConvertedFileInvalid(t *testing.T) {

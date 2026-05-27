@@ -7,7 +7,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/eric2788/bilirec/pkg/pipeline"
+	"github.com/bilirec/bilirec/pkg/pipeline"
 	"github.com/sirupsen/logrus"
 )
 

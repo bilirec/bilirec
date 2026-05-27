@@ -1,7 +1,7 @@
 package stream
 
 import (
-	"github.com/eric2788/bilirec/pkg/pool"
+	"github.com/bilirec/bilirec/pkg/pool"
 	"github.com/sirupsen/logrus"
 )
 

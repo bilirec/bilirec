@@ -9,11 +9,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/eric2788/bilirec/internal/modules/rest"
-	"github.com/eric2788/bilirec/internal/services/convert"
-	"github.com/eric2788/bilirec/internal/services/file"
-	"github.com/eric2788/bilirec/internal/services/path"
-	"github.com/eric2788/bilirec/internal/services/recorder"
+	"github.com/bilirec/bilirec/internal/modules/rest"
+	"github.com/bilirec/bilirec/internal/services/convert"
+	"github.com/bilirec/bilirec/internal/services/file"
+	"github.com/bilirec/bilirec/internal/services/path"
+	"github.com/bilirec/bilirec/internal/services/recorder"
 	"github.com/gofiber/fiber/v3"
 	"github.com/sirupsen/logrus"
 )

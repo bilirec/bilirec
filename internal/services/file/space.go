@@ -1,7 +1,7 @@
 package file
 
 import (
-	"github.com/eric2788/bilirec/utils"
+	"github.com/bilirec/bilirec/utils"
 )
 
 type DiskSpace struct {

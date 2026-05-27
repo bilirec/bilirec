@@ -9,8 +9,8 @@ import (
 	"time"
 
 	webpush "github.com/SherClockHolmes/webpush-go"
-	"github.com/eric2788/bilirec/internal/modules/config"
-	ns "github.com/eric2788/bilirec/internal/services/notify"
+	"github.com/bilirec/bilirec/internal/modules/config"
+	ns "github.com/bilirec/bilirec/internal/services/notify"
 	"go.uber.org/fx"
 	"go.uber.org/fx/fxtest"
 )

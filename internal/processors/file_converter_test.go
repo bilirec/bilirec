@@ -4,9 +4,9 @@ import (
 	"os"
 	"testing"
 
-	"github.com/eric2788/bilirec/internal/processors"
-	"github.com/eric2788/bilirec/pkg/pipeline"
-	"github.com/eric2788/bilirec/utils"
+	"github.com/bilirec/bilirec/internal/processors"
+	"github.com/bilirec/bilirec/pkg/pipeline"
+	"github.com/bilirec/bilirec/utils"
 )
 
 func TestConvertToMp4(t *testing.T) {

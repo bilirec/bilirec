@@ -5,8 +5,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/eric2788/bilirec/internal/modules/bilibili"
-	"github.com/eric2788/bilirec/pkg/ds"
+	"github.com/bilirec/bilirec/internal/modules/bilibili"
+	"github.com/bilirec/bilirec/pkg/ds"
 )
 
 type Info struct {

@@ -1,8 +1,8 @@
 package auth
 
 import (
-	"github.com/eric2788/bilirec/internal/modules/bilibili"
-	"github.com/eric2788/bilirec/internal/modules/rest"
+	"github.com/bilirec/bilirec/internal/modules/bilibili"
+	"github.com/bilirec/bilirec/internal/modules/rest"
 	"github.com/gofiber/fiber/v3"
 	"github.com/sirupsen/logrus"
 )

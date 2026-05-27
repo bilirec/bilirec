@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/eric2788/bilirec/internal/processors"
-	"github.com/eric2788/bilirec/pkg/pipeline"
-	"github.com/eric2788/bilirec/pkg/pool"
+	"github.com/bilirec/bilirec/internal/processors"
+	"github.com/bilirec/bilirec/pkg/pipeline"
+	"github.com/bilirec/bilirec/pkg/pool"
 	"github.com/sirupsen/logrus"
 )
 

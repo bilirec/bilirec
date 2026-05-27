@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/eric2788/bilirec/pkg/pool"
+	"github.com/bilirec/bilirec/pkg/pool"
 	"go.etcd.io/bbolt"
 )
 

@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/eric2788/bilirec/internal/bootstrap"
+	"github.com/bilirec/bilirec/internal/bootstrap"
 	"go.uber.org/fx/fxtest"
 )
 

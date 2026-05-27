@@ -6,7 +6,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/eric2788/bilirec/utils"
+	"github.com/bilirec/bilirec/utils"
 	"github.com/sirupsen/logrus"
 	"go.uber.org/fx"
 	"golang.org/x/crypto/bcrypt"

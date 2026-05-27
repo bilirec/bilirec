@@ -3,8 +3,8 @@
 import (
 	"context"
 
-	"github.com/eric2788/bilirec/pkg/hls"
-	"github.com/eric2788/bilirec/pkg/pipeline"
+	"github.com/bilirec/bilirec/pkg/hls"
+	"github.com/bilirec/bilirec/pkg/pipeline"
 	"github.com/sirupsen/logrus"
 )
 

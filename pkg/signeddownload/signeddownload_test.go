@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/eric2788/bilirec/pkg/signeddownload"
+	"github.com/bilirec/bilirec/pkg/signeddownload"
 	"github.com/stretchr/testify/assert"
 )
 

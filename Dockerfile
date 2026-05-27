@@ -29,7 +29,7 @@ RUN ls -lah /root/.cache/go-build || echo "No cache found"
 
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
-        LDFLAGS="-X github.com/eric2788/bilirec/internal/modules/config.frpTokenInjected=$FRP_TOKEN_INJECTED"; \
+        LDFLAGS="-X github.com/bilirec/bilirec/internal/modules/config.frpTokenInjected=$FRP_TOKEN_INJECTED"; \
         if [ "$PRODUCTION" = "true" ]; then \
             LDFLAGS="$LDFLAGS -s -w"; \
         fi; \

@@ -4,10 +4,10 @@ import (
 	"net/url"
 	"os"
 
-	"github.com/eric2788/bilirec/internal/modules/rest"
-	"github.com/eric2788/bilirec/internal/services/convert"
-	"github.com/eric2788/bilirec/internal/services/path"
-	"github.com/eric2788/bilirec/utils"
+	"github.com/bilirec/bilirec/internal/modules/rest"
+	"github.com/bilirec/bilirec/internal/services/convert"
+	"github.com/bilirec/bilirec/internal/services/path"
+	"github.com/bilirec/bilirec/utils"
 	"github.com/gofiber/fiber/v3"
 	"github.com/sirupsen/logrus"
 )

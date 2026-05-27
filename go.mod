@@ -1,4 +1,4 @@
-module github.com/eric2788/bilirec
+module github.com/bilirec/bilirec
 
 go 1.25.0
 

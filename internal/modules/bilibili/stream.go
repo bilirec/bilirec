@@ -6,8 +6,8 @@ import (
 	"slices"
 	"time"
 
-	"github.com/eric2788/bilirec/pkg/fp"
-	"github.com/eric2788/bilirec/utils"
+	"github.com/bilirec/bilirec/pkg/fp"
+	"github.com/bilirec/bilirec/utils"
 )
 
 type (

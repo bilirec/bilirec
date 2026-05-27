@@ -4,7 +4,7 @@ import (
 	"context"
 	"sync"
 
-	"github.com/eric2788/bilirec/pkg/db"
+	"github.com/bilirec/bilirec/pkg/db"
 )
 
 type Provider string

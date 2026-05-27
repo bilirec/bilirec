@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/eric2788/bilirec/pkg/flv"
+	"github.com/bilirec/bilirec/pkg/flv"
 	"github.com/sirupsen/logrus"
 )
 

@@ -13,8 +13,8 @@ import (
 	"go.uber.org/fx"
 
 	bili "github.com/CuteReimu/bilibili/v2"
-	"github.com/eric2788/bilirec/internal/modules/config"
-	"github.com/eric2788/bilirec/utils"
+	"github.com/bilirec/bilirec/internal/modules/config"
+	"github.com/bilirec/bilirec/utils"
 	"github.com/go-resty/resty/v2"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/sync/singleflight"

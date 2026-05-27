@@ -13,8 +13,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/eric2788/bilirec/pkg/cloudconvert"
-	"github.com/eric2788/bilirec/pkg/pool"
+	"github.com/bilirec/bilirec/pkg/cloudconvert"
+	"github.com/bilirec/bilirec/pkg/pool"
 	"github.com/sirupsen/logrus"
 )
 

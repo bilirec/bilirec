@@ -4,7 +4,7 @@ import (
 	"errors"
 	"testing"
 
-	ns "github.com/eric2788/bilirec/internal/services/notify"
+	ns "github.com/bilirec/bilirec/internal/services/notify"
 	"github.com/gofiber/fiber/v3"
 )
 

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/eric2788/bilirec/internal/modules/bilibili"
+	"github.com/bilirec/bilirec/internal/modules/bilibili"
 )
 
 var roomtNotFoundMarker = &bilibili.LiveRoomInfoDetail{}

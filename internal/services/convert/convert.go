@@ -7,11 +7,11 @@ import (
 	"os"
 	"sync"
 
-	"github.com/eric2788/bilirec/internal/modules/config"
-	"github.com/eric2788/bilirec/internal/services/path"
-	"github.com/eric2788/bilirec/pkg/cloudconvert"
-	"github.com/eric2788/bilirec/pkg/db"
-	"github.com/eric2788/bilirec/utils"
+	"github.com/bilirec/bilirec/internal/modules/config"
+	"github.com/bilirec/bilirec/internal/services/path"
+	"github.com/bilirec/bilirec/pkg/cloudconvert"
+	"github.com/bilirec/bilirec/pkg/db"
+	"github.com/bilirec/bilirec/utils"
 	"github.com/sirupsen/logrus"
 	"go.uber.org/fx"
 )

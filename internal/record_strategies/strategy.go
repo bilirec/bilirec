@@ -5,9 +5,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/eric2788/bilirec/internal/modules/config"
-	"github.com/eric2788/bilirec/pkg/pipeline"
-	"github.com/eric2788/bilirec/pkg/pool"
+	"github.com/bilirec/bilirec/internal/modules/config"
+	"github.com/bilirec/bilirec/pkg/pipeline"
+	"github.com/bilirec/bilirec/pkg/pool"
 )
 
 // RotationState carries format-specific state across segment rotations.

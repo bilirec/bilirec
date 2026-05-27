@@ -1,8 +1,8 @@
 package main
 
 import (
-	root "github.com/eric2788/bilirec"
-	"github.com/eric2788/bilirec/internal/bootstrap"
+	root "github.com/bilirec/bilirec"
+	"github.com/bilirec/bilirec/internal/bootstrap"
 	"github.com/sirupsen/logrus"
 )
 

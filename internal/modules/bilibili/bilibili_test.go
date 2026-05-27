@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/eric2788/bilirec/internal/modules/bilibili"
-	"github.com/eric2788/bilirec/internal/modules/config"
-	"github.com/eric2788/bilirec/internal/testutil"
+	"github.com/bilirec/bilirec/internal/modules/bilibili"
+	"github.com/bilirec/bilirec/internal/modules/config"
+	"github.com/bilirec/bilirec/internal/testutil"
 	"github.com/go-resty/resty/v2"
 	"go.uber.org/fx"
 	"go.uber.org/fx/fxtest"

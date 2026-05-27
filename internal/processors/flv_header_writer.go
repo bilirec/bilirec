@@ -4,8 +4,8 @@ import (
 	"context"
 	"sync"
 
-	"github.com/eric2788/bilirec/pkg/flv"
-	"github.com/eric2788/bilirec/pkg/pipeline"
+	"github.com/bilirec/bilirec/pkg/flv"
+	"github.com/bilirec/bilirec/pkg/pipeline"
 	"github.com/sirupsen/logrus"
 )
 

@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/eric2788/bilirec/pkg/pipeline"
-	"github.com/eric2788/bilirec/utils"
+	"github.com/bilirec/bilirec/pkg/pipeline"
+	"github.com/bilirec/bilirec/utils"
 	"github.com/sirupsen/logrus"
 )
 

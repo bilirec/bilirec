@@ -7,10 +7,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/eric2788/bilirec/pkg/pipeline"
-	"github.com/eric2788/bilirec/pkg/pool"
-	"github.com/eric2788/bilirec/pkg/rw"
-	"github.com/eric2788/bilirec/utils"
+	"github.com/bilirec/bilirec/pkg/pipeline"
+	"github.com/bilirec/bilirec/pkg/pool"
+	"github.com/bilirec/bilirec/pkg/rw"
+	"github.com/bilirec/bilirec/utils"
 	"github.com/sirupsen/logrus"
 )
 

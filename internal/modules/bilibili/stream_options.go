@@ -4,8 +4,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/eric2788/bilirec/pkg/ds"
-	"github.com/eric2788/bilirec/pkg/fp"
+	"github.com/bilirec/bilirec/pkg/ds"
+	"github.com/bilirec/bilirec/pkg/fp"
 )
 
 type Codec string

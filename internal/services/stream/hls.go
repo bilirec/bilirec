@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	hlsutil "github.com/eric2788/bilirec/pkg/hls"
+	hlsutil "github.com/bilirec/bilirec/pkg/hls"
 	"github.com/go-resty/resty/v2"
 )
 

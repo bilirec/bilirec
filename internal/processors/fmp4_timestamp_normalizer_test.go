@@ -4,7 +4,7 @@ import (
 	"encoding/binary"
 	"testing"
 
-	"github.com/eric2788/bilirec/pkg/hls"
+	"github.com/bilirec/bilirec/pkg/hls"
 )
 
 func box(typ string, payload []byte) []byte {

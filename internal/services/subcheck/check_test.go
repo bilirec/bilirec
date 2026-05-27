@@ -5,9 +5,9 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/eric2788/bilirec/internal/modules/bilibili"
-	"github.com/eric2788/bilirec/internal/services/subscribe"
-	"github.com/eric2788/bilirec/pkg/db"
+	"github.com/bilirec/bilirec/internal/modules/bilibili"
+	"github.com/bilirec/bilirec/internal/services/subscribe"
+	"github.com/bilirec/bilirec/pkg/db"
 	"github.com/puzpuzpuz/xsync/v4"
 )
 

@@ -9,9 +9,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/eric2788/bilirec/internal/processors"
-	"github.com/eric2788/bilirec/pkg/flv"
-	"github.com/eric2788/bilirec/pkg/pipeline"
+	"github.com/bilirec/bilirec/internal/processors"
+	"github.com/bilirec/bilirec/pkg/flv"
+	"github.com/bilirec/bilirec/pkg/pipeline"
 )
 
 // buildAVCStream constructs a minimal synthetic FLV stream containing:

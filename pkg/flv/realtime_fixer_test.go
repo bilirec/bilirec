@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/eric2788/bilirec/pkg/flv"
-	"github.com/eric2788/bilirec/utils"
+	"github.com/bilirec/bilirec/pkg/flv"
+	"github.com/bilirec/bilirec/utils"
 )
 
 func TestRealtimeFixer_MemoryLeak(t *testing.T) {

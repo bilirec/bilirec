@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/eric2788/bilirec/pkg/cloudconvert"
-	"github.com/eric2788/bilirec/pkg/pool"
+	"github.com/bilirec/bilirec/pkg/cloudconvert"
+	"github.com/bilirec/bilirec/pkg/pool"
 )
 
 // startCPUProfile starts a CPU profile and returns the profile file path and a stop func

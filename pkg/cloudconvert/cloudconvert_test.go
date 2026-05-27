@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/eric2788/bilirec/pkg/cloudconvert"
-	"github.com/eric2788/bilirec/utils"
+	"github.com/bilirec/bilirec/pkg/cloudconvert"
+	"github.com/bilirec/bilirec/utils"
 	"github.com/sirupsen/logrus"
 )
 

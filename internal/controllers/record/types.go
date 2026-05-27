@@ -1,6 +1,6 @@
 package record
 
-import "github.com/eric2788/bilirec/internal/services/recorder"
+import "github.com/bilirec/bilirec/internal/services/recorder"
 
 type (
 	BatchRoomIDsRequest struct {

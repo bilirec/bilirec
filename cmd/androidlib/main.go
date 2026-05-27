@@ -19,7 +19,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/eric2788/bilirec/internal/bootstrap"
+	"github.com/bilirec/bilirec/internal/bootstrap"
 	"github.com/sirupsen/logrus"
 	"go.uber.org/fx"
 )

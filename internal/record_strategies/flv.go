@@ -5,10 +5,10 @@ import (
 	"errors"
 	"time"
 
-	"github.com/eric2788/bilirec/internal/modules/config"
-	"github.com/eric2788/bilirec/internal/processors"
-	"github.com/eric2788/bilirec/pkg/flv"
-	"github.com/eric2788/bilirec/pkg/pipeline"
+	"github.com/bilirec/bilirec/internal/modules/config"
+	"github.com/bilirec/bilirec/internal/processors"
+	"github.com/bilirec/bilirec/pkg/flv"
+	"github.com/bilirec/bilirec/pkg/pipeline"
 )
 
 const (

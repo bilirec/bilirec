@@ -3,8 +3,8 @@ package room
 import (
 	"time"
 
-	"github.com/eric2788/bilirec/internal/modules/bilibili"
-	"github.com/eric2788/bilirec/pkg/swr"
+	"github.com/bilirec/bilirec/internal/modules/bilibili"
+	"github.com/bilirec/bilirec/pkg/swr"
 	"github.com/sirupsen/logrus"
 	"go.uber.org/fx"
 )

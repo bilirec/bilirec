@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/eric2788/bilirec/pkg/pool"
+	"github.com/bilirec/bilirec/pkg/pool"
 	"github.com/go-resty/resty/v2"
 )
 

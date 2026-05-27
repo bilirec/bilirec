@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/eric2788/bilirec/pkg/flv"
+	"github.com/bilirec/bilirec/pkg/flv"
 )
 
 func TestFlvHeaderWriter_Prepend_NoOptionalHeaders(t *testing.T) {

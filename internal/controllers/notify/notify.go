@@ -6,7 +6,7 @@ import (
 	"time"
 
 	webpush "github.com/SherClockHolmes/webpush-go"
-	ns "github.com/eric2788/bilirec/internal/services/notify"
+	ns "github.com/bilirec/bilirec/internal/services/notify"
 	"github.com/gofiber/fiber/v3"
 	"github.com/gofiber/fiber/v3/middleware/sse"
 	"github.com/sirupsen/logrus"

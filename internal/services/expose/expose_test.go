@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/eric2788/bilirec/internal/modules/config"
-	"github.com/eric2788/bilirec/internal/services/expose"
+	"github.com/bilirec/bilirec/internal/modules/config"
+	"github.com/bilirec/bilirec/internal/services/expose"
 	"go.uber.org/fx"
 	"go.uber.org/fx/fxtest"
 )

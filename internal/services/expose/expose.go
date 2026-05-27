@@ -11,8 +11,8 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/eric2788/bilirec/internal/modules/config"
-	"github.com/eric2788/bilirec/utils"
+	"github.com/bilirec/bilirec/internal/modules/config"
+	"github.com/bilirec/bilirec/utils"
 	"github.com/fatedier/frp/client"
 	"github.com/fatedier/frp/client/proxy"
 	"github.com/fatedier/frp/pkg/config/source"

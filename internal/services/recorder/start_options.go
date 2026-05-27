@@ -3,7 +3,7 @@ package recorder
 import (
 	"time"
 
-	"github.com/eric2788/bilirec/internal/modules/bilibili"
+	"github.com/bilirec/bilirec/internal/modules/bilibili"
 )
 
 type RecordStartOptions struct {
