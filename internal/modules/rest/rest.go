@@ -58,8 +58,9 @@ var logger = logrus.WithField("module", "rest")
 
 func provider(ls fx.Lifecycle, cfg *config.Config) *fiber.App {
 	app := fiber.New(fiber.Config{
-		TrustProxy:  true,
-		ProxyHeader: fiber.HeaderXForwardedFor,
+		ReadBufferSize: 8192,
+		TrustProxy:     true,
+		ProxyHeader:    fiber.HeaderXForwardedFor,
 		TrustProxyConfig: fiber.TrustProxyConfig{
 			Private:  true,
 			Loopback: true,
