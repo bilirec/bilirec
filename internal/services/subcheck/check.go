@@ -6,6 +6,7 @@ import (
 	"os"
 	"slices"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/eric2788/bilirec/internal/modules/bilibili"
@@ -38,6 +39,7 @@ type Service struct {
 
 	ctx    context.Context
 	cancel context.CancelFunc
+	wg     sync.WaitGroup
 }
 
 func NewService(lc fx.Lifecycle, cfg *config.Config, subSvc *subscribe.Service, roomSvc *room.Service, recSvc *recorder.Service, notifySvc *notify.Service) *Service {
@@ -88,16 +90,19 @@ func (s *Service) start(cfg *config.Config) error {
 		return err
 	}
 
+	s.wg.Add(1)
 	go s.loop()
 	return nil
 }
 
 func (s *Service) stop() error {
 	s.cancel()
+	s.wg.Wait()
 	return s.bucket.Close()
 }
 
 func (s *Service) loop() {
+	defer s.wg.Done()
 	ticker := time.NewTicker(checkInterval)
 	defer ticker.Stop()
 	s.tryStartAllAutoRecordRooms()

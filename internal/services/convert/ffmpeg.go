@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"sync"
 	"time"
 
 	"github.com/eric2788/bilirec/internal/modules/config"
@@ -44,7 +45,7 @@ func newFFmpegConvertManager(getActives GetActiveRecordings) ConvertManager {
 	}
 }
 
-func (f *ffmpegConvertManager) StartWorker(ctx context.Context, db *db.Client) error {
+func (f *ffmpegConvertManager) StartWorker(ctx context.Context, wg *sync.WaitGroup, db *db.Client) error {
 	if !utils.FFmpegAvailable() {
 		return ErrFFmpegNotInstalled
 	} else if bucket, err := db.Bucket(ffmpegBucket); err != nil {
@@ -52,7 +53,8 @@ func (f *ffmpegConvertManager) StartWorker(ctx context.Context, db *db.Client) e
 	} else {
 		f.bucket = bucket
 	}
-	go f.runTaskPeriodically(ctx)
+	wg.Add(1)
+	go f.runTaskPeriodically(ctx, wg)
 	return nil
 }
 
@@ -104,9 +106,14 @@ func (f *ffmpegConvertManager) InProgressSize() int {
 	return count
 }
 
-func (f *ffmpegConvertManager) runTaskPeriodically(ctx context.Context) {
+func (f *ffmpegConvertManager) runTaskPeriodically(ctx context.Context, wg *sync.WaitGroup) {
+	defer wg.Done()
 	ticker := time.NewTicker(time.Duration(config.ReadOnly.FFmpegCheckIntervalSecs()) * time.Second)
 	defer ticker.Stop()
+
+	var swg sync.WaitGroup
+	defer swg.Wait()
+
 	for {
 		select {
 		case <-ticker.C:
@@ -163,7 +170,9 @@ func (f *ffmpegConvertManager) runTaskPeriodically(ctx context.Context) {
 				f.processing.Store(queue.TaskID, cancel)
 
 				taskLog.Infof("正在处理 ffmpeg 任务 input=%s output=%s", queue.InputPath, queue.OutputPath)
-				go f.asyncProcessTask(processCtx, queue, taskLog)
+				swg.Go(func() {
+					f.asyncProcessTask(processCtx, queue, taskLog)
+				})
 			}
 		case <-ctx.Done():
 			return

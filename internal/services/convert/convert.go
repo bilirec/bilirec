@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"sync"
 
 	"github.com/eric2788/bilirec/internal/modules/config"
 	"github.com/eric2788/bilirec/internal/services/path"
@@ -32,6 +33,7 @@ type Service struct {
 	db             *db.Client
 
 	noConvertIfInvalid bool
+	wg                 sync.WaitGroup
 }
 
 func NewService(ls fx.Lifecycle, cfg *config.Config, pathSvc *path.Service) *Service {
@@ -57,6 +59,12 @@ func NewService(ls fx.Lifecycle, cfg *config.Config, pathSvc *path.Service) *Ser
 		logger.Info("未提供 CloudConvert API Key，CloudConvert 已禁用")
 	}
 
+	stop := func() error {
+		cancel()
+		svc.wg.Wait()
+		return svc.db.Close()
+	}
+
 	ls.Append(fx.StartStopHook(
 		func() error {
 			// use bbolt for offline storage
@@ -64,18 +72,18 @@ func NewService(ls fx.Lifecycle, cfg *config.Config, pathSvc *path.Service) *Ser
 			if err != nil {
 				return err
 			}
+			svc.db = db
 			for _, manager := range svc.managers {
-				if err := manager.StartWorker(ctx, db); err != nil {
+				if err := manager.StartWorker(ctx, &svc.wg, db); err != nil {
+					if err := stop(); err != nil {
+						logger.Warnf("回滚失败：%v", err)
+					}
 					return fmt.Errorf("启动转码管理器失败：%v", err)
 				}
 			}
-			svc.db = db
 			return nil
 		},
-		func() error {
-			cancel()
-			return svc.db.Close()
-		},
+		stop,
 	))
 	return svc
 }

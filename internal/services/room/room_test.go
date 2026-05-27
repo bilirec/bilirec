@@ -1,60 +1,109 @@
-package room_test
+package room
 
 import (
-	"os"
+	"fmt"
 	"testing"
 	"time"
 
 	"github.com/eric2788/bilirec/internal/modules/bilibili"
 	"github.com/eric2788/bilirec/internal/modules/config"
-	"github.com/eric2788/bilirec/internal/services/room"
-	"github.com/sirupsen/logrus"
+	"github.com/eric2788/bilirec/pkg/swr"
 	"go.uber.org/fx"
 	"go.uber.org/fx/fxtest"
 )
 
-func init() {
-	logrus.SetLevel(logrus.DebugLevel)
-	if os.Getenv("CI") != "" {
-		os.Setenv("BILIBILI_LOGIN_MODE", "anonymous")
+func newTestService(t *testing.T, softTTL, hardTTL time.Duration) *Service {
+	t.Helper()
+
+	svc := &Service{
+		cache: swr.NewCache[string, *bilibili.LiveRoomInfoDetail](softTTL, hardTTL, 16),
 	}
+
+	svc.cache.Start()
+	t.Cleanup(func() {
+		svc.cache.DeleteAll()
+		svc.cache.Stop()
+	})
+
+	return svc
 }
 
 func TestCache_CacheHit(t *testing.T) {
-	var svc *room.Service
+	svc := newTestService(t, 100*time.Millisecond, time.Second)
+	roomID := 10086
+	key := fmt.Sprint(roomID)
+	expected := &bilibili.LiveRoomInfoDetail{RoomID: int64(roomID), LiveStatus: 1, Title: "cached-room"}
 
-	app := fxtest.New(t,
-		config.Module,
-		bilibili.Module,
-		fx.Provide(room.NewService),
-		fx.Populate(&svc),
-		fx.StartTimeout(5*time.Second),
-	)
-	defer app.RequireStop()
-	app.RequireStart()
+	svc.cache.Set(key, expected)
 
-	if svc == nil {
-		t.Fatal("room service not initialized")
+	got, err := svc.GetLiveRoomInfo(roomID)
+	if err != nil {
+		t.Fatalf("GetLiveRoomInfo returned error: %v", err)
+	}
+	if got != expected {
+		t.Fatalf("cache hit should return cached pointer, got=%p want=%p", got, expected)
 	}
 
-	t.Log("cache service initialized")
+	got2, err := svc.GetLiveRoomInfo(roomID)
+	if err != nil {
+		t.Fatalf("second GetLiveRoomInfo returned error: %v", err)
+	}
+	if got2 != expected {
+		t.Fatalf("second cache hit should return cached pointer, got=%p want=%p", got2, expected)
+	}
 }
 
 func TestCache_CacheTTL(t *testing.T) {
-	var svc *room.Service
+	softTTL := 30 * time.Millisecond
+	hardTTL := 90 * time.Millisecond
+	svc := newTestService(t, softTTL, hardTTL)
+
+	roomID := 9527
+	key := fmt.Sprint(roomID)
+	info := &bilibili.LiveRoomInfoDetail{RoomID: int64(roomID), LiveStatus: 1}
+	svc.cache.Set(key, info)
+
+	_, ok, stale := svc.cache.Get(key)
+	if !ok {
+		t.Fatal("cache should have value immediately after Set")
+	}
+	if stale {
+		t.Fatal("cache should not be stale immediately after Set")
+	}
+
+	time.Sleep(softTTL + 20*time.Millisecond)
+	_, ok, stale = svc.cache.Get(key)
+	if !ok {
+		t.Fatal("cache should still exist after soft TTL")
+	}
+	if !stale {
+		t.Fatal("cache should be stale after soft TTL")
+	}
+
+	time.Sleep(hardTTL + 30*time.Millisecond)
+	_, ok, _ = svc.cache.Get(key)
+	if ok {
+		t.Fatal("cache should expire after hard TTL")
+	}
+}
+
+func TestCache_Fx(t *testing.T) {
+
+	var svc *Service
 	app := fxtest.New(t,
 		config.Module,
 		bilibili.Module,
-		fx.Provide(room.NewService),
+		fx.Provide(NewService),
 		fx.Populate(&svc),
 		fx.StartTimeout(5*time.Second),
+		fx.StopTimeout(15*time.Second),
 	)
-	defer app.RequireStop()
 	app.RequireStart()
+	defer app.RequireStop()
 
 	if svc == nil {
-		t.Fatal("room service not initialized")
+		t.Fatal("failed to initialize Service via Fx")
 	}
 
-	t.Log("cache ttl behavior initialized")
+	t.Log("Service initialized successfully via Fx")
 }

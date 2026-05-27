@@ -2,6 +2,7 @@ package convert
 
 import (
 	"context"
+	"sync"
 
 	"github.com/eric2788/bilirec/pkg/db"
 )
@@ -11,7 +12,7 @@ type Provider string
 type GetActiveRecordings func() int
 
 type ConvertManager interface {
-	StartWorker(ctx context.Context, db *db.Client) error
+	StartWorker(ctx context.Context, wg *sync.WaitGroup, db *db.Client) error
 	Enqueue(inputPath, outputPath, format string, deleteSource bool) (*TaskQueue, error)
 	Cancel(taskID string) error
 	ListInProgress() ([]*TaskQueue, error)

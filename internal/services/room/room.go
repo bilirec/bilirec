@@ -33,8 +33,8 @@ func NewService(lc fx.Lifecycle, bilic *bilibili.Client) *Service {
 			return nil
 		},
 		func() error {
-			svc.cache.Stop()
 			svc.cache.DeleteAll()
+			svc.cache.Stop()
 			return nil
 		},
 	))

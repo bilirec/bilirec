@@ -27,6 +27,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	_ "github.com/eric2788/bilirec/docs"
@@ -173,15 +174,17 @@ func provider(ls fx.Lifecycle, cfg *config.Config) *fiber.App {
 		}))
 	}
 
+	var wg sync.WaitGroup
+
 	ls.Append(
 		fx.StartStopHook(
 			func(ctx context.Context) error {
 				addr := net.JoinHostPort(cfg.Host, cfg.Port)
 				// Check if both SERVER_CRT and SERVER_KEY are provided
 				if cfg.ServerCrt != "" && cfg.ServerKey != "" {
-					return startHttpsServer(app, addr, cfg.ServerCrt, cfg.ServerKey)
+					return startHttpsServer(app, &wg, addr, cfg.ServerCrt, cfg.ServerKey)
 				} else {
-					return startHttpServer(app, addr)
+					return startHttpServer(app, &wg, addr)
 				}
 			},
 			func(ctx context.Context) error {
@@ -189,6 +192,7 @@ func provider(ls fx.Lifecycle, cfg *config.Config) *fiber.App {
 				if err := app.ShutdownWithContext(ctx); err != nil {
 					logger.Warnf("服务器关闭错误：%v", err)
 				}
+				wg.Wait()
 				return nil
 			},
 		),
@@ -197,7 +201,7 @@ func provider(ls fx.Lifecycle, cfg *config.Config) *fiber.App {
 	return app
 }
 
-func startHttpsServer(app *fiber.App, addr, serverCrt, serverKey string) error {
+func startHttpsServer(app *fiber.App, wg *sync.WaitGroup, addr, serverCrt, serverKey string) error {
 	logger.Infof("正在 %s 启动 HTTPS 服务器", addr)
 	cert, err := tls.LoadX509KeyPair(serverCrt, serverKey)
 	if err != nil {
@@ -212,21 +216,21 @@ func startHttpsServer(app *fiber.App, addr, serverCrt, serverKey string) error {
 	if err != nil {
 		return fmt.Errorf("HTTPS 服务器错误：%w", err)
 	}
-	go func() {
+	wg.Go(func() {
 		if err := app.Listener(listener); err != nil {
 			logger.Errorf("HTTPS 服务器错误：%v", err)
 		}
-	}()
+	})
 	return nil
 }
 
-func startHttpServer(app *fiber.App, addr string) error {
+func startHttpServer(app *fiber.App, wg *sync.WaitGroup, addr string) error {
 	logger.Infof("正在 %s 启动 HTTP 服务器", addr)
-	go func() {
+	wg.Go(func() {
 		if err := app.Listen(addr); err != nil {
 			logger.Errorf("HTTP 服务器错误：%v", err)
 		}
-	}()
+	})
 	return nil
 }
 

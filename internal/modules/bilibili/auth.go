@@ -36,7 +36,7 @@ func (c *Client) loadCookiesOrLogin() error {
 			if err := c.refreshCookiesIfRequired(); err != nil {
 				logger.Warnf("预加载刷新检查失败：%v", err)
 			}
-			go c.refreshCookiesPeriodically(c.ctx, 10*time.Minute)
+			c.wg.Go(func() { c.refreshCookiesPeriodically(c.ctx, 10*time.Minute) })
 			return nil
 		} else {
 			logger.Warnf("使用已加载 Cookie 获取账号信息失败：%v", err)
@@ -85,7 +85,7 @@ func (c *Client) loadCookiesOrLogin() error {
 		logger.Warn(err)
 	}
 
-	go c.refreshCookiesPeriodically(c.ctx, 10*time.Minute)
+	c.wg.Go(func() { c.refreshCookiesPeriodically(c.ctx, 10*time.Minute) })
 	return nil
 }
 
@@ -123,7 +123,7 @@ func (c *Client) preloadCookies() error {
 		if err := c.refreshCookiesIfRequired(); err != nil {
 			logger.Debugf("预加载刷新检查失败（非阻塞）：%v", err)
 		}
-		go c.refreshCookiesPeriodically(refreshCtx, 10*time.Minute)
+		c.wg.Go(func() { c.refreshCookiesPeriodically(refreshCtx, 10*time.Minute) })
 		return nil
 	}
 
@@ -362,7 +362,7 @@ func (c *Client) performQRLogin(qrcodeKey string) {
 				logger.Warn(err)
 			}
 
-			go c.refreshCookiesPeriodically(refreshCtx, 10*time.Minute)
+			c.wg.Go(func() { c.refreshCookiesPeriodically(refreshCtx, 10*time.Minute) })
 		} else {
 			wrapped := fmt.Errorf("登录后获取账号信息失败：%v", err)
 			c.updateSession(func(s *AuthSession) {

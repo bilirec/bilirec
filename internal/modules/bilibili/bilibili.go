@@ -54,6 +54,8 @@ type Client struct {
 	session       atomic.Pointer[AuthSession]
 	loginSF       singleflight.Group
 	refreshSF     singleflight.Group
+
+	wg sync.WaitGroup
 }
 
 func provider(cfg *config.Config, ls fx.Lifecycle) *Client {
@@ -107,6 +109,7 @@ func provider(cfg *config.Config, ls fx.Lifecycle) *Client {
 			},
 			func() error {
 				cancel()
+				client.wg.Wait()
 				return nil
 			},
 		),

@@ -83,7 +83,7 @@ func NewService(
 		ctx:          ctx,
 	}
 
-	cv.SetActiveRecordingsGetter(s.recording.Size)
+	cv.SetActiveRecordingsGetter(s.ListRecordingSize)
 
 	lc.Append(fx.StopHook(func() {
 		cancel()
@@ -620,6 +620,11 @@ func (r *Service) finalize(roomId int, outputPath string) {
 		return
 	}
 
+	if r.ctx.Err() != nil {
+		logger.Infof("服务正在停止，跳过房间 %d 的入队转码", roomId)
+		return
+	}
+
 	// process finalization via convert service
 	if queue, err := r.cv.Enqueue(outputPath, "mp4", r.cfg.DeleteSourceAfterConvert); err != nil {
 		logger.Errorf("为房间 %d 入队转码失败：%v", roomId, err)
@@ -629,7 +634,6 @@ func (r *Service) finalize(roomId int, outputPath string) {
 		logger.Infof("输出路径将是：%s", queue.OutputPath)
 	}
 }
-
 
 func (r *Service) stopAndPublish(roomId int, info *Info) {
 	r.Stop(roomId)

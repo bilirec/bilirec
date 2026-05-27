@@ -67,9 +67,9 @@ func NewService(lc fx.Lifecycle, cfg *config.Config) *Service {
 	lc.Append(fx.StartStopHook(
 		func() error {
 			s.ctx, s.cancel = context.WithCancel(context.Background())
-			s.wg.Add(1)
+			s.wg.Add(2)
 			go s.Run()
-			go s.waitAndPrintTunnelBox(fmt.Sprintf("%s://%s:%s", scheme, defaultLoopbackIP, cfg.Port), proxyName, remoteURL)
+			go s.waitAndPrintTunnelBox(fmt.Sprintf("%s://%s:%s", scheme, defaultLoopbackIP, cfg.Port), proxyName, remoteURL) // fire and forget
 			return nil
 		},
 		func() error {
@@ -96,6 +96,8 @@ func (s *Service) Run() {
 }
 
 func (s *Service) waitAndPrintTunnelBox(local, proxyName, remoteURL string) {
+	defer s.wg.Done()
+	
 	ticker := time.NewTicker(tunnelStatusPollPeriod)
 	defer ticker.Stop()
 

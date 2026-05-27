@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/eric2788/bilirec/internal/modules/config"
@@ -60,7 +61,7 @@ func newCloudConvertManager(client *cloudconvert.Client, pathSvc *path.Service) 
 	}
 }
 
-func (c *cloudConvertManager) StartWorker(ctx context.Context, db *db.Client) error {
+func (c *cloudConvertManager) StartWorker(ctx context.Context, wg *sync.WaitGroup, db *db.Client) error {
 	if c.client == nil {
 		return ErrCloudConvertNotConfigured
 	}
@@ -69,7 +70,8 @@ func (c *cloudConvertManager) StartWorker(ctx context.Context, db *db.Client) er
 		return err
 	}
 	c.bucket = bucket
-	go c.checkTaskStatusPeriodically(ctx)
+	wg.Add(1)
+	go c.checkTaskStatusPeriodically(ctx, wg)
 	return nil
 }
 
@@ -170,9 +172,14 @@ func (c *cloudConvertManager) InProgressSize() int {
 	return count
 }
 
-func (c *cloudConvertManager) checkTaskStatusPeriodically(ctx context.Context) {
+func (c *cloudConvertManager) checkTaskStatusPeriodically(ctx context.Context, wg *sync.WaitGroup) {
+	defer wg.Done()
 	ticker := time.NewTicker(time.Duration(config.ReadOnly.CloudConvertCheckIntervalSecs()) * time.Second)
 	defer ticker.Stop()
+
+	var swg sync.WaitGroup
+	defer swg.Wait()
+
 	for {
 		select {
 		case <-ticker.C:
@@ -192,7 +199,9 @@ func (c *cloudConvertManager) checkTaskStatusPeriodically(ctx context.Context) {
 					if err != nil {
 						if err == cloudconvert.ErrTaskNotFound {
 							c.logger.Warnf("任务 id=%v 未找到，正在重新入队", id)
-							go c.asyncOnFailed(queue, cloudconvert.TaskData{Message: utils.Ptr("任务未找到")})
+							swg.Go(func() {
+								c.asyncOnFailed(queue, cloudconvert.TaskData{Message: utils.Ptr("任务未找到")})
+							})
 						} else {
 							c.logger.Errorf("获取任务 id=%v 信息失败：%v", id, err)
 							c.processing.Remove(id)
@@ -204,9 +213,13 @@ func (c *cloudConvertManager) checkTaskStatusPeriodically(ctx context.Context) {
 
 					switch info.Data.Status {
 					case cloudconvert.TaskStatusFinished:
-						go c.asyncOnFinished(ctx, queue, info.Data)
+						swg.Go(func() {
+							c.asyncOnFinished(ctx, queue, info.Data)
+						})
 					case cloudconvert.TaskStatusError:
-						go c.asyncOnFailed(queue, info.Data)
+						swg.Go(func() {
+							c.asyncOnFailed(queue, info.Data)
+						})
 					default:
 						c.processing.Remove(id)
 					}
