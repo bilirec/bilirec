@@ -14,8 +14,8 @@ import (
 	"github.com/bilirec/bilirec/internal/services/notify"
 	"github.com/bilirec/bilirec/internal/services/path"
 	"github.com/bilirec/bilirec/internal/services/recorder"
+	"github.com/bilirec/bilirec/internal/services/room"
 	"github.com/bilirec/bilirec/internal/services/stream"
-	"github.com/bilirec/bilirec/internal/testutil"
 	"github.com/sirupsen/logrus"
 	"go.uber.org/fx"
 	"go.uber.org/fx/fxtest"
@@ -44,13 +44,21 @@ func memLeakStartOptionsFromEnv() ([]recorder.RecordStartOption, string, error) 
 	return []recorder.RecordStartOption{recorder.WithStreamProfile(profile)}, string(profile), nil
 }
 
-func startMemLeakRecording(t *testing.T, svc *recorder.Service, room int) error {
+func startMemLeakRecording(t *testing.T, svc *recorder.Service, roomSvc *room.Service, room int) error {
 	startOptions, profile, err := memLeakStartOptionsFromEnv()
 	if err != nil {
 		return err
 	}
 	if profile != "" {
 		t.Logf("using stream profile from %s: %s", recorderMemLeakStreamProfileEnv, profile)
+	}
+	roomSvc.InvalidateRooms(room)
+	isLive, err := roomSvc.IsRoomLive(room)
+	if err != nil {
+		return err
+	}
+	if !isLive {
+		return recorder.ErrStreamNotLive
 	}
 	return svc.Start(room, startOptions...)
 }
@@ -60,23 +68,24 @@ func TestRecorder_MemoryLeak_SingleSession(t *testing.T) {
 		t.Skip("Skipping recorder memory test in short mode")
 	}
 
-	roomID := testutil.LiveRoomID(t)
-
 	var recorderService *recorder.Service
+	var roomService *room.Service
 
 	app := fxtest.New(t,
 		config.Module,
 		bilibili.Module,
 		fx.Provide(path.NewService),
 		fx.Provide(stream.NewService),
+		fx.Provide(room.NewService),
 		fx.Provide(convert.NewService),
 		fx.Provide(notify.NewService),
 		fx.Provide(recorder.NewService),
-		fx.Populate(&recorderService),
+		fx.Populate(&recorderService, &roomService),
 	)
 
 	app.RequireStart()
 	defer app.RequireStop()
+	roomID := resolveLiveTestRoomID(t, roomService)
 
 	var m1, m2, m3, m4 runtime.MemStats
 
@@ -88,7 +97,7 @@ func TestRecorder_MemoryLeak_SingleSession(t *testing.T) {
 	t.Log("📝 Starting recording session...")
 
 	// Phase 2: Start recording
-	err := startMemLeakRecording(t, recorderService, roomID)
+	err := startMemLeakRecording(t, recorderService, roomService, roomID)
 	if err != nil {
 		switch err {
 		case recorder.ErrStreamNotLive:
@@ -174,23 +183,24 @@ func TestRecorder_MemoryLeak_MultipleStartStop(t *testing.T) {
 		t.Skip("Skipping multiple session test in short mode")
 	}
 
-	roomID := testutil.LiveRoomID(t)
-
 	var recorderService *recorder.Service
+	var roomService *room.Service
 
 	app := fxtest.New(t,
 		config.Module,
 		bilibili.Module,
 		fx.Provide(path.NewService),
 		fx.Provide(stream.NewService),
+		fx.Provide(room.NewService),
 		fx.Provide(convert.NewService),
 		fx.Provide(notify.NewService),
 		fx.Provide(recorder.NewService),
-		fx.Populate(&recorderService),
+		fx.Populate(&recorderService, &roomService),
 	)
 
 	app.RequireStart()
 	defer app.RequireStop()
+	roomID := resolveLiveTestRoomID(t, roomService)
 
 	var m1, m2 runtime.MemStats
 	runtime.GC()
@@ -206,7 +216,7 @@ func TestRecorder_MemoryLeak_MultipleStartStop(t *testing.T) {
 		t.Logf("Cycle %d/%d", cycle+1, cycles)
 
 		// Start recording
-		err := startMemLeakRecording(t, recorderService, roomID)
+		err := startMemLeakRecording(t, recorderService, roomService, roomID)
 		if err != nil {
 			switch err {
 			case recorder.ErrStreamNotLive:
@@ -272,23 +282,24 @@ func TestRecorder_MemoryLeak_ProcessedDataCleanup(t *testing.T) {
 		t.Skip("Skipping in short mode")
 	}
 
-	roomID := testutil.LiveRoomID(t)
-
 	var recorderService *recorder.Service
+	var roomService *room.Service
 
 	app := fxtest.New(t,
 		config.Module,
 		bilibili.Module,
 		fx.Provide(path.NewService),
 		fx.Provide(stream.NewService),
+		fx.Provide(room.NewService),
 		fx.Provide(convert.NewService),
 		fx.Provide(notify.NewService),
 		fx.Provide(recorder.NewService),
-		fx.Populate(&recorderService),
+		fx.Populate(&recorderService, &roomService),
 	)
 
 	app.RequireStart()
 	defer app.RequireStop()
+	roomID := resolveLiveTestRoomID(t, roomService)
 
 	var m1, m2 runtime.MemStats
 
@@ -296,7 +307,7 @@ func TestRecorder_MemoryLeak_ProcessedDataCleanup(t *testing.T) {
 	runtime.ReadMemStats(&m1)
 
 	// Start recording
-	err := startMemLeakRecording(t, recorderService, roomID)
+	err := startMemLeakRecording(t, recorderService, roomService, roomID)
 	if err != nil {
 		switch err {
 		case recorder.ErrStreamNotLive:
@@ -347,24 +358,26 @@ func TestRecorder_MemoryLeak_ConcurrentRecordings(t *testing.T) {
 		t.Skip("Skipping concurrent test in short mode")
 	}
 
-	// Test multiple concurrent recordings
-	testRooms := testutil.LiveRoomIDs(t, 2)
-
 	var recorderService *recorder.Service
+	var roomService *room.Service
 
 	app := fxtest.New(t,
 		config.Module,
 		bilibili.Module,
 		fx.Provide(path.NewService),
 		fx.Provide(stream.NewService),
+		fx.Provide(room.NewService),
 		fx.Provide(convert.NewService),
 		fx.Provide(notify.NewService),
 		fx.Provide(recorder.NewService),
-		fx.Populate(&recorderService),
+		fx.Populate(&recorderService, &roomService),
 	)
 
 	app.RequireStart()
 	defer app.RequireStop()
+
+	// Test multiple concurrent recordings
+	testRooms := resolveLiveTestRoomIDs(t, roomService, 2)
 
 	var m1, m2, m3 runtime.MemStats
 	runtime.GC()
@@ -375,7 +388,7 @@ func TestRecorder_MemoryLeak_ConcurrentRecordings(t *testing.T) {
 	// Start all recordings
 	startedRooms := []int{}
 	for _, room := range testRooms {
-		err := startMemLeakRecording(t, recorderService, room)
+		err := startMemLeakRecording(t, recorderService, roomService, room)
 		if err != nil {
 			switch err {
 			case recorder.ErrStreamNotLive:
@@ -437,23 +450,24 @@ func TestRecorder_Goroutine_Leak(t *testing.T) {
 		t.Skip("Skipping goroutine leak test in short mode")
 	}
 
-	roomID := testutil.LiveRoomID(t)
-
 	var recorderService *recorder.Service
+	var roomService *room.Service
 
 	app := fxtest.New(t,
 		config.Module,
 		bilibili.Module,
 		fx.Provide(path.NewService),
 		fx.Provide(stream.NewService),
+		fx.Provide(room.NewService),
 		fx.Provide(convert.NewService),
 		fx.Provide(notify.NewService),
 		fx.Provide(recorder.NewService),
-		fx.Populate(&recorderService),
+		fx.Populate(&recorderService, &roomService),
 	)
 
 	app.RequireStart()
 	defer app.RequireStop()
+	roomID := resolveLiveTestRoomID(t, roomService)
 
 	// Baseline goroutine count
 	time.Sleep(1 * time.Second)
@@ -465,7 +479,7 @@ func TestRecorder_Goroutine_Leak(t *testing.T) {
 	for cycle := 0; cycle < cycles; cycle++ {
 		t.Logf("Cycle %d/%d", cycle+1, cycles)
 
-		err := startMemLeakRecording(t, recorderService, roomID)
+		err := startMemLeakRecording(t, recorderService, roomService, roomID)
 		if err != nil {
 			switch err {
 			case recorder.ErrStreamNotLive:

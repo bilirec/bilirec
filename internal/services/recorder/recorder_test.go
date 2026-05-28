@@ -17,8 +17,8 @@ import (
 	"github.com/bilirec/bilirec/internal/services/notify"
 	"github.com/bilirec/bilirec/internal/services/path"
 	"github.com/bilirec/bilirec/internal/services/recorder"
+	"github.com/bilirec/bilirec/internal/services/room"
 	"github.com/bilirec/bilirec/internal/services/stream"
-	"github.com/bilirec/bilirec/internal/testutil"
 	"github.com/bilirec/bilirec/utils"
 	"github.com/sirupsen/logrus"
 	"go.uber.org/fx"
@@ -31,23 +31,24 @@ func TestFlvRecord(t *testing.T) {
 		t.Skip("skipping TestFlvRecord in short mode")
 	}
 
-	room := testutil.LiveRoomID(t)
-
 	var recorderService *recorder.Service
+	var roomService *room.Service
 
 	app := fxtest.New(t,
 		config.Module,
 		bilibili.Module,
 		fx.Provide(path.NewService),
 		fx.Provide(stream.NewService),
+		fx.Provide(room.NewService),
 		fx.Provide(convert.NewService),
 		fx.Provide(notify.NewService),
 		fx.Provide(recorder.NewService),
-		fx.Populate(&recorderService),
+		fx.Populate(&recorderService, &roomService),
 	)
 
 	app.RequireStart()
 	defer app.RequireStop()
+	room := resolveLiveTestRoomID(t, roomService)
 
 	var m1, m2, m3 runtime.MemStats
 	runtime.GC()
@@ -97,23 +98,24 @@ func TestTsRecord(t *testing.T) {
 		t.Skip("skipping TestTsRecord in short mode")
 	}
 
-	room := testutil.LiveRoomID(t)
-
 	var recorderService *recorder.Service
+	var roomService *room.Service
 
 	app := fxtest.New(t,
 		config.Module,
 		bilibili.Module,
 		fx.Provide(path.NewService),
 		fx.Provide(stream.NewService),
+		fx.Provide(room.NewService),
 		fx.Provide(convert.NewService),
 		fx.Provide(notify.NewService),
 		fx.Provide(recorder.NewService),
-		fx.Populate(&recorderService),
+		fx.Populate(&recorderService, &roomService),
 	)
 
 	app.RequireStart()
 	defer app.RequireStop()
+	room := resolveLiveTestRoomID(t, roomService)
 
 	var m1, m2, m3 runtime.MemStats
 	runtime.GC()
@@ -163,23 +165,24 @@ func TestFmp4Record(t *testing.T) {
 		t.Skip("skipping TestFmp4Record in short mode")
 	}
 
-	room := testutil.LiveRoomID(t)
-
 	var recorderService *recorder.Service
+	var roomService *room.Service
 
 	app := fxtest.New(t,
 		config.Module,
 		bilibili.Module,
 		fx.Provide(path.NewService),
 		fx.Provide(stream.NewService),
+		fx.Provide(room.NewService),
 		fx.Provide(convert.NewService),
 		fx.Provide(notify.NewService),
 		fx.Provide(recorder.NewService),
-		fx.Populate(&recorderService),
+		fx.Populate(&recorderService, &roomService),
 	)
 
 	app.RequireStart()
 	defer app.RequireStop()
+	room := resolveLiveTestRoomID(t, roomService)
 
 	var m1, m2, m3 runtime.MemStats
 	runtime.GC()
@@ -228,26 +231,28 @@ func TestFlvRecord_AutoStopAfterDuration(t *testing.T) {
 		t.Skip("skipping TestFlvRecord_AutoStopAfterDuration in short mode")
 	}
 
-	room := testutil.LiveRoomID(t)
 	const recordDuration = 60 * time.Second
 	const pollInterval = 2 * time.Second
 	const tolerance = 20 * time.Second // allow extra time for stop to propagate
 
 	var recorderService *recorder.Service
+	var roomService *room.Service
 
 	app := fxtest.New(t,
 		config.Module,
 		bilibili.Module,
 		fx.Provide(path.NewService),
 		fx.Provide(stream.NewService),
+		fx.Provide(room.NewService),
 		fx.Provide(convert.NewService),
 		fx.Provide(notify.NewService),
 		fx.Provide(recorder.NewService),
-		fx.Populate(&recorderService),
+		fx.Populate(&recorderService, &roomService),
 	)
 
 	app.RequireStart()
 	defer app.RequireStop()
+	room := resolveLiveTestRoomID(t, roomService)
 
 	t.Logf("starting recording with duration limit: %v", recordDuration)
 	err := recorderService.Start(room, recorder.WithDuration(recordDuration))
