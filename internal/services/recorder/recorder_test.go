@@ -512,6 +512,6 @@ func init() {
 	if os.Getenv("CI") != "" {
 		os.Setenv("BILIBILI_LOGIN_MODE", "anonymous")
 		os.Setenv("SKIP_SMALL_FLUSH", "false")
+		logrus.SetLevel(logrus.DebugLevel)
 	}
-	logrus.SetLevel(logrus.DebugLevel)
 }

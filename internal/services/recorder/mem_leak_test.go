@@ -16,7 +16,6 @@ import (
 	"github.com/bilirec/bilirec/internal/services/recorder"
 	"github.com/bilirec/bilirec/internal/services/room"
 	"github.com/bilirec/bilirec/internal/services/stream"
-	"github.com/sirupsen/logrus"
 	"go.uber.org/fx"
 	"go.uber.org/fx/fxtest"
 )
@@ -519,12 +518,4 @@ func TestRecorder_Goroutine_Leak(t *testing.T) {
 	} else {
 		t.Logf("✅ No goroutine leak detected")
 	}
-}
-
-func init() {
-	if os.Getenv("CI") != "" {
-		os.Setenv("BILIBILI_LOGIN_MODE", "anonymous")
-		os.Setenv("SKIP_SMALL_FLUSH", "false")
-	}
-	logrus.SetLevel(logrus.DebugLevel)
 }

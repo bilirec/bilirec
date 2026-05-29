@@ -18,6 +18,7 @@ import (
 	"github.com/bilirec/bilirec/internal/services/stream"
 	"github.com/bilirec/bilirec/pkg/ds"
 	"github.com/bilirec/bilirec/pkg/pipeline"
+	"github.com/bilirec/bilirec/pkg/tx"
 	"github.com/bilirec/bilirec/utils"
 	"github.com/puzpuzpuz/xsync/v4"
 	"github.com/sirupsen/logrus"
@@ -55,9 +56,10 @@ type Service struct {
 	writingFiles ds.Set[string]
 	pipes        *xsync.Map[int, *pipeline.Pipe[[]byte]]
 
-	cfg *config.Config
-	ctx context.Context
-	wg  sync.WaitGroup
+	cfg   *config.Config
+	ctx   context.Context
+	wg    sync.WaitGroup
+	reser tx.Coordinator[int]
 }
 
 func NewService(
@@ -71,7 +73,7 @@ func NewService(
 
 	ctx, cancel := context.WithCancel(context.Background())
 
-	s := &Service{
+	r := &Service{
 		st:           st,
 		cv:           cv,
 		nt:           nt,
@@ -83,13 +85,31 @@ func NewService(
 		ctx:          ctx,
 	}
 
-	cv.SetActiveRecordingsGetter(s.ListRecordingSize)
+	r.reser = tx.NewPending(
+		func(roomId int, pendingStart ds.Set[int]) error {
+			if status := r.GetStatus(roomId); status == Recording {
+				return ErrRecordingStarted
+			}
+
+			if (r.recording.Size() + pendingStart.Size()) > r.cfg.MaxConcurrentRecordings {
+				if existing, ok := r.recording.Load(roomId); !ok { // if not recovering existing recording
+					return ErrMaxConcurrentRecordingsReached
+				} else if status := existing.status.Load(); status != recoveringPtr { // not recovering
+					return ErrMaxConcurrentRecordingsReached
+				}
+			}
+
+			return nil
+		},
+	)
+
+	cv.SetActiveRecordingsGetter(r.ListRecordingSize)
 
 	lc.Append(fx.StopHook(func() {
 		cancel()
-		s.wg.Wait()
+		r.wg.Wait()
 	}))
-	return s
+	return r
 }
 
 func (r *Service) Start(roomId int, options ...RecordStartOption) error {
@@ -110,17 +130,16 @@ func (r *Service) Start(roomId int, options ...RecordStartOption) error {
 
 	l := logger.WithField("room", roomId)
 
-	if status := r.GetStatus(roomId); status == Recording {
-		return ErrRecordingStarted
+	txn := r.reser.Begin()
+
+	if err := txn.Reserve(roomId); err != nil {
+		if errors.Is(err, tx.ErrAlreadyReserved) {
+			return ErrRecordingStarted
+		}
+		return err
 	}
 
-	if r.recording.Size() >= r.cfg.MaxConcurrentRecordings {
-		if existing, ok := r.recording.Load(roomId); !ok { // if not recovering existing recording
-			return ErrMaxConcurrentRecordingsReached
-		} else if status := existing.status.Load(); status != recoveringPtr { // not recovering
-			return ErrMaxConcurrentRecordingsReached
-		}
-	}
+	defer txn.Abort(roomId)
 
 	// Check disk space - require at least configured minimum free space
 	diskSpace, err := utils.GetDiskSpace(r.cfg.OutputDir)
@@ -348,6 +367,12 @@ func (r *Service) Start(roomId int, options ...RecordStartOption) error {
 			maxDuration: maxDuration,
 		}
 		info.SetOutputPath("") // initialize output path to empty string to avoid potential nil pointer dereference in finalize()
+
+		txn.ConfirmWith(roomId, func() {
+			info.status.Store(recordingPtr)
+			r.recording.Store(roomId, info)
+		})
+
 		return r.prepare(roomId, ch, strategy, ctx, info)
 	}
 	cancel()
@@ -375,9 +400,6 @@ func (r *Service) Stop(roomId int) bool {
 }
 
 func (r *Service) prepare(roomId int, ch <-chan []byte, strategy rs.StreamRecordStrategy, ctx context.Context, info *Info) error {
-
-	info.status.Store(recordingPtr)
-	r.recording.Store(roomId, info)
 
 	r.wg.Go(func() {
 		defer r.recover(roomId)
