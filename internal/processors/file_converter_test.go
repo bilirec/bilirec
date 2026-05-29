@@ -5,14 +5,14 @@ import (
 	"testing"
 
 	"github.com/bilirec/bilirec/internal/processors"
+	"github.com/bilirec/bilirec/pkg/ffmpeg"
 	"github.com/bilirec/bilirec/pkg/pipeline"
-	"github.com/bilirec/bilirec/utils"
 )
 
 func TestConvertToMp4(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
-	} else if !utils.FFmpegAvailable() {
+	} else if !ffmpeg.Available() {
 		t.Skip("ffmpeg not available, skipping test")
 	}
 
