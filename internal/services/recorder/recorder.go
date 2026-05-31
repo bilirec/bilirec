@@ -16,6 +16,7 @@ import (
 	"github.com/bilirec/bilirec/internal/services/convert"
 	"github.com/bilirec/bilirec/internal/services/notify"
 	"github.com/bilirec/bilirec/internal/services/stream"
+	"github.com/bilirec/bilirec/pkg/backoff"
 	"github.com/bilirec/bilirec/pkg/ds"
 	"github.com/bilirec/bilirec/pkg/pipeline"
 	"github.com/bilirec/bilirec/pkg/tx"
@@ -365,6 +366,14 @@ func (r *Service) Start(roomId int, options ...RecordStartOption) error {
 			startTime:   now,
 			room:        roomInfo,
 			maxDuration: maxDuration,
+			backoff: backoff.NewSequence(
+				2*time.Second, // 先連續三次 2 秒
+				2*time.Second,
+				2*time.Second,
+				5*time.Second, // 之後才開始增加退避時間
+				10*time.Second,
+				15*time.Second, // 最大退避時間 15 秒，之後一直保持直到重試成功
+			),
 		}
 		info.SetOutputPath("") // initialize output path to empty string to avoid potential nil pointer dereference in finalize()
 
@@ -559,6 +568,7 @@ func (r *Service) recover(roomId int) {
 		err := r.Start(roomId)
 		if err == nil {
 			l.Info("直播流恢复成功")
+			info.backoff.Reset()
 			return
 		}
 
@@ -579,6 +589,8 @@ func (r *Service) recover(roomId int) {
 				return
 			}
 
+			nextSleep := info.backoff.Next()
+
 			// if the error is stream not live, we should retry until max retry minutes reached, instead of max attempts, since the stream may be live again after some time
 			if err == ErrStreamNotLive {
 				// use r.cfg.MaxRetryMinutes to limit the total retry duration, instead of max attempts, since the stream may be live again after some time
@@ -593,10 +605,10 @@ func (r *Service) recover(roomId int) {
 				return
 			} else {
 				l.Warnf("第 %d 次恢复失败：%v", attempt, err)
-				l.Infof("将在 15 秒后重试恢复流录制...")
+				l.Infof("将在 %d 秒后重试恢复流录制...", int(nextSleep.Seconds()))
 			}
 
-			timer := time.NewTimer(15 * time.Second)
+			timer := time.NewTimer(nextSleep)
 			select {
 			case <-timer.C:
 				attempt++

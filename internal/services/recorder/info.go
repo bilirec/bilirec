@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/bilirec/bilirec/internal/modules/bilibili"
+	"github.com/bilirec/bilirec/pkg/backoff"
 	"github.com/bilirec/bilirec/pkg/ds"
 )
 
@@ -16,8 +17,9 @@ type Info struct {
 	outputPath  ds.Atomic[string]
 	maxDuration time.Duration // internal runtime semantics: 0 = unlimited
 
-	cancel context.CancelFunc
-	room   *bilibili.LiveRoomInfoDetail
+	cancel  context.CancelFunc
+	room    *bilibili.LiveRoomInfoDetail
+	backoff backoff.Backoff
 }
 
 func (r *Info) SetOutputPath(path string) {
