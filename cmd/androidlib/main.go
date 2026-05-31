@@ -35,14 +35,15 @@ var (
 )
 
 type StartConfig struct {
-	BasePath    string `json:"basePath"` // only this is required, others have defaults
-	Port        int    `json:"port"`
-	Host        string `json:"host"`
-	FrontendURL string `json:"frontendUrl"`
-	OutputDir   string `json:"outputDir"`
-	Username    string `json:"username"`
-	Password    string `json:"password"`
-	SSEToken    string `json:"sseToken"`
+	BasePath    string            `json:"basePath"` // only this is required, others have defaults
+	Port        int               `json:"port"`
+	Host        string            `json:"host"`
+	FrontendURL string            `json:"frontendUrl"`
+	OutputDir   string            `json:"outputDir"`
+	Username    string            `json:"username"`
+	Password    string            `json:"password"`
+	SSEToken    string            `json:"sseToken"`
+	Env         map[string]string `json:"env"` // for future extensibility
 }
 
 //export Start
@@ -155,6 +156,11 @@ func start(config StartConfig) C.int {
 	// 顯式設定
 	_ = os.Setenv("SEQUENTIAL_WRITE", "true")       // Android I/O scheduler 友好，防止並發寫入搶佔前台 UI
 	_ = os.Setenv("MAX_CONCURRENT_RECORDINGS", "3") // 顯式鎖定，防止默認值將來靜默變更
+
+	// override!
+	for key, value := range config.Env {
+		_ = os.Setenv(key, value)
+	}
 
 	basePath = &config.BasePath
 
