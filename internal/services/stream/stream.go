@@ -1,6 +1,7 @@
 package stream
 
 import (
+	"github.com/bilirec/bilirec/internal/modules/config"
 	"github.com/bilirec/bilirec/pkg/pool"
 	"github.com/sirupsen/logrus"
 )
@@ -8,12 +9,14 @@ import (
 var logger = logrus.WithField("service", "stream")
 
 type Service struct {
-	pool *pool.BytesPool
+	pool           *pool.BytesPool
+	chanBufferSize int
 }
 
-func NewService() *Service {
+func NewService(cfg *config.Config) *Service {
 	return &Service{
-		pool: pool.NewBytesPool(512 * 1024), // 512KB buffer
+		pool:           pool.NewBytesPool(cfg.ReadStreamBytesPoolSize),
+		chanBufferSize: cfg.ReadStreamChanBufferSize,
 	}
 }
 

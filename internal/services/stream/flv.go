@@ -9,7 +9,7 @@ import (
 )
 
 func (r *Service) ReadFlvStream(resp *resty.Response, ctx context.Context) (<-chan []byte, error) {
-	ch := make(chan []byte, 16) // ~8 MB buffer
+	ch := make(chan []byte, r.chanBufferSize)
 	go r.read(ch, resp.RawBody(), ctx)
 	return ch, nil
 }

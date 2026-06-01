@@ -76,6 +76,10 @@ type Config struct {
 	FFmpegAllowDuringRecording                    bool
 	FFmpegAllowDuringRecordingMaxActiveRecordings int
 
+	// configurable performances
+	ReadStreamBytesPoolSize  int
+	ReadStreamChanBufferSize int
+
 	// configurable global performances
 	uploadBufferSize               int
 	downloadBufferSize             int
@@ -175,6 +179,10 @@ func provider(lc fx.Lifecycle) (*Config, error) {
 		FFmpegMaxConcurrentTasks:           utils.MustAtoi(utils.EmptyOrElse(os.Getenv("FFMPEG_MAX_CONCURRENT_TASKS"), "1")),
 		FFmpegAllowDuringRecording:         os.Getenv("FFMPEG_ALLOW_DURING_RECORDING") == "true",
 		FFmpegAllowDuringRecordingMaxActiveRecordings: utils.MustAtoi(ffmpegAllowDuringRecordingMaxActives), // <1 = no limit; when >=1, ffmpeg during recording runs only if active recordings <= this value
+
+		// stream performance configs
+		ReadStreamBytesPoolSize:  utils.MustAtoi(utils.EmptyOrElse(os.Getenv("READ_STREAM_BYTES_POOL_SIZE"), "524288")), // default 512KB
+		ReadStreamChanBufferSize: utils.MustAtoi(utils.EmptyOrElse(os.Getenv("READ_STREAM_CHAN_BUFFER_SIZE"), "16")),    // default 16
 
 		// global performance configs
 		uploadBufferSize:               utils.MustAtoi(utils.EmptyOrElse(os.Getenv("UPLOAD_BUFFER_SIZE"), "5242880")),                // default 5MB

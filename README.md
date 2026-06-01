@@ -285,6 +285,8 @@ Android 库导出两个方法：
 | `UPLOAD_BUFFER_SIZE` | 上传时或向外部服务（如 CloudConvert）传输文件使用的缓冲区大小（字节） | `5242880` (5 MB) |
 | `DOWNLOAD_BUFFER_SIZE` | 文件下载 / 导出时使用的缓冲区大小（字节） | `5242880` (5 MB) |
 | `STREAM_WRITER_BUFFER_SIZE` | 流写入器（写入文件）缓冲区大小（字节） | `1048576` (1 MB) |
+| `READ_STREAM_BYTES_POOL_SIZE` | 读取直播流时使用的字节池单块大小（字节）；`FLV` / `HLS` 共用，建议与常见 chunk 大小一致 | `524288` (512 KB) |
+| `READ_STREAM_CHAN_BUFFER_SIZE` | 读取直播流时的通道缓冲区大小（chunk 数）；更大值可容忍网络/写入短时抖动，但会增加在途内存 | `16` |
 | `LIVE_STREAM_WRITER_BUFFER_SIZE` | 实时流写入缓冲区（用于直播录制或实时下载，字节）；更大的值减少 flush 频率，降低 SD 卡磨损 | `8388608` (8 MB) |
 | `LIVE_STREAM_WRITER_SYNC_PERIOD_SECS` | 实时流写入器执行周期性 `sync` 的周期（秒）；设为 0 禁用周期性 sync（仅在 Close 时 sync），大幅减少 SD 卡磨损 | `0` |
 | `LIVE_STREAM_WRITER_FLUSH_PERIOD_SECS` | 实时流写入器执行周期性 `flush` 的周期（秒）；值越大 flush 频率越低，越有利于减少 SD 卡写入频次 | `10` |
@@ -389,6 +391,8 @@ export WEBPUSH_SUBSCRIBER=mailto:webpush@example.com
 export UPLOAD_BUFFER_SIZE=5242880
 export DOWNLOAD_BUFFER_SIZE=5242880
 export STREAM_WRITER_BUFFER_SIZE=1048576
+export READ_STREAM_BYTES_POOL_SIZE=524288
+export READ_STREAM_CHAN_BUFFER_SIZE=16
 export LIVE_STREAM_WRITER_BUFFER_SIZE=8388608
 export LIVE_STREAM_WRITER_SYNC_PERIOD_SECS=0
 export LIVE_STREAM_WRITER_FLUSH_PERIOD_SECS=10

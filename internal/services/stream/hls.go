@@ -156,7 +156,7 @@ func (r *Service) ReadHlsStream(fetchM3u8URL func() (string, error), playlistCli
 	currentMapURI = pl.MapURI
 	mapSent = false
 
-	ch := make(chan []byte, 5)
+	ch := make(chan []byte, r.chanBufferSize)
 	go func() {
 		defer close(ch)
 		ticker := time.NewTicker(pollInterval)
