@@ -10,6 +10,8 @@ import "C"
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -108,9 +110,6 @@ func start(config StartConfig) C.int {
 		return 0
 	}
 
-	runtime.GOMAXPROCS(2)                   // 限制 2 個核心，防止手機過熱降頻
-	debug.SetMemoryLimit(180 * 1024 * 1024) // 軟性記憶體天花板 180MiB (確保 3 路穩定)
-
 	// Set default values if not provided
 	if config.Port == 0 {
 		config.Port = 8080
@@ -143,24 +142,21 @@ func start(config StartConfig) C.int {
 
 	_ = os.Setenv("MIN_DISK_SPACE_BYTES", "2147483648") // 2GB
 
-	_ = os.Setenv("STREAM_WRITER_BUFFER_SIZE", "262144")       // 256KB
-	_ = os.Setenv("LIVE_STREAM_WRITER_BUFFER_SIZE", "1048576") // 1MB
-	_ = os.Setenv("LIVE_STREAM_WRITER_CHAN_BUFFER_SIZE", "10")
-	_ = os.Setenv("LIVE_STREAM_WRITER_SYNC_PERIOD_SECS", "45") // sync every 45 seconds, prevent data loss while keeping reasonable performance
-	_ = os.Setenv("LIVE_STREAM_WRITER_FLUSH_PERIOD_SECS", "5")
+	_ = os.Setenv("LIVE_STREAM_WRITER_BUFFER_SIZE", "4194304") // 4MB bufio writer buffer, balance between memory usage and write performance
+	_ = os.Setenv("LIVE_STREAM_WRITER_CHAN_BUFFER_SIZE", "32") // 512KB * 32 = 16MB buffer per stream, balance between memory usage and smoothness
+	_ = os.Setenv("LIVE_STREAM_WRITER_SYNC_PERIOD_SECS", "0")
+	_ = os.Setenv("LIVE_STREAM_WRITER_FLUSH_PERIOD_SECS", "10")
 
 	_ = os.Setenv("SKIP_SMALL_FLUSH", "false")
 	_ = os.Setenv("SILENT_ACCESS_LOG", "true")
 	_ = os.Setenv("CONVERT_TO_MP4", "false")
 
-	// 顯式設定
-	_ = os.Setenv("SEQUENTIAL_WRITE", "true")       // Android I/O scheduler 友好，防止並發寫入搶佔前台 UI
-	_ = os.Setenv("MAX_CONCURRENT_RECORDINGS", "3") // 顯式鎖定，防止默認值將來靜默變更
-
 	// override!
 	for key, value := range config.Env {
 		_ = os.Setenv(key, value)
 	}
+
+	initResourceLimits()
 
 	basePath = &config.BasePath
 
@@ -207,6 +203,42 @@ func getBootstrapLog(ifExist func(*os.File)) {
 	if targetLog != nil {
 		ifExist(targetLog)
 	}
+}
+
+func initResourceLimits() {
+	// 1. 獲取用戶設定的最大錄製數量 (預設為 3)
+	maxConcurrentStr := os.Getenv("MAX_CONCURRENT_RECORDINGS")
+	maxConcurrent, err := strconv.Atoi(maxConcurrentStr)
+	if err != nil || maxConcurrent < 1 {
+		maxConcurrent = 3
+	}
+
+	// 2. 動態計算記憶體天花板 (Soft Memory Limit)
+	// 公式: 基礎開銷(60MB) + (最大錄製數 * 單路開銷(36MB))
+	const baseMemoryMB = 60
+	const perStreamMemoryMB = 36
+
+	targetMemoryMB := baseMemoryMB + (maxConcurrent * perStreamMemoryMB)
+	targetMemoryBytes := int64(targetMemoryMB * 1024 * 1024)
+
+	// 設定記憶體上限
+	debug.SetMemoryLimit(targetMemoryBytes)
+
+	// 3. 動態配置 CPU 核心數 (GOMAXPROCS)
+	// 公式: 預設 2 核，每多 3 路錄製增加 1 核，但上限不超過設備物理核心數的一半
+	totalCPUs := runtime.NumCPU()
+	calculatedCPUs := 2 + (maxConcurrent / 3)
+
+	maxAllowedCPUs := int(math.Max(2, float64(totalCPUs)/2.0)) // 至少2核，至多一半核心
+
+	finalCPUs := max(min(calculatedCPUs, maxAllowedCPUs, totalCPUs), 1) // 最終值：同時不超過 calculated / maxAllowed / total + 防呆，避免任何極端情況變成 0
+
+	runtime.GOMAXPROCS(finalCPUs)
+
+	getBootstrapLog(func(f *os.File) {
+		fmt.Fprintf(f, "System limits dynamically adjusted: Max Recordings=%d, Mem Limit=%d MB, CPU Cores=%d/%d\n",
+			maxConcurrent, targetMemoryMB, finalCPUs, totalCPUs)
+	})
 }
 
 func main() {}
