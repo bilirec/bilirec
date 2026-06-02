@@ -16,4 +16,6 @@ dist
 *.exe
 *.log
 
+.vscode/
+
 .env.local

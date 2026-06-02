@@ -10,7 +10,6 @@ import "C"
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"math"
 	"os"
 	"path/filepath"
@@ -29,9 +28,6 @@ import (
 var (
 	androidApp *fx.App
 	appMu      sync.Mutex
-
-	bootstrapLog *os.File
-	logMu        sync.Mutex // 保護 bootstrapLog 指標的鎖
 
 	basePath *string // 用於記錄啟動和停止事件的日誌文件位置
 )
@@ -87,13 +83,9 @@ func Stop() C.int {
 	if err := androidApp.Stop(ctx); err != nil {
 		logrus.Errorf("failed to stop app: %v\n", err)
 		exitCode = 1
-		getBootstrapLog(func(log *os.File) {
-			_, _ = log.WriteString("-------------- STOP FAILED at " + time.Now().Format("2006-01-02 15:04:05") + " ---------------\n")
-		})
+		safeLog("-------------- STOP FAILED at " + time.Now().Format("2006-01-02 15:04:05") + " ---------------")
 	} else {
-		getBootstrapLog(func(log *os.File) {
-			_, _ = log.WriteString("-------------- STOP at " + time.Now().Format("2006-01-02 15:04:05") + " ---------------\n")
-		})
+		safeLog("-------------- STOP at " + time.Now().Format("2006-01-02 15:04:05") + " ---------------")
 	}
 
 	androidApp = nil
@@ -109,6 +101,11 @@ func start(config StartConfig) C.int {
 	if androidApp != nil {
 		return 0
 	}
+
+	basePath = &config.BasePath
+
+	initBootstrapLog(config.BasePath)
+	loadAndroidTimeZone()
 
 	// Set default values if not provided
 	if config.Port == 0 {
@@ -156,17 +153,14 @@ func start(config StartConfig) C.int {
 		_ = os.Setenv(key, value)
 	}
 
+	loadEnvironmentTimeZone()
 	initResourceLimits()
-
-	basePath = &config.BasePath
 
 	app := bootstrap.NewAndroidApp()
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
-	getBootstrapLog(func(log *os.File) {
-		_, _ = log.WriteString("-------------- START at " + time.Now().Format("2006-01-02 15:04:05") + " --------------\n")
-	})
+	safeLog("-------------- START at " + time.Now().Format("2006-01-02 15:04:05") + " --------------")
 
 	if err := app.Start(ctx); err != nil {
 		return 1
@@ -174,35 +168,6 @@ func start(config StartConfig) C.int {
 
 	androidApp = app
 	return 0
-}
-
-func getBootstrapLog(ifExist func(*os.File)) {
-	logMu.Lock()
-	if bootstrapLog == nil && basePath != nil {
-
-		log, err := os.OpenFile(filepath.Join(*basePath, "bootstrap.log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
-		if err == nil {
-			logrus.SetOutput(log)
-			bootstrapLog = log
-		} else {
-			_, _ = os.Stderr.WriteString("--- [SO ERROR] Failed to open bootstrap log: " + err.Error() + "\n")
-			logrus.SetOutput(os.Stderr)
-		}
-
-		logrus.SetFormatter(&logrus.TextFormatter{
-			TimestampFormat: "2006-01-02 15:04:05",
-			FullTimestamp:   true,
-			ForceColors:     false, // disable colors for file output
-		})
-	}
-
-	targetLog := bootstrapLog
-
-	logMu.Unlock()
-
-	if targetLog != nil {
-		ifExist(targetLog)
-	}
 }
 
 func initResourceLimits() {
@@ -235,10 +200,8 @@ func initResourceLimits() {
 
 	runtime.GOMAXPROCS(finalCPUs)
 
-	getBootstrapLog(func(f *os.File) {
-		fmt.Fprintf(f, "System limits dynamically adjusted: Max Recordings=%d, Mem Limit=%d MB, CPU Cores=%d/%d\n",
-			maxConcurrent, targetMemoryMB, finalCPUs, totalCPUs)
-	})
+	safeLogF("System limits dynamically adjusted: Max Recordings=%d, Mem Limit=%d MB, CPU Cores=%d/%d\n",
+		maxConcurrent, targetMemoryMB, finalCPUs, totalCPUs)
 }
 
 func main() {}
