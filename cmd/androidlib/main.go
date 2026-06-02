@@ -23,13 +23,13 @@ import (
 	"github.com/bilirec/bilirec/internal/bootstrap"
 	"github.com/sirupsen/logrus"
 	"go.uber.org/fx"
+	"gopkg.in/natefinch/lumberjack.v2"
 )
 
 var (
 	androidApp *fx.App
 	appMu      sync.Mutex
-
-	basePath *string // 用於記錄啟動和停止事件的日誌文件位置
+	logger     *lumberjack.Logger
 )
 
 type StartConfig struct {
@@ -83,12 +83,14 @@ func Stop() C.int {
 	if err := androidApp.Stop(ctx); err != nil {
 		logrus.Errorf("failed to stop app: %v\n", err)
 		exitCode = 1
-		safeLog("-------------- STOP FAILED at " + time.Now().Format("2006-01-02 15:04:05") + " ---------------")
+		logrus.Info("-------------- STOP FAILED at " + time.Now().Format("2006-01-02 15:04:05") + " ---------------")
 	} else {
-		safeLog("-------------- STOP at " + time.Now().Format("2006-01-02 15:04:05") + " ---------------")
+		logrus.Info("-------------- STOP at " + time.Now().Format("2006-01-02 15:04:05") + " ---------------")
 	}
 
+	closeBootstrapLog(logger)
 	androidApp = nil
+	logger = nil
 	return C.int(exitCode)
 }
 
@@ -102,9 +104,7 @@ func start(config StartConfig) C.int {
 		return 0
 	}
 
-	basePath = &config.BasePath
-
-	initBootstrapLog(config.BasePath)
+	log := initBootstrapLog(config.BasePath)
 	loadAndroidTimeZone()
 
 	// Set default values if not provided
@@ -160,13 +160,15 @@ func start(config StartConfig) C.int {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
-	safeLog("-------------- START at " + time.Now().Format("2006-01-02 15:04:05") + " --------------")
+	logrus.Info("-------------- START at " + time.Now().Format("2006-01-02 15:04:05") + " --------------")
 
 	if err := app.Start(ctx); err != nil {
+		closeBootstrapLog(log)
 		return 1
 	}
 
 	androidApp = app
+	logger = log
 	return 0
 }
 
@@ -200,7 +202,7 @@ func initResourceLimits() {
 
 	runtime.GOMAXPROCS(finalCPUs)
 
-	safeLogF("System limits dynamically adjusted: Max Recordings=%d, Mem Limit=%d MB, CPU Cores=%d/%d\n",
+	logrus.Infof("System limits dynamically adjusted: Max Recordings=%d, Mem Limit=%d MB, CPU Cores=%d/%d",
 		maxConcurrent, targetMemoryMB, finalCPUs, totalCPUs)
 }
 
