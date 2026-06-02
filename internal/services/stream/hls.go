@@ -1,9 +1,10 @@
-﻿package stream
+package stream
 
 import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"strings"
 	"time"
 
@@ -22,16 +23,39 @@ type hlsSegment = hlsutil.Segment
 type hlsPlaylist = hlsutil.Playlist
 
 var (
-	ErrM3u8Expired       = errors.New("hls：m3u8 播放列表已过期")
-	ErrNoM3u8URL         = errors.New("hls：没有可用的 m3u8 URL")
-	segmentRetryDelay    = 500 * time.Millisecond
-	segmentRetryAttempts = 3
-	manifestSyncWaitRate = 0.10
-	segmentPrefetchAhead = 2
+	ErrM3u8Expired        = errors.New("hls：m3u8 播放列表已过期")
+	ErrNoM3u8URL          = errors.New("hls：没有可用的 m3u8 URL")
+	playlistRetryDelay    = 250 * time.Millisecond
+	playlistRetryAttempts = 2
+	segmentRetryDelay     = 500 * time.Millisecond
+	segmentRetryAttempts  = 3
+	manifestSyncWaitRate  = 0.10
+	segmentPrefetchAhead  = 2
 )
 
 func isM3u8URLExpiredErr(err error) bool {
 	return errors.Is(err, ErrM3u8Expired)
+}
+
+func isRetryablePlaylistFetchErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, context.Canceled) {
+		return false
+	}
+
+	var netErr net.Error
+	if errors.As(err, &netErr) {
+		return netErr.Timeout() || netErr.Temporary()
+	}
+
+	errText := strings.ToLower(err.Error())
+	return strings.Contains(errText, "timeout") ||
+		strings.Contains(errText, "connection reset") ||
+		strings.Contains(errText, "broken pipe") ||
+		strings.Contains(errText, "goaway") ||
+		strings.Contains(errText, "eof")
 }
 
 // ReadHlsStream polls an HLS m3u8 playlist and delivers each new segment as a
@@ -85,20 +109,37 @@ func (r *Service) ReadHlsStream(fetchM3u8URL func() (string, error), playlistCli
 	}
 
 	fetchPlaylist := func() (*hlsPlaylist, error) {
-		resp, err := playlistClient.R().SetContext(ctx).Get(m3u8URL)
-		if err != nil {
-			return nil, fmt.Errorf("获取 m3u8 失败：%w", err)
+		for attempt := 1; attempt <= playlistRetryAttempts; attempt++ {
+			resp, err := playlistClient.R().SetContext(ctx).Get(m3u8URL)
+			if err != nil {
+				if attempt < playlistRetryAttempts && isRetryablePlaylistFetchErr(err) && !isCanceled(err, ctx) {
+					logger.Warnf("hls：获取 m3u8 失败，正在进行第 %d/%d 次重试：%v", attempt+1, playlistRetryAttempts, err)
+					timer := time.NewTimer(playlistRetryDelay)
+					select {
+					case <-timer.C:
+					case <-ctx.Done():
+						timer.Stop()
+						return nil, ctx.Err()
+					}
+					continue
+				}
+				return nil, fmt.Errorf("获取 m3u8 失败：%w", err)
+			}
+
+			if hlsutil.IsM3u8URLExpiredStatus(resp.StatusCode()) {
+				return nil, fmt.Errorf("%w (status=%d)", ErrM3u8Expired, resp.StatusCode())
+			} else if resp.StatusCode() != 200 {
+				return nil, fmt.Errorf("m3u8 状态码 %d", resp.StatusCode())
+			}
+
+			pl, parseErr := hlsutil.ParseBytes(resp.Body())
+			if parseErr != nil {
+				return nil, fmt.Errorf("解析 m3u8 失败：%w", parseErr)
+			}
+			return pl, nil
 		}
-		if hlsutil.IsM3u8URLExpiredStatus(resp.StatusCode()) {
-			return nil, fmt.Errorf("%w (status=%d)", ErrM3u8Expired, resp.StatusCode())
-		} else if resp.StatusCode() != 200 {
-			return nil, fmt.Errorf("m3u8 状态码 %d", resp.StatusCode())
-		}
-		pl, err := hlsutil.ParseBytes(resp.Body())
-		if err != nil {
-			return nil, fmt.Errorf("解析 m3u8 失败：%w", err)
-		}
-		return pl, nil
+
+		return nil, fmt.Errorf("获取 m3u8 失败：重试次数已耗尽")
 	}
 
 	fetchPlaylistWithRefresh := func() (*hlsPlaylist, error) {

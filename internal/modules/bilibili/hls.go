@@ -7,14 +7,14 @@ import (
 )
 
 // GetLiveHlsPlaylistClient returns a lazy-initialized client for fetching m3u8 playlists.
-// Uses a short timeout (3s) since playlists are small.
+// Uses a moderate timeout (5s) for mobile-network resilience.
 // The client is cached and reused for connection keep-alive.
 func (c *Client) GetLiveHlsPlaylistClient() *resty.Client {
 	c.hlsPlaylistClientOnce.Do(func() {
 		c.liveHlsPlaylistClient = configureLiveClient(
 			resty.New().
 				SetRedirectPolicy(resty.FlexibleRedirectPolicy(10)).
-				SetTimeout(3*time.Second),
+				SetTimeout(5*time.Second),
 			"application/vnd.apple.mpegurl, application/x-mpegURL, */*",
 		)
 		syncCookieToClient(c.liveHlsPlaylistClient, c.GetCookies())
