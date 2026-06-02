@@ -172,12 +172,14 @@ func TestRealInstanceConcurrentStartStop_Port8080_HighConcurrency(t *testing.T) 
 		}
 	})
 	cfg := StartConfig{
-		BasePath:    basePath,
-		Host:        testHost,
-		Port:        testPort,
-		FrontendURL: frontendURL,
-		OutputDir:   filepath.Join(basePath, "records"),
-		SSEToken:    "test-token",
+		BasePath: basePath,
+		Env: map[string]string{
+			"HOST":             testHost,
+			"PORT":             "8080",
+			"FRONTEND_URL":     frontendURL,
+			"OUTPUT_DIR":       filepath.Join(basePath, "records"),
+			"NOTIFY_SSE_TOKEN": "test-token",
+		},
 	}
 
 	stats := concurrentWaveStats{rounds: rounds, workers: workers}
@@ -264,12 +266,14 @@ func TestRealInstanceReproScript_PseudoStartReproduce(t *testing.T) {
 		}
 	})
 	cfg := StartConfig{
-		BasePath:    basePath,
-		Host:        testHost,
-		Port:        testPort,
-		FrontendURL: frontendURL,
-		OutputDir:   filepath.Join(basePath, "records"),
-		SSEToken:    "test-token",
+		BasePath: basePath,
+		Env: map[string]string{
+			"HOST":             testHost,
+			"PORT":             "8080",
+			"FRONTEND_URL":     frontendURL,
+			"OUTPUT_DIR":       filepath.Join(basePath, "records"),
+			"NOTIFY_SSE_TOKEN": "test-token",
+		},
 	}
 
 	if code := start(cfg); code != 0 {
@@ -424,12 +428,14 @@ func runRealInstanceCycles(t *testing.T, basePath string, opt cycleOptions) rest
 	stats := restartStats{rounds: opt.rounds}
 
 	cfg := StartConfig{
-		BasePath:    basePath,
-		Host:        testHost,
-		Port:        testPort,
-		FrontendURL: frontendURL,
-		OutputDir:   filepath.Join(basePath, "records"),
-		SSEToken:    "test-token",
+		BasePath: basePath,
+		Env: map[string]string{
+			"HOST":             testHost,
+			"PORT":             "8080",
+			"FRONTEND_URL":     frontendURL,
+			"OUTPUT_DIR":       filepath.Join(basePath, "records"),
+			"NOTIFY_SSE_TOKEN": "test-token",
+		},
 	}
 
 	for i := 1; i <= opt.rounds; i++ {

@@ -33,15 +33,8 @@ var (
 )
 
 type StartConfig struct {
-	BasePath    string            `json:"basePath"` // only this is required, others have defaults
-	Port        int               `json:"port"`
-	Host        string            `json:"host"`
-	FrontendURL string            `json:"frontendUrl"`
-	OutputDir   string            `json:"outputDir"`
-	Username    string            `json:"username"`
-	Password    string            `json:"password"`
-	SSEToken    string            `json:"sseToken"`
-	Env         map[string]string `json:"env"` // for future extensibility
+	BasePath string            `json:"basePath"`
+	Env      map[string]string `json:"env"`
 }
 
 //export Start
@@ -107,50 +100,28 @@ func start(config StartConfig) C.int {
 	log := initBootstrapLog(config.BasePath)
 	loadAndroidTimeZone()
 
-	// Set default values if not provided
-	if config.Port == 0 {
-		config.Port = 8080
-	}
-	if config.Host == "" {
-		config.Host = "127.0.0.1"
-	}
-	if config.FrontendURL == "" {
-		config.FrontendURL = "https://app.bilirec.org"
-	}
-	if config.OutputDir == "" {
-		config.OutputDir = filepath.Join(config.BasePath, "records")
-	}
-
-	if config.Username != "" && config.Password != "" {
-		_ = os.Setenv("USERNAME", config.Username)
-		_ = os.Setenv("PASSWORD", config.Password)
-	}
-
-	_ = os.Setenv("SECRET_DIR", filepath.Join(config.BasePath, "secrets"))
-	_ = os.Setenv("DATABASE_DIR", filepath.Join(config.BasePath, "database"))
-	_ = os.Setenv("OUTPUT_DIR", config.OutputDir)
-	_ = os.Setenv("HOST", config.Host)
-	_ = os.Setenv("PORT", strconv.Itoa(config.Port))
-	_ = os.Setenv("FRONTEND_URL", config.FrontendURL)
-	_ = os.Setenv("NOTIFY_SSE_TOKEN", config.SSEToken) // for android local notifications
-
-	_ = os.Setenv("BILIBILI_LOGIN_MODE", "controller") // avoid the process getting stuck in foreground service
-	_ = os.Setenv("FRP_ENABLED", "false")              // not expected to expose to public network in android
-
-	_ = os.Setenv("MIN_DISK_SPACE_BYTES", "2147483648") // 2GB
-
-	_ = os.Setenv("LIVE_STREAM_WRITER_BUFFER_SIZE", "4194304") // 4MB bufio writer buffer, balance between memory usage and write performance
-	_ = os.Setenv("LIVE_STREAM_WRITER_CHAN_BUFFER_SIZE", "32") // 512KB * 32 = 16MB buffer per stream, balance between memory usage and smoothness
-	_ = os.Setenv("LIVE_STREAM_WRITER_SYNC_PERIOD_SECS", "0")
-	_ = os.Setenv("LIVE_STREAM_WRITER_FLUSH_PERIOD_SECS", "10")
-
-	_ = os.Setenv("SKIP_SMALL_FLUSH", "false")
-	_ = os.Setenv("SILENT_ACCESS_LOG", "true")
-	_ = os.Setenv("CONVERT_TO_MP4", "false")
-
-	// override!
-	for key, value := range config.Env {
+	for key, value := range defaultAndroidEnv(config.BasePath) {
 		_ = os.Setenv(key, value)
+	}
+
+	username, hasUsername := config.Env["USERNAME"]
+	password, hasPassword := config.Env["PASSWORD"]
+
+	for key, value := range config.Env {
+		if value == "" {
+			continue
+		}
+
+		if key == "USERNAME" || key == "PASSWORD" {
+			continue
+		}
+
+		_ = os.Setenv(key, value)
+	}
+
+	if hasUsername && hasPassword && username != "" && password != "" {
+		_ = os.Setenv("USERNAME", username)
+		_ = os.Setenv("PASSWORD", password)
 	}
 
 	loadEnvironmentTimeZone()
@@ -204,6 +175,27 @@ func initResourceLimits() {
 
 	logrus.Infof("System limits dynamically adjusted: Max Recordings=%d, Mem Limit=%d MB, CPU Cores=%d/%d",
 		maxConcurrent, targetMemoryMB, finalCPUs, totalCPUs)
+}
+
+func defaultAndroidEnv(basePath string) map[string]string {
+	return map[string]string{
+		"HOST":                                 "127.0.0.1",
+		"PORT":                                 "8080",
+		"FRONTEND_URL":                         "https://app.bilirec.org",
+		"OUTPUT_DIR":                           filepath.Join(basePath, "records"),
+		"SECRET_DIR":                           filepath.Join(basePath, "secrets"),
+		"DATABASE_DIR":                         filepath.Join(basePath, "database"),
+		"BILIBILI_LOGIN_MODE":                  "controller",
+		"FRP_ENABLED":                          "false",
+		"MIN_DISK_SPACE_BYTES":                 "2147483648",
+		"LIVE_STREAM_WRITER_BUFFER_SIZE":       "4194304",
+		"LIVE_STREAM_WRITER_CHAN_BUFFER_SIZE":  "32",
+		"LIVE_STREAM_WRITER_SYNC_PERIOD_SECS":  "0",
+		"LIVE_STREAM_WRITER_FLUSH_PERIOD_SECS": "10",
+		"SKIP_SMALL_FLUSH":                     "false",
+		"SILENT_ACCESS_LOG":                    "true",
+		"CONVERT_TO_MP4":                       "false",
+	}
 }
 
 func main() {}
