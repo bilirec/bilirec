@@ -52,6 +52,8 @@ func Run(ctx context.Context, taskLog *logrus.Entry, args ...string) error {
 		return err
 	}
 
+	initFFmpegLoggerOnce()
+
 	sessionID := C.long(nextSessionID.Add(1))
 
 	finalArgs := args
@@ -91,6 +93,8 @@ func Run(ctx context.Context, taskLog *logrus.Entry, args ...string) error {
 		// 在 Android 系統中，這會觸發核心將該執行緒丟進 background cgroup
 		_ = syscall.Setpriority(syscall.PRIO_PROCESS, tid, 19)
 
+		taskLog.Debugf("Started ffmpeg session %d with TID %d at lowest priority", sessionID, tid)
+
 		// 這個 C 呼叫會一直阻塞，直到轉檔結束
 		exitCode := C.ffmpegkit_execute_session(sessionID, argc, (**C.char)(unsafe.Pointer(&cArgs[0])))
 		done <- int(exitCode)
@@ -100,6 +104,7 @@ func Run(ctx context.Context, taskLog *logrus.Entry, args ...string) error {
 	select {
 	case <-ctx.Done():
 		// 💥 觸發情境：Dart 端取消了任務，或是 Context Timeout 時間到了
+		taskLog.Warnf("FFmpeg 任务 %d 被取消或超时，正在强制停止 FFmpeg Session...", sessionID)
 
 		// 只取消當前任務綁定的 session，避免影響其他並發任務
 		C.ffmpegkit_cancel_session(sessionID)
@@ -107,14 +112,18 @@ func Run(ctx context.Context, taskLog *logrus.Entry, args ...string) error {
 		// 阻塞等待背景的 Goroutine 徹底退出，確保記憶體安全釋放
 		<-done
 
+		taskLog.Infof("FFmpeg 任务 %d 已经成功取消", sessionID)
+
 		// 回傳標準 Go 脈絡錯誤：context.Canceled 或 context.DeadlineExceeded
 		return ctx.Err()
 
 	case exitCode := <-done:
 		// 🎉 觸發情境：FFmpeg 正常執行完畢
 		if exitCode != 0 {
+			taskLog.Errorf("FFmpeg 任务 %d 执行失败，Exit Code: %d", sessionID, exitCode)
 			return fmt.Errorf("ffmpeg execution failed with exit code: %d", exitCode)
 		}
+		taskLog.Infof("FFmpeg 任务 %d 已经成功执行完毕", sessionID)
 		return nil
 	}
 }
