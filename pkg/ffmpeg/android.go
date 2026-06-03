@@ -126,8 +126,9 @@ func Run(ctx context.Context, taskLog *logrus.Entry, args ...string) error {
 	}
 }
 
-// Available reports whether ffmpeg backend is usable in cgo builds.
-// 在 cgo 模式下，ffmpeg 的可用性取決於是否能成功載入 ffmpegkit 的共享庫。
+// Available reports whether the ffmpeg backend is usable in cgo+android builds.
+// In this build configuration, the binary is linked against ffmpeg-kit at build time,
+// so we treat it as always available (missing libs would fail at link/load time).
 func Available() bool {
 	return true
 }
