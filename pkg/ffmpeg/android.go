@@ -42,8 +42,6 @@ var nextSessionID atomic.Int64
 
 // Run 封裝了 ffmpeg.so 的執行邏輯，並完美支援 Context 取消與逾時机制
 func Run(ctx context.Context, taskLog *logrus.Entry, args ...string) error {
-	_ = taskLog
-
 	if len(args) == 0 {
 		return fmt.Errorf("arguments cannot be empty")
 	}
