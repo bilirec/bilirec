@@ -1,6 +1,6 @@
 # Bilirec
 
-一个专为低配设备优化的 Bilibili 直播录制后端。
+一个专为低配设备优化的高性能 Bilibili 直播录制后端。
 
 ## 目录
 
@@ -121,10 +121,11 @@ docker run -d \
   -v /path/to/records:/app/records \
   -v /path/to/secrets:/app/secrets \
   -v /path/to/database:/app/database \
-  # 可选：启用 CloudConvert（替换为你的 API key）
   -e CLOUDCONVERT_API_KEY=your_api_key \
   bilirec:latest
 ```
+
+如果不需要 CloudConvert，可直接移除 `-e CLOUDCONVERT_API_KEY=...`。
 
 你也可以直接从 Docker Hub 拉取并运行镜像：
 
@@ -139,10 +140,11 @@ docker run -d \
   -v /path/to/records:/app/records \
   -v /path/to/secrets:/app/secrets \
   -v /path/to/database:/app/database \
-  # 可选：启用 CloudConvert（替换为你的 API key）
   -e CLOUDCONVERT_API_KEY=your_api_key \
   eric1008818/bilirec:latest
 ```
+
+如果不需要 CloudConvert，可直接移除 `-e CLOUDCONVERT_API_KEY=...`。
 
 ### Android（嵌入 App）
 
@@ -165,21 +167,25 @@ Android 库导出两个方法：
 - `Start(configJson)`：启动服务（传入 JSON 配置）
 - `Stop()`：停止服务
 
-`Start` 支持字段：
+`Start` 当前支持字段：
 
 ```json
 {
   "basePath": "/data/user/0/your.app/files",
-  "port": 8080,
-  "host": "127.0.0.1",
-  "frontendUrl": "https://app.bilirec.org",
-  "outputDir": "/data/user/0/your.app/files/records",
-  "username": "admin",
-  "password": "changeme"
+  "env": {
+    "PORT": "8080",
+    "HOST": "127.0.0.1",
+    "FRONTEND_URL": "https://app.bilirec.org",
+    "USERNAME": "admin",
+    "PASSWORD": "changeme",
+    "MAX_CONCURRENT_RECORDINGS": "3"
+  }
 }
 ```
 
-其中 `basePath` 必填，其余字段可省略并使用默认值。Android 模式下会强制启用以下行为（与服务器版区分）：
+其中 `basePath` 必填，`env` 可选（用于覆盖默认环境变量）。
+
+Android 模式下会先注入一组移动端默认值（如 `HOST=127.0.0.1`、`PORT=8080`、`OUTPUT_DIR/SECRET_DIR/DATABASE_DIR` 指向 `basePath` 下目录），再套用 `env` 覆盖；并强制启用以下行为（与服务器版区分）：
 
 - `BILIBILI_LOGIN_MODE=controller`
 - `FRP_ENABLED=false`
@@ -407,7 +413,13 @@ export PASSWORD=changeme
 export PRODUCTION_MODE=false
 ```
 
-如果你是使用二进制文件，启动服务后会生成 `.env` 文件，里面包含当前的环境变量配置（不包含敏感信息）。你可以编辑这个文件来修改配置，或者直接设置环境变量覆盖。
+如果你是使用二进制文件：
+
+- 启动时会优先尝试加载当前工作目录下的 `.env.local`（若存在）；
+- 若不存在 `.env.local`，程序会在可执行文件同目录下生成（或读取）`.env` 模板文件；
+- 在 Docker 环境下会跳过 `.env` 自动加载，主要使用容器环境变量。
+
+你可以编辑 `.env.local` / `.env` 来修改配置，或直接设置环境变量覆盖。
 
 `PUBLIC_BASE_URL` 为空或不是有效 URL（必须包含 `http/https`）时，预签名 URL 会记录 warning 并回退为不含 base URL 的相对地址（`/files/tempdownload?presigned=...`）；CloudConvert 在该情况下会直接报错并拒绝创建任务。
 
@@ -1001,7 +1013,7 @@ curl -s -b cookies.txt http://127.0.0.1:8080/auth/bilibili/status
 ## 开发与调试
 
 - **启用调试**：设置环境变量 `DEBUG=true` 启用调试模式，服务器启动时会在日志中打印一个临时十六进制令牌（hex token）。
-- **pprof 性能分析**：调试模式下会在 `/debug/pprof` 挂载 pprof 以便性能分析。该路由受保护：可以在请求头 `Authorization` 中填入启动日志中显示的 hex 令牌来访问。
+- **pprof 性能分析**：调试模式下会在 `/debug/pprof` 挂载 pprof 以便性能分析。该路由受保护：需要在请求头 `Authorization` 中填入启动日志中显示的 hex 令牌。
 - **实现参考**：该逻辑位于 `internal/modules/rest/rest.go` 中（`DEBUG` 控制是否启用，令牌授权访问）。
 
 ## 项目结构
@@ -1013,12 +1025,14 @@ curl -s -b cookies.txt http://127.0.0.1:8080/auth/bilibili/status
 ├── go.mod
 ├── LICENSE
 ├── README.md
-├── main.go
 ├── swagger.go
 ├── dotenv.go
-├── main_test.go
+├── cmd/
+│   ├── backend/                      # 后端可执行入口
+│   └── androidlib/                   # Android c-shared 动态库入口
 ├── internal/                         # 内部包（不对外暴露）
 │   ├── controllers/                  # HTTP 控制器
+│   │   ├── auth/                     # Bilibili 登录控制
 │   │   ├── convert/                  # 转换任务管理
 │   │   ├── file/                     # 文件管理
 │   │   ├── notify/                   # 实时通知（Web Push + SSE）
@@ -1031,7 +1045,9 @@ curl -s -b cookies.txt http://127.0.0.1:8080/auth/bilibili/status
 │   ├── processors/                   # 流处理器
 │   └── services/                     # 业务逻辑服务
 │       ├── convert/                  # 转换服务
+│       ├── expose/                   # FRP 暴露服务
 │       ├── file/                     # 文件操作
+│       ├── janitor/                  # 录制文件清理与巡检
 │       ├── notify/                   # 实时通知服务
 │       ├── path/                     # 路径管理
 │       ├── recorder/                 # 直播录制
@@ -1040,6 +1056,7 @@ curl -s -b cookies.txt http://127.0.0.1:8080/auth/bilibili/status
 │       ├── subcheck/                 # 订阅检查与自动录制
 │       └── subscribe/                # 房间订阅管理
 ├── pkg/                              # 可复用库与工具
+│   ├── backoff/                      # 重试退避策略
 │   ├── cloudconvert/                 # CloudConvert API 客户端
 │   ├── db/                           # 数据库抽象层
 │   ├── ds/                           # 数据结构
@@ -1050,7 +1067,8 @@ curl -s -b cookies.txt http://127.0.0.1:8080/auth/bilibili/status
 │   ├── pipeline/                     # 流处理管道
 │   ├── pool/                         # 内存池
 │   ├── signeddownload/               # 预签名下载
-│   └── swr/                          # Stale-While-Revalidate 缓存
+│   ├── swr/                          # Stale-While-Revalidate 缓存
+│   └── tx/                           # 事务钩子与协调
 └── utils/                            # 工具函数库
 ```
 
@@ -1084,7 +1102,7 @@ curl -s -b cookies.txt http://127.0.0.1:8080/auth/bilibili/status
 - **实时修复（Realtime Fixer）**: 在流式写入场景下逐个修复 FLV Tag 的时间戳并输出，包含重复 Tag 去重（可查询去重统计），并通过内存池、去重缓存与周期清理来保持低延迟与低内存占用，适合边录制边推送或实时下载的场景。
 - **函数式编程工具**: 提供 [`fp`](pkg/fp/) 包含便捷的 maps 和 slices 操作函数
 - **REST API 文档**: Swagger UI 在根路径 `/` 提供（由 `swag` 生成，参见 `internal/modules/rest`）
-- **认证与调试**: 可选用户名/密码登录（设置 `USERNAME` 和 `PASSWORD`）启用 JWT 认证；调试模式下可通过 `/debug/pprof` 访问 pprof（受临时 token 或基本 auth 保护）
+- **认证与调试**: 可选用户名/密码登录（设置 `USERNAME` 和 `PASSWORD`）启用 JWT 认证；也可配置 `VIEWER_USERNAME` / `VIEWER_PASSWORD` 提供只读账号（写操作仍需 admin 角色）；调试模式下可通过 `/debug/pprof` 访问 pprof（受临时 token 保护）
 - **Cookie 管理**: 自动刷新 Bilibili Cookie 保持登录状态
 
 ## 依赖项
