@@ -2,109 +2,59 @@
 
 package ffmpeg
 
-/*
-#cgo android,arm64 LDFLAGS: -L${SRCDIR}/../../lib/arm64-v8a -lffmpegkit
-#cgo android,amd64 LDFLAGS: -L${SRCDIR}/../../lib/x86_64 -lffmpegkit
-#include <stdio.h>
-#include <stdarg.h>
-#include <string.h>
-
-void av_log_set_callback(void (*callback)(void*, int, const char*, va_list));
-void av_log_set_level(int level);
-
-// 使用固定大小的缓冲区避免动态内存分配
-extern void go_log_callback_bridge(int level, char* message, int len);
-
-static void c_log_callback(void* ptr, int level, const char* fmt, va_list vl) {
-    char buffer[2048];
-    int len = vsnprintf(buffer, sizeof(buffer), fmt, vl);
-    if (len > 0 && len < sizeof(buffer)) {
-        // 传递长度，避免 Go 侧调用 strlen
-        go_log_callback_bridge(level, buffer, len);
-    }
-}
-
-static void register_ffmpeg_log_callback() {
-    av_log_set_callback(c_log_callback);
-}
-*/
-import "C"
 import (
-	"strings"
-	"sync"
-	"unsafe"
+	"context"
 
 	"github.com/sirupsen/logrus"
 )
 
+type FFmpegLogPayload struct {
+	SessionID int64
+	Level     int
+	Message   string
+}
+
 var (
-	coreLog    = logrus.WithField("component", "ffmpeg_core")
-	logQueue   = make(chan logMessage, 256) // 缓冲通道
-	loggerOnce sync.Once
+	logQueue  = make(chan *FFmpegLogPayload, 512)
+	globalLog = logrus.WithField("component", "ffmpeg_core")
 )
 
-type logMessage struct {
-	level   int
-	message string
+func init() {
+	// 在 package 初始化時，自動啟動背景的日誌消費者 Goroutine
+	go startLogConsumer()
+	go activeSessions.StartCleanupJob(context.Background())
 }
 
-// initFFmpegLoggerOnce 显式初始化（在确保 FFmpeg 库已加载后调用）
-func initFFmpegLoggerOnce() {
-	loggerOnce.Do(func() {
-		go processLogMessages()
-
-		defer func() {
-			if r := recover(); r != nil {
-				coreLog.Errorf("注冊 ffmpeg logging hook 失敗 : %v", r)
-			}
-		}()
-
-		C.register_ffmpeg_log_callback()
-		C.av_log_set_level(32) // AV_LOG_INFO
-		coreLog.Info("ffmpeg logging hook 注冊成功")
-	})
-}
-
-//export go_log_callback_bridge
-func go_log_callback_bridge(level C.int, message *C.char, length C.int) {
-
-	if message == nil || length <= 0 {
-		return
+func ConsumeNativeLog(sessionID int64, level int, message string) {
+	payload := &FFmpegLogPayload{
+		SessionID: sessionID,
+		Level:     level,
+		Message:   message,
 	}
 
-	// 使用固定长度避免调用 C.GoString（它内部会调用 strlen）
-	buf := C.GoBytes(unsafe.Pointer(message), length)
-	goStr := string(buf)
-
-	// 非阻塞发送到通道，避免死锁
 	select {
-	case logQueue <- logMessage{level: int(level), message: goStr}:
+	case logQueue <- payload:
 	default:
-		// 如果通道满了，丢弃这条日志（总比崩溃好）
+		// 緩衝區滿時優雅降級，丟棄日誌，確保前線不塞車
 	}
 }
 
-// 在独立的 Go goroutine 中处理日志（安全）
-func processLogMessages() {
-	for msg := range logQueue {
-		goStr := strings.TrimRight(msg.message, "\r\n")
-		if goStr == "" {
-			continue
+// startLogConsumer 是專職負責 Disk I/O 的背景執行緒
+func startLogConsumer() {
+	for payload := range logQueue {
+		var log *logrus.Entry
+		if taskLog, found := activeSessions.LoadStale(payload.SessionID); found && taskLog != nil {
+			log = taskLog.WithField("component", "ffmpeg_core").WithField("session_id", payload.SessionID)
+		} else {
+			log = globalLog.WithField("session_id", payload.SessionID)
 		}
 
-		switch msg.level {
-		case 8: // AV_LOG_FATAL
-			coreLog.Errorf("[FFmpeg FATAL] %s", goStr)
-		case 16: // AV_LOG_ERROR
-			coreLog.Errorf("[FFmpeg ERROR] %s", goStr)
-		case 24: // AV_LOG_WARNING
-			coreLog.Warnf("[FFmpeg WARN]  %s", goStr)
-		case 32: // AV_LOG_INFO
-			coreLog.Infof("[FFmpeg INFO]  %s", goStr)
-		case 40: // AV_LOG_VERBOSE
-			coreLog.Infof("[FFmpeg VERB]  %s", goStr)
-		default: // AV_LOG_DEBUG
-			coreLog.Debugf("[FFmpeg DEBUG] %s", goStr)
+		if payload.Level <= 16 {
+			log.Errorf("[FFMPEG] %s", payload.Message)
+		} else if payload.Level <= 24 {
+			log.Warnf("[FFMPEG] %s", payload.Message)
+		} else {
+			log.Infof("[FFMPEG] %s", payload.Message)
 		}
 	}
 }

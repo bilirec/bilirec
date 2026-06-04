@@ -35,10 +35,14 @@ import (
 	"syscall"
 	"unsafe"
 
+	"github.com/bilirec/bilirec/pkg/ds"
 	"github.com/sirupsen/logrus"
 )
 
-var nextSessionID atomic.Int64
+var (
+	nextSessionID  atomic.Int64
+	activeSessions *ds.SoftMap[int64, *logrus.Entry] = ds.NewSoftMap[int64, *logrus.Entry]()
+)
 
 // Run 封裝了 ffmpeg.so 的執行邏輯，並完美支援 Context 取消與逾時机制
 func Run(ctx context.Context, taskLog *logrus.Entry, args ...string) error {
@@ -50,9 +54,9 @@ func Run(ctx context.Context, taskLog *logrus.Entry, args ...string) error {
 		return err
 	}
 
-	initFFmpegLoggerOnce()
-
-	sessionID := C.long(nextSessionID.Add(1))
+	goSessionID := nextSessionID.Add(1)
+	sessionID := C.long(goSessionID)
+	activeSessions.Store(goSessionID, taskLog)
 
 	finalArgs := args
 	if args[0] != "ffmpeg" {
@@ -68,6 +72,7 @@ func Run(ctx context.Context, taskLog *logrus.Entry, args ...string) error {
 
 	// 確保函式結束時，不論成功或失敗都會釋放 C 記憶體，避免手機 OOM 閃退
 	defer func() {
+		activeSessions.Delete(goSessionID)
 		for _, cStr := range cArgs {
 			C.free(unsafe.Pointer(cStr))
 		}
