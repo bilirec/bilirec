@@ -3,7 +3,7 @@ BACKEND_PKG := ./cmd/backend
 ANDROID_PKG := ./cmd/androidlib
 
 # Android build targets: abi -> goarch and clang binary
-ANDROID_TARGETS := arm64-v8a:arm64:aarch64-linux-android21-clang x86_64:amd64:x86_64-linux-android21-clang
+ANDROID_TARGETS := arm64-v8a:arm64:aarch64-linux-android24-clang x86_64:amd64:x86_64-linux-android24-clang
 
 .PHONY: dev build android
 
