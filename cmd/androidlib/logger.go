@@ -22,6 +22,7 @@ import (
 	"path/filepath"
 
 	"github.com/bilirec/bilirec/pkg/ffmpeg"
+	"github.com/bilirec/bilirec/pkg/rw"
 	"github.com/sirupsen/logrus"
 
 	"gopkg.in/natefinch/lumberjack.v2"
@@ -58,10 +59,12 @@ func initBootstrapLog(basePath string) *lumberjack.Logger {
 	log.SetOutput(logOutput)
 	logrus.SetOutput(logOutput)
 
-	logrus.SetFormatter(&logrus.TextFormatter{
-		TimestampFormat: "2006-01-02 15:04:05",
-		FullTimestamp:   true,
-		ForceColors:     false, // disable colors for file output
+	logrus.SetFormatter(&rw.MultiLineFormatter{
+		TextFormatter: logrus.TextFormatter{
+			TimestampFormat: "2006-01-02 15:04:05",
+			FullTimestamp:   true,
+			ForceColors:     false, // disable colors for file output
+		},
 	})
 
 	return logOutput
