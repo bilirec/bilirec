@@ -7,6 +7,7 @@
 - [功能特性](#功能特性)
 - [效能指标](#效能指标)
 - [安装](#安装)
+- [Android（嵌入 App）](#android嵌入-app)
 - [使用方法](#使用方法)
 - [配置](#配置)
 - [REST API](#rest-api)
@@ -19,24 +20,20 @@
 
 ## 功能特性
 
-- ✅ 手动触发录制任务，实时录制直播流
-- ✅ 支持多格式录制（HTTP-FLV / HLS-TS / HLS-fMP4）
-- ✅ 自动录制 - 为直播间配置自动开播录制
-- ✅ 可选录制时长 - 手动开始录制时可指定时长上限，时间到后自动停止；也可在订阅配置中预设自动录制的时长上限；支持设为无限录制
-- ✅ 直播通知 - 实时推送开播通知（网页/手机推送）
-- ✅ 自动分段轮转 - 当直播过程中发生直播 PK 等分辨率变更时，自动切换到新的录制分段文件，避免文件花屏或损坏
-- ✅ 支持多个直播间同时录制
-- ✅ 自动修复flv流，处理流中断和恢复（默认自动选择可用流格式，也支持手动指定格式）
-- ✅ 自动转换到MP4 - 支援透过cloudconvert或本地ffmpeg
-- ✅ RESTful API 管理录制任务或使用 [Web 界面](https://github.com/bilirec/bilirec-web)
-- ✅ Android 嵌入支持 - 提供 `cmd/androidlib` 的 c-shared 动态库输出，可将后端能力集成到 [Android App](https://github.com/bilirec/bilirec-mobile)
-- ✅ FRP 内网穿透 - 把录制后端安全暴露到外网，随时随地用 Web 界面 管理录制任务、文件和通知
-- ✅ 文件管理和下载功能
-- ✅ 在线播放 - 在 App 中直接预览和播放已录制的视频(仅限MP4)
-- ✅ 支持匿名登录或账号登录
-- ✅ 自动刷新 Cookie 保持登录状态
-- ✅ 低内存与低 CPU 占用，适合在资源受限设备（如树莓派）上运行
-- ✅ 默认配置下对 microSD 卡友好，能显着减低写入磨损 (针对树莓派)
+- ✅ **开箱即用** - 零配置起步，运行后直接访问 Web 界面即可管理任务
+- ✅ **多模式录制** - 支持手动开始录制或配置直播间自动开播录制
+- ✅ **多格式支持** - 完整支持 HTTP-FLV / HLS-TS / HLS-fMP4 格式
+- ✅ **灵活录制时长** - 支持指定时长上限、定时停止或设置无限时长录制
+- ✅ **开播即时通知** - 支持网页/手机端实时推送开播动态（Web Push / SSE）
+- ✅ **自动分段轮转** - 录制过程中检测到直播 PK 或分辨率变更时，自动切换新文件以防止花屏和损坏
+- ✅ **多路并发录制** - 支持同时录制多个直播间，在低配硬件上也能稳定运行
+- ✅ **故障自动恢复** - 自动修复 FLV 时间戳并处理流中断，确保连接波动时录制不中断
+- ✅ **自动 MP4 转换** - 录制完成后可自动转换为 MP4，支持本地 FFmpeg 或 CloudConvert 云端处理
+- ✅ **多端运行与接入** - 提供 RESTful API、[Web 界面](https://github.com/bilirec/bilirec-web)（支持 PWA），并支持通过 [Android App](https://github.com/bilirec/bilirec-mobile) 直接在手机上运行录制后端
+- ✅ **FRP 内网穿透** - 内置 FRP 客户端，无需公网 IP 即可在外网安全访问后端管理任务与文件
+- ✅ **文件管理与播放** - 提供文件列表浏览、批量删除及在浏览器中直接预览 MP4 视频
+- ✅ **账号登录与刷新** - 支持匿名或 B 站账号登录，并自动刷新 Cookie 保持登录有效
+- ✅ **低配设备深度优化** - 针对 microSD 卡优化写入策略，显著降低 SD 卡磨损与 I/O 峰值
 
 ## 效能指标
 
@@ -148,21 +145,75 @@ docker run -d \
 
 ### Android（嵌入 App）
 
-Bilirec 已内置 Android 嵌入入口（`cmd/androidlib`），可将后端以 `.so` 方式集成到 Android App。
+Bilirec 已内置 Android 嵌入入口（`cmd/androidlib`），可将后端以 `.so` 方式集成到 Android App，并支持在 Android 上通过 `ffmpeg.so` / `ffmpeg-kit` 本机库执行转码任务。
+
+Android 端日志已增强，现支持更清晰的多行 FFmpeg 日志输出和更可靠的任务取消处理。
 
 推荐直接参考官方 Android 客户端项目进行集成与使用：
 
 - [bilirec-mobile](https://github.com/bilirec/bilirec-mobile)
 
-构建示例（需安装 Android NDK）：
+构建示例（需安装 Android NDK 24，并准备好 `lib/arm64-v8a/libffmpegkit.so` 与 `lib/x86_64/libffmpegkit.so`）：
 
 ```bash
-make android
+make android os=linux
 ```
+
+如果你在 Windows 主机上构建，请改为：
+
+```bash
+make android os=windows
+```
+
+构建脚本会使用 Android NDK 的 clang 工具链，并要求将 `FFmpegKit` 的 shared library 放置在 `./lib/<abi>/libffmpegkit.so`。
+
+`NDK_HOME` 会从 `ANDROID_NDK_LATEST_HOME`、`ANDROID_NDK_ROOT` 或 `ANDROID_NDK_HOME` 中选取，请确保这些环境变量之一已指向你的 Android NDK 安装目录。
 
 输出目录：`dist/android/<abi>/libbilirec.so`（默认构建 `arm64-v8a` 与 `x86_64`）。
 
-Android 库导出两个方法：
+## 使用方法
+
+### 启动服务
+
+请先参阅上面的安装部分完成部署，再按下方[配置](#配置)设置环境变量后启动服务。
+
+默认使用 `controller` 模式登录。服务启动后，请打开 Web 界面并点击“登入”，再到右上角点击头像按钮完成 Bilibili 扫码登录。
+
+你也可以使用 `startup` 模式改为在终端显示二维码然后扫码登录，或者使用 `anonymous` 模式直接匿名登录（未登录可能无法录制 1080p 直播）。
+
+### Web 界面
+
+1. 直接访问 `https://app.bilirec.org/` 进入登入界面
+
+2. 根据你所设置的 `USERNAME` 和 `PASSWORD` 进行登录（如果未设置则直接进入）
+
+### 远程访问（FRP）
+
+如果启用 FRP 内网穿透：
+
+1. 启动内网穿透后，日志中会显示 FRP 连接状态和公网访问地址（如 `https://abc1234567.tunnel.bilirec.org`）
+
+2. 进入 `https://app.bilirec.org/` 后，在登录界面的服务器地址栏位输入公网访问地址（如 `https://abc1234567.tunnel.bilirec.org`）
+
+3. 使用 `USERNAME` 和 `PASSWORD` 登录（暴露到公网后请务必设置 `USERNAME` 和 `PASSWORD`）
+
+### Android App
+
+推荐使用官方 Android 客户端：
+
+- [bilirec-mobile](https://github.com/bilirec/bilirec-mobile)
+
+使用方式：
+
+1. 优先从 `bilirec-mobile` 的 Releases 下载并安装 APK。
+2. 打开 App 后，先在界面中点击启动按钮；启动成功后会出现“打开录制程序”按钮。
+3. 点击“打开录制程序”后，会跳转到 `https://app.bilirec.org/`，如果已安装 PWA 则会优先打开 PWA。
+4. 进入页面后直接点击“登入”即可；Android 默认连接 `http://localhost:8080`，且默认不启用账号密码。
+5. 若你需要自行开发或定制，再按 `bilirec-mobile` 文档选择源码构建或库集成；库模式可先执行 `make android` 生成 `libbilirec.so`。
+
+### Android 库接口
+
+如果你正在将 `libbilirec.so` 集成到自己的 Android 项目，该库导出两个方法：
 
 - `Start(configJson)`：启动服务（传入 JSON 配置）
 - `Stop()`：停止服务
@@ -193,48 +244,6 @@ Android 模式下会先注入一组移动端默认值（如 `HOST=127.0.0.1`、`
 - `CONVERT_TO_MP4=false`
 
 并使用更保守的移动端 I/O / 内存参数（例如较小写入缓冲、较低磁盘空间阈值）以避免前台卡顿。
-
-## 使用方法
-
-### 启动服务
-
-请先参阅上面的安装部分完成部署，再按下方[配置](#配置)设置环境变量后启动服务。
-
-默认使用 `controller` 模式登录。服务启动后，请打开 Web 界面并点击“登入”，再到右上角点击头像按钮完成 Bilibili 扫码登录。
-
-你也可以使用 `startup` 模式改为在终端显示二维码然后扫码登录，或者使用 `anonymous` 模式直接匿名登录（未登录可能无法录制 1080p 直播）。
-
-### Web 界面
-
-1. 设置你的 `FRONTEND_URL` 为 `https://app.bilirec.org/`
-
-2. 直接访问 `https://app.bilirec.org/` 进入登入界面
-
-3. 根据你所设置的 `USERNAME` 和 `PASSWORD` 进行登录（如果未设置则直接进入）
-
-### 远程访问（FRP）
-
-如果启用 FRP 内网穿透：
-
-1. 启动内网穿透后，日志中会显示 FRP 连接状态和公网访问地址（如 `https://abc1234567.tunnel.bilirec.org`）
-
-2. 进入 `https://app.bilirec.org/` 后，在登录界面的服务器地址栏位输入公网访问地址（如 `https://abc1234567.tunnel.bilirec.org`）
-
-3. 使用 `USERNAME` 和 `PASSWORD` 登录（暴露到公网后请务必设置 `USERNAME` 和 `PASSWORD`）
-
-### Android App
-
-推荐使用官方 Android 客户端：
-
-- [bilirec-mobile](https://github.com/bilirec/bilirec-mobile)
-
-使用方式：
-
-1. 优先从 `bilirec-mobile` 的 Releases 下载并安装 APK。
-2. 打开 App 后，先在界面中点击启动按钮；启动成功后会出现“打开录制程序”按钮。
-3. 点击“打开录制程序”后，会跳转到 `https://app.bilirec.org/`，如果已安装 PWA 则会优先打开 PWA。
-4. 进入页面后直接点击“登入”即可；Android 默认连接 `http://localhost:8080`，且默认不启用账号密码。
-5. 若你需要自行开发或定制，再按 `bilirec-mobile` 文档选择源码构建或库集成；库模式可先执行 `make android` 生成 `libbilirec.so`。
 
 ### 其他接入方式
 
@@ -1060,12 +1069,14 @@ curl -s -b cookies.txt http://127.0.0.1:8080/auth/bilibili/status
 │   ├── cloudconvert/                 # CloudConvert API 客户端
 │   ├── db/                           # 数据库抽象层
 │   ├── ds/                           # 数据结构
+│   ├── ffmpeg/                       # Android / 本地 FFmpeg 封装
 │   ├── flv/                          # FLV 格式处理
-│   ├── hls/                          # HLS 格式处理
 │   ├── fp/                           # 函数式编程工具（maps、slices）
+│   ├── hls/                          # HLS 格式处理
 │   ├── monitor/                      # 监控与统计
 │   ├── pipeline/                     # 流处理管道
 │   ├── pool/                         # 内存池
+│   ├── rw/                           # 日志格式化与多行日志处理
 │   ├── signeddownload/               # 预签名下载
 │   ├── swr/                          # Stale-While-Revalidate 缓存
 │   └── tx/                           # 事务钩子与协调
@@ -1093,6 +1104,7 @@ curl -s -b cookies.txt http://127.0.0.1:8080/auth/bilibili/status
 - **自动分段轮转（HTTP-FLV）**: 仅适用于 HTTP-FLV 格式；当检测到 FLV 文件头变更（直播 PK 等分辨率切换）时，自动轮转到新的分段文件并重写文件头，降低画质切换导致输出异常的风险。HLS-TS / HLS-fMP4 格式不使用文件轮转，不连续性由 HLS 播放列表层自然处理
 - **自动录制**: 为订阅的直播间配置自动开播录制，后台定期检查直播间状态并自动启动录制，详见 [`subcheck.Service`](internal/services/subcheck/check.go)
 - **实时通知**: 支持 Web Push 与 SSE 两种通知方式，推送直播开播通知和自动录制状态，详见 [`notify.Service`](internal/services/notify/notify.go)
+- **Android 嵌入支持**: 提供 `cmd/androidlib` 以生成 Android c-shared 库，支持 `ffmpeg.so` / `ffmpeg-kit` 本机库以及 Android 端的本地转码执行
 - **内存池**: 使用 [`pool.BufferPool`](pkg/pool/pool.go) 减少内存分配
 - **SWR 缓存**: 房间信息缓存采用 Stale-While-Revalidate 策略（[`pkg/swr`](pkg/swr/)），结合 singleflight 去重，缓存命中时立即返回旧数据并在后台异步刷新，软 TTL 5 分钟、硬 TTL 30 分钟，有效降低 Bilibili API 请求压力
 - **低资源占用**: 设计注重低内存，低SD卡磨損和低 CPU 使用，适合树莓派等资源受限设备
@@ -1113,6 +1125,7 @@ curl -s -b cookies.txt http://127.0.0.1:8080/auth/bilibili/status
 - [github.com/CuteReimu/bilibili/v2](https://github.com/CuteReimu/bilibili) - Bilibili API 客户端
 - [go.uber.org/fx](https://github.com/uber-go/fx) - 依赖注入框架
 - [github.com/sirupsen/logrus](https://github.com/sirupsen/logrus) - 日志库
+- [gopkg.in/natefinch/lumberjack.v2](https://github.com/natefinch/lumberjack) - 日志文件回滚与轮转
 
 ## 许可证
 
