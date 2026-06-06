@@ -11,6 +11,7 @@ import (
 	"github.com/bilirec/bilirec/internal/services/path"
 	"github.com/bilirec/bilirec/pkg/cloudconvert"
 	"github.com/bilirec/bilirec/pkg/db"
+	"github.com/bilirec/bilirec/pkg/ffmpeg"
 	"github.com/bilirec/bilirec/utils"
 	"github.com/sirupsen/logrus"
 	"go.uber.org/fx"
@@ -170,7 +171,7 @@ func (s *Service) InProgressSize() int {
 func (s *Service) SetActiveRecordingsGetter(getter GetActiveRecordings) {
 	if _, ok := s.managers["ffmpeg"]; ok {
 		return
-	} else if utils.FFmpegAvailable() {
+	} else if ffmpeg.Available() {
 		s.managers["ffmpeg"] = newFFmpegConvertManager(getter)
 	} else {
 		logger.Warn("ffmpeg 不可用，ffmpeg 转码管理器未初始化")

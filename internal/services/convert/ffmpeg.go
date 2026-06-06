@@ -4,12 +4,12 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/exec"
 	"sync"
 	"time"
 
 	"github.com/bilirec/bilirec/internal/modules/config"
 	"github.com/bilirec/bilirec/pkg/db"
+	"github.com/bilirec/bilirec/pkg/ffmpeg"
 	"github.com/bilirec/bilirec/pkg/pool"
 	"github.com/bilirec/bilirec/utils"
 	"github.com/puzpuzpuz/xsync/v4"
@@ -46,7 +46,7 @@ func newFFmpegConvertManager(getActives GetActiveRecordings) ConvertManager {
 }
 
 func (f *ffmpegConvertManager) StartWorker(ctx context.Context, wg *sync.WaitGroup, db *db.Client) error {
-	if !utils.FFmpegAvailable() {
+	if !ffmpeg.Available() {
 		return ErrFFmpegNotInstalled
 	} else if bucket, err := db.Bucket(ffmpegBucket); err != nil {
 		return err
@@ -223,8 +223,7 @@ func (f *ffmpegConvertManager) processTask(ctx context.Context, queue *TaskQueue
 		return nil
 	}
 
-	cmd := exec.CommandContext(ctx,
-		"ffmpeg",
+	if err := ffmpeg.Run(ctx, taskLog,
 		"-hide_banner",
 		"-i",
 		queue.InputPath,
@@ -237,15 +236,7 @@ func (f *ffmpegConvertManager) processTask(ctx context.Context, queue *TaskQueue
 		"-c",
 		"copy",
 		queue.OutputPath,
-	)
-
-	ffmpegLogger := taskLog.WriterLevel(logrus.DebugLevel)
-	defer ffmpegLogger.Close()
-
-	cmd.Stdout = ffmpegLogger
-	cmd.Stderr = ffmpegLogger
-
-	if err := cmd.Run(); err != nil {
+	); err != nil {
 		return err
 	} else if err := ValidateOutputFileSize(queue.InputPath, queue.OutputPath); err != nil {
 		return err

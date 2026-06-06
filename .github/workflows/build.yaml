@@ -72,6 +72,8 @@ jobs:
 
   build_android:
     runs-on: ubuntu-latest
+    env:
+      FFMPEGKIT_AAR_URL: https://repo1.maven.org/maven2/io/github/nikita36078/ffmpeg-kit/6.0.LTS/ffmpeg-kit-6.0.LTS.aar
     strategy:
       matrix:
         target:
@@ -93,6 +95,48 @@ jobs:
         uses: nttld/setup-ndk@v1
         with:
           ndk-version: r28
+
+      - name: Cache FFmpegKit JNI libs
+        id: cache-ffmpegkit
+        uses: actions/cache@v4
+        with:
+          path: .cache/ffmpeg-kit/jni
+          key: ${{ runner.os }}-ffmpegkit-6.0.LTS-jni
+
+      - name: Download and extract FFmpegKit AAR
+        if: steps.cache-ffmpegkit.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          mkdir -p .cache/ffmpeg-kit
+
+          curl -fL "$FFMPEGKIT_AAR_URL" -o .cache/ffmpeg-kit/ffmpeg-kit.aar
+          cp .cache/ffmpeg-kit/ffmpeg-kit.aar .cache/ffmpeg-kit/ffmpeg-kit.zip
+
+          rm -rf .cache/ffmpeg-kit/unpacked .cache/ffmpeg-kit/jni
+          unzip -q .cache/ffmpeg-kit/ffmpeg-kit.zip -d .cache/ffmpeg-kit/unpacked
+
+          if [ ! -d .cache/ffmpeg-kit/unpacked/jni ]; then
+            echo "Extracted AAR does not contain jni/"
+            exit 1
+          fi
+
+          mv .cache/ffmpeg-kit/unpacked/jni .cache/ffmpeg-kit/jni
+
+      - name: Prepare FFmpegKit libs for ABI
+        run: |
+          set -euo pipefail
+          ABI="${{ matrix.target.abi }}"
+
+          if [ ! -f ".cache/ffmpeg-kit/jni/$ABI/libffmpegkit.so" ]; then
+            echo "Missing .cache/ffmpeg-kit/jni/$ABI/libffmpegkit.so"
+            exit 1
+          fi
+
+          mkdir -p "./lib/$ABI"
+          cp -f ".cache/ffmpeg-kit/jni/$ABI/"*.so "./lib/$ABI/"
+
+          echo "Prepared ./lib/$ABI"
+          ls -la "./lib/$ABI"
 
       - name: Resolve Android clang path
         run: |
@@ -122,6 +166,7 @@ jobs:
           GOOS: android
           GOARCH: ${{ matrix.target.goarch }}
           CGO_ENABLED: "1"
+          CGO_LDFLAGS: -L${{ github.workspace }}/lib/${{ matrix.target.abi }} -lffmpegkit
 
       - name: Upload a Build Artifact
         uses: actions/upload-artifact@v6

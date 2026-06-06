@@ -2,7 +2,6 @@ package utils
 
 import (
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -42,13 +41,6 @@ func ChangePathFormat(path string, newFormat string) string {
 func IsFileExists(path string) bool {
 	fi, err := os.Stat(path)
 	return err == nil && fi.Size() > 0
-}
-
-func FFmpegAvailable() bool {
-	if err := exec.Command("ffmpeg", "-h").Run(); err != nil {
-		return false
-	}
-	return true
 }
 
 // GetDiskSpace returns disk usage information for the given path
