@@ -98,9 +98,12 @@ jobs:
           go-version: '1.25'
 
       - name: Setup Android NDK
+        id: setup-ndk
         uses: nttld/setup-ndk@v1
         with:
           ndk-version: r28
+          local-cache: true
+          add-to-path: false
 
       - name: Cache FFmpegKit JNI libs
         id: cache-ffmpegkit
@@ -146,9 +149,12 @@ jobs:
 
       - name: Resolve Android clang path
         run: |
-          NDK_HOME="${ANDROID_NDK_LATEST_HOME:-${ANDROID_NDK_ROOT:-$ANDROID_NDK_HOME}}"
+          NDK_HOME="${{ steps.setup-ndk.outputs.ndk-path }}"
           if [ -z "$NDK_HOME" ]; then
-            echo "Unable to find Android NDK path from ANDROID_NDK_LATEST_HOME/ANDROID_NDK_ROOT/ANDROID_NDK_HOME"
+            NDK_HOME="${ANDROID_NDK_LATEST_HOME:-${ANDROID_NDK_ROOT:-$ANDROID_NDK_HOME}}"
+          fi
+          if [ -z "$NDK_HOME" ]; then
+            echo "Unable to find Android NDK path from setup-ndk output or ANDROID_NDK_LATEST_HOME/ANDROID_NDK_ROOT/ANDROID_NDK_HOME"
             exit 1
           fi
 
@@ -177,7 +183,7 @@ jobs:
       - name: Upload a Build Artifact
         uses: actions/upload-artifact@v6
         with:
-          name: lib${{ env.artifact_name }}-android-${{ matrix.target.abi }}
+          name: ${{ env.artifact_name }}-android-${{ matrix.target.abi }}
           path: ./dist/lib${{ env.artifact_name }}-android-${{ matrix.target.abi }}.so
 
   upload_release:
@@ -186,14 +192,19 @@ jobs:
     if: github.event_name == 'release'
     strategy:
       matrix:
-        goarch: [ "amd64", "arm64", "windows", "android-arm64-v8a", "android-x86_64" ]
+        arch: 
+          - "linux-amd64"
+          - "linux-arm64"
+          - "windows"
+          - "android-arm64-v8a"
+          - "android-x86_64"
     permissions:
         contents: write
     steps:
       - uses: actions/download-artifact@v6
         id: download
         with:
-          name: ${{ env.artifact_name }}-${{ matrix.goarch }}
+          name: ${{ env.artifact_name }}-${{ matrix.arch }}
 
       - name: Release
         uses: softprops/action-gh-release@v2
