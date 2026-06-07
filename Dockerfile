@@ -1,4 +1,4 @@
-FROM golang:1.25-alpine AS build
+FROM golang:1.25-alpine AS builder
 
 WORKDIR /app
 
@@ -37,17 +37,56 @@ RUN --mount=type=cache,target=/go/pkg/mod \
             -ldflags "$LDFLAGS" \
             -o bilirec ./cmd/backend
 
+FROM alpine:latest AS ffmpeg-builder
+
+RUN apk add --no-cache \
+    build-base \
+    nasm \
+    yasm \
+    git \
+    tar \
+    zlib-dev
+
+WORKDIR /src
+RUN git clone --depth 1 --branch n8.1.1 https://github.com/FFmpeg/FFmpeg.git .
+
+# input accept: flv, mp4, mov, mpegts (ts), live_flv
+# output: mp4, mov
+RUN ./configure \
+    --prefix=/build \
+    --disable-everything \
+    --disable-programs \
+    --enable-ffmpeg \
+    --enable-ffprobe \
+    --enable-muxer=mp4,mov \
+    --enable-demuxer=mov,mp4,flv,mpegts,live_flv \
+    --enable-protocol=file \
+    --enable-parser=h264,aac,hevc \
+    --enable-bsf=aac_adtstoasc,h264_mp4toannexb,hevc_mp4toannexb \
+    --disable-doc \
+    --disable-htmlpages \
+    --disable-manpages \
+    --disable-podpages \
+    --disable-txtpages \
+    --disable-debug \
+    --extra-cflags="-Os" \
+    --extra-ldflags="-s"
+
+RUN make -j$(nproc) && make install
+
+RUN strip /build/bin/ffmpeg /build/bin/ffprobe
+
 FROM alpine:latest
 WORKDIR /app
 
-COPY --from=mwader/static-ffmpeg:8.1.1 /ffmpeg /usr/local/bin/
-COPY --from=mwader/static-ffmpeg:8.1.1 /ffprobe /usr/local/bin/
+COPY --from=ffmpeg-builder /build/bin/ffmpeg /usr/local/bin/
+COPY --from=ffmpeg-builder /build/bin/ffprobe /usr/local/bin/
 
 RUN ffmpeg -version && ffprobe -version
 
-COPY --from=build /usr/share/zoneinfo /usr/share/zoneinfo
-COPY --from=build /app/bilirec .
-COPY --from=build /app/docs ./docs
+COPY --from=builder /usr/share/zoneinfo /usr/share/zoneinfo
+COPY --from=builder /app/bilirec .
+COPY --from=builder /app/docs ./docs
 RUN chmod +x ./bilirec
 
 ENV TZ=Asia/Hong_Kong
