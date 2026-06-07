@@ -9,6 +9,12 @@ on:
   push:
     branches:
       - '**'
+    paths:
+      - '**/*.go'
+      - 'go.mod'
+      - 'go.sum'
+      - '.github/workflows/test.yaml'
+      - '.github/workflows/build.yaml'
   release:
     types:
       - created
