@@ -73,7 +73,7 @@ jobs:
   build_android:
     runs-on: ubuntu-latest
     env:
-      FFMPEGKIT_AAR_URL: https://repo1.maven.org/maven2/io/github/nikita36078/ffmpeg-kit/6.0.LTS/ffmpeg-kit-6.0.LTS.aar
+      FFMPEGKIT_AAR_URL: https://repo1.maven.org/maven2/com/antonkarpenko/ffmpeg-kit-min/2.1.0/ffmpeg-kit-min-2.1.0.aar
     strategy:
       matrix:
         target:
@@ -101,7 +101,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: .cache/ffmpeg-kit/jni
-          key: ${{ runner.os }}-ffmpegkit-6.0.LTS-jni
+          key: ${{ runner.os }}-ffmpegkit-2.1.0-jni
 
       - name: Download and extract FFmpegKit AAR
         if: steps.cache-ffmpegkit.outputs.cache-hit != 'true'
