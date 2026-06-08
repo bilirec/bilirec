@@ -103,7 +103,6 @@ jobs:
         uses: nttld/setup-ndk@v1
         with:
           ndk-version: r28
-          local-cache: true
           add-to-path: false
 
       - name: Cache FFmpegKit JNI libs
