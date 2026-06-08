@@ -196,6 +196,31 @@ func TestGetStreamUrlsV2WithProfiles(t *testing.T) {
 			t.Logf("expected hls-ts stream url: %s (protocol=%s, format=%s, codec=%s, qn=%d)", streamInfo.URL, streamInfo.Protocol, streamInfo.Format, streamInfo.Codec, streamInfo.Qn)
 		}
 	})
+
+	t.Run("hls-fmp4 profile", func(t *testing.T) {
+		urls, err := client.GetStreamURLsV2(roomID,
+			bilibili.WithProfiles(bilibili.ProfileHLSFMP4),
+		)
+		if err != nil {
+			if bilibili.IsErrRoomNotFound(err) {
+				t.Skip("room not found, skipped")
+			}
+			t.Fatal(err)
+		}
+		if len(urls) == 0 {
+			t.Skip("no hls-ts stream urls available currently")
+		}
+		for _, streamInfo := range urls {
+			lower := strings.ToLower(streamInfo.URL)
+			if strings.Contains(lower, ".flv") {
+				t.Fatalf("unexpected flv url in hls-ts profile result: %s", streamInfo.URL)
+			}
+			if !strings.Contains(lower, ".m3u8") {
+				t.Fatalf("expected .m3u8 url in hls-ts profile result: %s", streamInfo.URL)
+			}
+			t.Logf("expected hls-ts stream url: %s (protocol=%s, format=%s, codec=%s, qn=%d)", streamInfo.URL, streamInfo.Protocol, streamInfo.Format, streamInfo.Codec, streamInfo.Qn)
+		}
+	})
 }
 
 func TestHeaders(t *testing.T) {

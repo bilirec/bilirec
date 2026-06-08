@@ -40,7 +40,11 @@ func memLeakStartOptionsFromEnv() ([]recorder.RecordStartOption, string, error) 
 		return nil, "", fmt.Errorf("invalid %s value %q", recorderMemLeakStreamProfileEnv, raw)
 	}
 
-	return []recorder.RecordStartOption{recorder.WithStreamProfile(profile)}, string(profile), nil
+	return []recorder.RecordStartOption{
+		recorder.WithStreamOptions(
+			bilibili.WithProfiles(profile),
+		),
+	}, string(profile), nil
 }
 
 func startMemLeakRecording(t *testing.T, svc *recorder.Service, roomSvc *room.Service, room int) error {

@@ -55,7 +55,9 @@ func TestFlvRecord(t *testing.T) {
 	runtime.ReadMemStats(&m1)
 
 	t.Log("start it manually")
-	err := recorderService.Start(room, recorder.WithStreamProfile(bilibili.ProfileHTTPFLV))
+	err := recorderService.Start(room, recorder.WithStreamOptions(
+		bilibili.WithProfiles(bilibili.ProfileHTTPFLV),
+	))
 	if err != nil {
 		switch err {
 		case recorder.ErrStreamNotLive:
@@ -122,7 +124,9 @@ func TestTsRecord(t *testing.T) {
 	runtime.ReadMemStats(&m1)
 
 	t.Log("start it manually")
-	err := recorderService.Start(room, recorder.WithStreamProfile(bilibili.ProfileHLSTS))
+	err := recorderService.Start(room, recorder.WithStreamOptions(
+		bilibili.WithProfiles(bilibili.ProfileHLSTS),
+	))
 	if err != nil {
 		switch err {
 		case recorder.ErrStreamNotLive:
@@ -189,7 +193,9 @@ func TestFmp4Record(t *testing.T) {
 	runtime.ReadMemStats(&m1)
 
 	t.Log("start it manually")
-	err := recorderService.Start(room, recorder.WithStreamProfile(bilibili.ProfileHLSFMP4))
+	err := recorderService.Start(room, recorder.WithStreamOptions(
+		bilibili.WithProfiles(bilibili.ProfileHLSFMP4),
+	))
 	if err != nil {
 		switch err {
 		case recorder.ErrStreamNotLive:

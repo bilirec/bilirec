@@ -1,4 +1,4 @@
-﻿package record
+package record
 
 import (
 	"strconv"
@@ -39,6 +39,8 @@ func NewController(app *fiber.App, service *recorder.Service) *Controller {
 // @Param roomID path int true "Room ID"
 // @Param duration_minutes query int false "Recording duration in minutes. 0 = system default, -1 = unlimited, >0 = stop after N minutes, omit = system default (MAX_RECORDING_HOURS)"
 // @Param stream_profile query string false "Preferred stream profile: http-flv | hls-ts | hls-fmp4"
+// @Param qn query int false "Stream quality code: 80,150,250,400,10000,20000,30000"
+// @Param only_audio query bool false "Whether to request only audio stream"
 // @Success 200 "Recording started successfully"
 // @Failure 400 {string} string "Invalid room ID"
 // @Failure 403 {string} string "Forbidden"
@@ -64,16 +66,28 @@ func (r *Controller) startRecording(ctx fiber.Ctx) error {
 	}
 	// durationMinutes == 0 (not provided): pass no args → system default
 
+	streamOptions := []bilibili.GetStreamURLsOption{}
 	streamProfileRaw := strings.TrimSpace(fiber.Query(ctx, "stream_profile", ""))
 	if streamProfileRaw != "" {
-		switch bilibili.StreamProfile(streamProfileRaw) {
-		case bilibili.ProfileHTTPFLV, bilibili.ProfileHLSTS, bilibili.ProfileHLSFMP4:
-			startArgs = append(startArgs, recorder.WithStreamProfile(bilibili.StreamProfile(streamProfileRaw)))
-		default:
-			return fiber.NewError(fiber.StatusBadRequest, "无效的流格式，仅支持 http-flv / hls-ts / hls-fmp4")
-		}
+		streamOptions = append(streamOptions, bilibili.WithProfiles(bilibili.StreamProfile(streamProfileRaw)))
 	}
 
+	qnRaw := strings.TrimSpace(fiber.Query(ctx, "qn", ""))
+	if qnRaw != "" {
+		qn, err := strconv.Atoi(qnRaw)
+		if err != nil {
+			logger.Warnf("无法将 qn 解析为整数：%v", err)
+			return fiber.NewError(fiber.StatusBadRequest, "无效的 qn 参数")
+		}
+		streamOptions = append(streamOptions, bilibili.WithQn(bilibili.Quality(qn)))
+	}
+
+	onlyAudioRaw := strings.TrimSpace(strings.ToLower(fiber.Query(ctx, "only_audio", "false")))
+	if onlyAudio, _ := strconv.ParseBool(onlyAudioRaw); onlyAudio {
+		streamOptions = append(streamOptions, bilibili.WithOnlyAudio(true))
+	}
+
+	startArgs = append(startArgs, recorder.WithStreamOptions(streamOptions...))
 	err = r.service.Start(roomId, startArgs...)
 	if err != nil {
 		logger.Errorf("为房间 %d 开始录制失败：%v", roomId, err)
@@ -94,8 +108,12 @@ func (r *Controller) startRecording(ctx fiber.Ctx) error {
 			return fiber.NewError(fiber.StatusTooManyRequests, "已达到最大同时录制数")
 		case recorder.ErrInsufficientDiskSpace:
 			return fiber.NewError(fiber.StatusInsufficientStorage, "磁盘空间低于设定值")
-		case recorder.ErrInvalidStreamProfile:
-			return fiber.NewError(fiber.StatusBadRequest, "无效的流格式")
+		case bilibili.ErrInvalidStreamProfile:
+			return fiber.NewError(fiber.StatusBadRequest, "无效的流格式，仅支持 http-flv / hls-ts / hls-fmp4")
+		case bilibili.ErrInvalidStreamCodec:
+			return fiber.NewError(fiber.StatusBadRequest, "无效的编码格式，仅支持 AVC / HEVC / 其他")
+		case bilibili.ErrInvalidStreamQuality:
+			return fiber.NewError(fiber.StatusBadRequest, "无效的清晰度，仅支持 流畅 / 高清 / 超清 / 蓝光 / 原画 / 4K / 杜比")
 		case recorder.ErrStreamURLsUnreachable, recorder.ErrEmptyStreamURLs:
 			return fiber.NewError(fiber.StatusGone, "无法连接到视频流 URL")
 		default:

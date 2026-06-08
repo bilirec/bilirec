@@ -7,10 +7,9 @@ import (
 )
 
 type RecordStartOptions struct {
-	hasDuration      bool
-	duration         time.Duration
-	hasStreamProfile bool
-	streamProfile    bilibili.StreamProfile
+	hasDuration   bool
+	duration      time.Duration
+	streamOptions []bilibili.GetStreamURLsOption
 }
 
 type RecordStartOption func(*RecordStartOptions)
@@ -27,9 +26,8 @@ func WithDuration(d time.Duration) RecordStartOption {
 	}
 }
 
-func WithStreamProfile(profile bilibili.StreamProfile) RecordStartOption {
+func WithStreamOptions(opts ...bilibili.GetStreamURLsOption) RecordStartOption {
 	return func(o *RecordStartOptions) {
-		o.hasStreamProfile = true
-		o.streamProfile = profile
+		o.streamOptions = opts
 	}
 }

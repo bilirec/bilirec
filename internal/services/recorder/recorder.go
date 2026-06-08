@@ -1,4 +1,4 @@
-﻿package recorder
+package recorder
 
 import (
 	"context"
@@ -46,7 +46,6 @@ var ErrStreamURLsUnreachable = errors.New("所有流 URL 均不可达")
 var ErrRoomBanned = errors.New("该房间已被封禁")
 var ErrRoomEncrypted = errors.New("该房间已加密")
 var ErrInsufficientDiskSpace = errors.New("磁盘空间不足")
-var ErrInvalidStreamProfile = errors.New("无效的流配置")
 
 type Service struct {
 	st           *stream.Service
@@ -121,14 +120,6 @@ func (r *Service) Start(roomId int, options ...RecordStartOption) error {
 		}
 	}
 
-	if startOptions.hasStreamProfile {
-		switch startOptions.streamProfile {
-		case bilibili.ProfileHTTPFLV, bilibili.ProfileHLSTS, bilibili.ProfileHLSFMP4:
-		default:
-			return ErrInvalidStreamProfile
-		}
-	}
-
 	l := logger.WithField("room", roomId)
 
 	txn := r.reser.Begin()
@@ -166,11 +157,7 @@ func (r *Service) Start(roomId int, options ...RecordStartOption) error {
 
 	var streams []bilibili.StreamURLInfo
 	startTimeStreamURLs := time.Now()
-	if startOptions.hasStreamProfile {
-		streams, err = r.bilic.GetStreamURLsV2(roomId, bilibili.WithProfiles(startOptions.streamProfile))
-	} else {
-		streams, err = r.bilic.GetStreamURLsV2(roomId)
-	}
+	streams, err = r.bilic.GetStreamURLsV2(roomId, startOptions.streamOptions...)
 	durationStreamURLs := time.Since(startTimeStreamURLs)
 	l.Debugf("duration: function=GetStreamURLsV2 spent=%v", durationStreamURLs)
 

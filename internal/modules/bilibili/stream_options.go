@@ -1,6 +1,7 @@
 package bilibili
 
 import (
+	"fmt"
 	"sort"
 	"strings"
 
@@ -16,6 +17,28 @@ const (
 	CodecOther Codec = "2"
 )
 
+func (c Codec) String() string {
+	switch c {
+	case CodecAVC:
+		return "AVC"
+	case CodecHEVC:
+		return "HEVC"
+	case CodecOther:
+		return "其他"
+	default:
+		return fmt.Sprintf("未知(%s)", string(c))
+	}
+}
+
+func (c Codec) IsValid() bool {
+	switch c {
+	case CodecAVC, CodecHEVC, CodecOther:
+		return true
+	default:
+		return false
+	}
+}
+
 type StreamProfile string
 
 const (
@@ -24,17 +47,97 @@ const (
 	ProfileHLSFMP4 StreamProfile = "hls-fmp4"
 )
 
+func (p StreamProfile) String() string {
+	switch p {
+	case ProfileHTTPFLV:
+		return "http-flv"
+	case ProfileHLSTS:
+		return "hls-ts"
+	case ProfileHLSFMP4:
+		return "hls-fmp4"
+	default:
+		return fmt.Sprintf("未知(%s)", string(p))
+	}
+}
+
+func (p StreamProfile) IsValid() bool {
+	switch p {
+	case ProfileHTTPFLV, ProfileHLSTS, ProfileHLSFMP4:
+		return true
+	default:
+		return false
+	}
+}
+
+type Quality int
+
+const (
+	QualitySmooth   Quality = 80
+	QualityHigh     Quality = 150
+	QualitySuper    Quality = 250
+	QualityBluRay   Quality = 400
+	QualityOriginal Quality = 10000
+	Quality4K       Quality = 20000
+	QualityDolby    Quality = 30000
+)
+
+func (q Quality) String() string {
+	switch q {
+	case QualitySmooth:
+		return "流畅"
+	case QualityHigh:
+		return "高清"
+	case QualitySuper:
+		return "超清"
+	case QualityBluRay:
+		return "蓝光"
+	case QualityOriginal:
+		return "原画"
+	case Quality4K:
+		return "4K"
+	case QualityDolby:
+		return "杜比"
+	default:
+		return fmt.Sprintf("未知(%d)", int(q))
+	}
+}
+
+func (q Quality) IsValid() bool {
+	switch q {
+	case QualitySmooth, QualityHigh, QualitySuper, QualityBluRay, QualityOriginal, Quality4K, QualityDolby:
+		return true
+	default:
+		return false
+	}
+}
+
 type GetStreamURLsOption func(*getStreamURLsOptions)
 
 type getStreamURLsOptions struct {
-	profiles []StreamProfile
-	codecs   []Codec
+	profiles  []StreamProfile
+	codecs    []Codec
+	qn        Quality
+	onlyAudio bool
 }
 
 func defaultGetStreamURLsOptions() getStreamURLsOptions {
 	return getStreamURLsOptions{
-		profiles: []StreamProfile{ProfileHTTPFLV, ProfileHLSTS, ProfileHLSFMP4},
-		codecs:   []Codec{CodecAVC, CodecHEVC, CodecOther},
+		profiles:  []StreamProfile{ProfileHTTPFLV, ProfileHLSTS, ProfileHLSFMP4},
+		codecs:    []Codec{CodecAVC, CodecHEVC, CodecOther},
+		qn:        QualityDolby, // it will auto fallback to lower qualities if not found, so just request the highest one
+		onlyAudio: false,
+	}
+}
+
+func WithQn(qn Quality) GetStreamURLsOption {
+	return func(o *getStreamURLsOptions) {
+		o.qn = qn
+	}
+}
+
+func WithOnlyAudio(onlyAudio bool) GetStreamURLsOption {
+	return func(o *getStreamURLsOptions) {
+		o.onlyAudio = onlyAudio
 	}
 }
 

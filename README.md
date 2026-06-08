@@ -591,7 +591,7 @@ curl -s -b cookies.txt http://127.0.0.1:8080/auth/bilibili/status
 - **开始录制**
 
   ```http
-  POST /record/:roomID/start?duration_minutes=<N>&stream_profile=<profile>
+  POST /record/:roomID/start?duration_minutes=<N>&stream_profile=<profile>&qn=<quality>&only_audio=<bool>
   ```
 
   `duration_minutes` 为**可选** query 参数：
@@ -603,14 +603,40 @@ curl -s -b cookies.txt http://127.0.0.1:8080/auth/bilibili/status
   | `-1` | 无限录制，不自动停止 |
   | `N`（正整数） | N 分钟后自动停止 |
 
-  `stream_profile` 也是**可选** query 参数，用于优先指定录制流格式：
+  `stream_profile` 为**可选** query 参数，用于优先指定录制流格式：
 
   | 值 | 说明 |
   | -- | ---- |
   | 不传 | 自动选择可用流（默认行为） |
-  | `http-flv` | 仅使用 HTTP-FLV 录制 |
-  | `hls-ts` | 仅使用 HLS-TS 录制 |
-  | `hls-fmp4` | 仅使用 HLS-fMP4 录制 |
+  | `http-flv` | 优先使用 HTTP-FLV 录制 |
+  | `hls-ts` | 优先使用 HLS-TS 录制 |
+  | `hls-fmp4` | 优先使用 HLS-fMP4 录制 |
+
+  `qn` 为**可选** query 参数，用于指定 Bilibili 画质码：
+
+  | 值 | 说明 |
+  | -- | ---- |
+  | 不传 | 请求最高画质并自动回退 |
+  | `80` | 流畅 |
+  | `150` | 高清 |
+  | `250` | 超清 |
+  | `400` | 蓝光 |
+  | `10000` | 原画 |
+  | `20000` | 4K |
+  | `30000` | 杜比 |
+
+  `only_audio` 为**可选** bool query 参数：
+
+  | 值 | 说明 |
+  | -- | ---- |
+  | 不传 / `false` | 录制默认流，包含音视频 |
+  | `true` | 尝试仅录制音频流（请求 `only_audio=1`） |
+
+  例如：
+
+  ```bash
+  curl -X POST "http://127.0.0.1:8080/record/12345/start?duration_minutes=30&stream_profile=http-flv&qn=150&only_audio=true"
+  ```
 
 - **停止录制**
 

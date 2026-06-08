@@ -1,8 +1,10 @@
-﻿package bilibili
+package bilibili
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"net/url"
 	"slices"
 	"time"
 
@@ -88,14 +90,19 @@ type (
 	}
 
 	StreamURLInfo struct {
-		Protocol string
-		Format   string
-		Codec    string
-		URL      string
-		Qn       int
-		AcceptQn []int
+		Protocol    string
+		Format      string
+		Codec       string
+		URL         string
+		Qn          int
+		AcceptQn    []int
+		IsAudioOnly bool
 	}
 )
+
+var ErrInvalidStreamProfile = errors.New("无效的流配置")
+var ErrInvalidStreamCodec = errors.New("无效的流编码")
+var ErrInvalidStreamQuality = errors.New("无效的流画质")
 
 const v1StreamAPI = "https://api.live.bilibili.com/room/v1/Room/playUrl"
 const v2StreamAPI = "https://api.live.bilibili.com/xlive/web-room/v2/index/getRoomPlayInfo"
@@ -139,14 +146,30 @@ func (c *Client) GetStreamURLsV2(roomID int, opts ...GetStreamURLsOption) ([]Str
 		}
 	}
 
+	for _, profile := range options.profiles {
+		if !profile.IsValid() {
+			return nil, ErrInvalidStreamProfile
+		}
+	}
+
+	for _, codec := range options.codecs {
+		if !codec.IsValid() {
+			return nil, ErrInvalidStreamCodec
+		}
+	}
+
+	if !options.qn.IsValid() {
+		return nil, ErrInvalidStreamQuality
+	}
+
 	protocolRaw, formatRaw := profileQueryParams(options.profiles)
 	protocolStr := utils.EmptyOrElse(protocolRaw, "0,1")
 	formatStr := utils.EmptyOrElse(formatRaw, "0,1,2")
 	codecStr := utils.EmptyOrElse(joinCodecs(options.codecs), "0,1,2")
 
-	client.SetQueryParams(map[string]string{
+	params := map[string]string{
 		"room_id":      fmt.Sprint(roomID),
-		"qn":           "10000",
+		"qn":           fmt.Sprint(int(options.qn)),
 		"no_playurl":   "0",
 		"mask":         "1",
 		"platform":     "web",
@@ -157,7 +180,10 @@ func (c *Client) GetStreamURLsV2(roomID int, opts ...GetStreamURLsOption) ([]Str
 		"panorama":     "1",
 		"hdr_type":     "0,1",
 		"web_location": "444.8",
-	})
+		"only_audio":   utils.Ternary(options.onlyAudio, "1", "0"), // 希望可以防止錯誤拿到音頻流
+	}
+
+	client.SetQueryParams(params)
 	newQueryParam, err := c.wbi.SignQuery(client.QueryParam, time.Now())
 	if err != nil {
 		return nil, fmt.Errorf("无法签名 wbi：%v", err)
@@ -193,13 +219,20 @@ func (c *Client) GetStreamURLsV2(roomID int, opts ...GetStreamURLsOption) ([]Str
 			}
 			for _, codec := range format.Codecs {
 				for _, urlInfo := range codec.UrlInfos {
+					fullURL := urlInfo.Host + codec.BaseUrl + urlInfo.Extra
+					audioOnlyStream := isAudioOnlyStreamURL(fullURL)
+					// 雖然加了 only_audio=1/0 理應不會有非預期的流，但是再做一次檢測
+					if options.onlyAudio != audioOnlyStream {
+						continue
+					}
 					streamInfos = append(streamInfos, StreamURLInfo{
-						Protocol: stream.ProtocolName,
-						Format:   format.FormatName,
-						Codec:    codec.CodecName,
-						URL:      urlInfo.Host + codec.BaseUrl + urlInfo.Extra,
-						Qn:       codec.CurrentQn,
-						AcceptQn: codec.AcceptQn,
+						Protocol:    stream.ProtocolName,
+						Format:      format.FormatName,
+						Codec:       codec.CodecName,
+						URL:         fullURL,
+						Qn:          codec.CurrentQn,
+						AcceptQn:    codec.AcceptQn,
+						IsAudioOnly: audioOnlyStream,
 					})
 				}
 			}
@@ -221,4 +254,12 @@ func containFormat(profiles []StreamProfile, format string) bool {
 			return false
 		}
 	})
+}
+
+func isAudioOnlyStreamURL(rawURL string) bool {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return false
+	}
+	return parsed.Query().Get("ptype") == "1"
 }
