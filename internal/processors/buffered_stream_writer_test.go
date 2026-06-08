@@ -433,18 +433,12 @@ func TestBufferedStreamWriter_SDCardProtection_SkipsFlushWhenUnderBufferSize(t *
 
 	pipe.Close()
 
-	info, err := os.Stat(testFile)
-	if err != nil {
-		t.Fatalf("failed to stat output file: %v", err)
+	_, err := os.Stat(testFile)
+	if err == nil {
+		t.Fatalf("expected no output file under SD card protection when total written < bufferSize")
 	}
-
-	if info.Size() >= int64(bufferSize) {
-		t.Errorf("expected file size < %d bytes (SD card protection), got %d bytes", bufferSize, info.Size())
-	}
-
-	// file should exist but be empty (bufio never flushed, and Close skipped flush)
-	if info.Size() != 0 {
-		t.Errorf("expected empty file under SD card protection, got %d bytes", info.Size())
+	if !os.IsNotExist(err) {
+		t.Fatalf("unexpected stat error for output file: %v", err)
 	}
 }
 
@@ -488,6 +482,79 @@ func TestBufferedStreamWriter_SDCardProtection_WritesNormallyWhenOverBufferSize(
 	if info.Size() == 0 {
 		t.Errorf("expected file to have data when total written (%d) >= bufferSize (%d)", totalWritten, bufferSize)
 	}
+}
+
+func TestBufferedStreamWriter_SDCardProtection_WritesAfterThresholdWithPeriodicFlush(t *testing.T) {
+	const bufferSize = 512 * 1024 // 512KB
+
+	tempDir := t.TempDir()
+	testFile := filepath.Join(tempDir, "threshold_write.flv")
+
+	writerInfo := processors.NewBufferedStreamWriter(testFile,
+		processors.WithBufferSize(bufferSize),
+		processors.WithSDCardProtection(true),
+		processors.WithChanBufferSize(4),
+		processors.WithFlushPeriod(10*time.Millisecond),
+	)
+	pipe := pipeline.New(writerInfo)
+
+	ctx := context.Background()
+	if err := pipe.Open(ctx); err != nil {
+		t.Fatalf("failed to open pipeline: %v", err)
+	}
+
+	chunk := make([]byte, 256*1024)
+	if _, err := rand.Read(chunk); err != nil {
+		t.Fatalf("failed to generate random data: %v", err)
+	}
+
+	if _, err := pipe.Process(ctx, chunk); err != nil {
+		t.Fatalf("failed to process first chunk: %v", err)
+	}
+
+	time.Sleep(50 * time.Millisecond)
+	if _, err := os.Stat(testFile); !os.IsNotExist(err) {
+		if err != nil {
+			t.Fatalf("unexpected stat error after first chunk: %v", err)
+		}
+		t.Fatalf("expected file not to exist after first chunk")
+	}
+
+	if _, err := pipe.Process(ctx, chunk); err != nil {
+		t.Fatalf("failed to process second chunk: %v", err)
+	}
+
+	time.Sleep(50 * time.Millisecond)
+	if _, err := os.Stat(testFile); err != nil {
+		t.Fatalf("expected file to exist after threshold, got: %v", err)
+	}
+
+	time.Sleep(50 * time.Millisecond)
+	info, err := os.Stat(testFile)
+	if err != nil {
+		t.Fatalf("failed to stat output file after flush: %v", err)
+	}
+	if info.Size() == 0 {
+		t.Fatalf("expected file to have data after periodic flush, got 0")
+	}
+
+	if _, err := pipe.Process(ctx, chunk); err != nil {
+		t.Fatalf("failed to process third chunk: %v", err)
+	}
+	if _, err := pipe.Process(ctx, chunk); err != nil {
+		t.Fatalf("failed to process fourth chunk: %v", err)
+	}
+
+	time.Sleep(50 * time.Millisecond)
+	info2, err := os.Stat(testFile)
+	if err != nil {
+		t.Fatalf("expected file to still exist after third chunk, got: %v", err)
+	}
+	if info2.Size() <= info.Size() {
+		t.Fatalf("expected file size to grow after third chunk; before=%d after=%d", info.Size(), info2.Size())
+	}
+
+	pipe.Close()
 }
 
 func TestBufferedStreamWriter_NoSDCardProtection_AlwaysFlushes(t *testing.T) {

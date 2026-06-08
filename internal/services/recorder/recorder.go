@@ -619,7 +619,10 @@ func (r *Service) finalize(roomId int, outputPath string) {
 	defer r.writingFiles.Remove(filepath.Base(outputPath))
 
 	fileInfo, err := os.Stat(outputPath)
-	if err != nil {
+	if err != nil && config.ReadOnly.SkipSmallFlush() && os.IsNotExist(err) {
+		logger.Debugf("文件因为过小被而没有写入，跳过收尾：%s", outputPath)
+		return
+	} else if err != nil {
 		logger.Errorf("获取房间 %d 录制文件状态失败：%v", roomId, err)
 		return
 	} else if fileInfo.Size() < 1024 { // less than 1KB

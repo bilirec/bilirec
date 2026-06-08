@@ -5,6 +5,7 @@ import (
 	"hash/fnv"
 	"os"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/bilirec/bilirec/pkg/pipeline"
@@ -40,7 +41,7 @@ func (n *noOpLocker) Lock()   {}
 func (n *noOpLocker) Unlock() {}
 
 type BufferedStreamWriterProcessor struct {
-	file             *os.File
+	file             atomic.Pointer[os.File]
 	path             string
 	bufferSize       int
 	chanBufferSize   int
@@ -58,7 +59,9 @@ type BufferedStreamWriterProcessor struct {
 
 	// bytesPool is used to reduce allocations when copying incoming data.
 	// When nil, fallback to direct allocation via make().
-	bytesPool *pool.BytesPool
+	bytesPool    *pool.BytesPool
+	pending      [][]byte
+	pendingBytes int
 }
 
 // globalFlushMu is used to serialize flushes across multiple instances when sequentialWrite is enabled.
@@ -90,20 +93,24 @@ func NewBufferedStreamWriter(path string, opts ...BufferedStreamWriterOptions) *
 }
 
 func (w *BufferedStreamWriterProcessor) Open(ctx context.Context, log *logrus.Entry) error {
-	file, err := os.Create(w.path)
-	if err != nil {
-		return err
-	}
-	w.file = file
-
 	flushLocker := utils.TernaryFunc(
 		w.sequentialWrite,
 		func() sync.Locker { return &globalFlushMu },
 		func() sync.Locker { return &noOpLocker{} },
 	)
 
-	w.writer = rw.NewFlushLockedBufferedWriter(file, w.bufferSize, flushLocker)
-	w.logger = log.WithField("file", file.Name())
+	// File creation is delayed when SD card protection is enabled. We keep
+	// small writes in memory until the total queued bytes reach bufferSize.
+	if !w.sdcardProtection {
+		file, err := os.Create(w.path)
+		if err != nil {
+			return err
+		}
+		w.file.Store(file)
+		w.writer = rw.NewFlushLockedBufferedWriter(file, w.bufferSize, flushLocker)
+	}
+
+	w.logger = log.WithField("file", w.path)
 	w.dataCh = make(chan []byte, w.chanBufferSize)
 
 	// Start the periodic writer goroutine.
@@ -150,17 +157,28 @@ func (w *BufferedStreamWriterProcessor) Close() error {
 		close(w.stopCh) // Signal syncWorker to stop (if it's running)
 	}
 	w.wait.Wait()
-	if w.sdcardProtection && w.bytesWritten < int64(w.bufferSize) {
-		w.logger.Warnf("已写入总字节数（%d）小于缓冲区大小（%d），为减少 SD 卡磨损跳过 flush", w.bytesWritten, w.bufferSize)
-		return w.file.Close()
+
+	if w.sdcardProtection && w.file.Load() == nil {
+		w.logger.Warnf("未创建文件且总写入字节数（%d）小于缓冲区大小（%d），直接丢弃内存中的数据", w.bytesWritten+int64(w.pendingBytes), w.bufferSize)
+		w.pending = nil
+		return nil
 	}
-	if err := w.writer.Flush(); err != nil {
-		w.logger.Warnf("刷新写入器失败：%v", err)
-	} else if err := w.file.Sync(); err != nil {
-		w.logger.Warnf("同步文件失败：%v", err)
+
+	if w.writer != nil {
+		if err := w.writer.Flush(); err != nil {
+			w.logger.Warnf("刷新写入器失败：%v", err)
+		} else if file := w.file.Load(); file != nil {
+			if err := file.Sync(); err != nil {
+				w.logger.Warnf("同步文件失败：%v", err)
+			}
+		}
 	}
-	w.logger.Debugf("file path: %s, total written %vB", w.path, w.bytesWritten)
-	return w.file.Close()
+
+	if file := w.file.Load(); file != nil {
+		w.logger.Debugf("file path: %s, total written %vB", w.path, w.bytesWritten)
+		return file.Close()
+	}
+	return nil
 }
 
 // writePeriodically is the single writer goroutine. It owns all access to w.writer
@@ -178,16 +196,52 @@ func (w *BufferedStreamWriterProcessor) writePeriodically() {
 			if !ok {
 				return
 			}
-			n, err := w.writer.Write(data)
-			w.bytesWritten += int64(n)
-			if err != nil {
-				w.logger.Warnf("写入数据失败：%v", err)
+
+			if w.sdcardProtection && w.file.Load() == nil {
+				w.pending = append(w.pending, data)
+				w.pendingBytes += len(data)
+				if w.pendingBytes < w.bufferSize {
+					continue
+				}
+				// Buffer threshold reached; create file and flush pending data.
+				if err := w.createFileAndWriter(); err != nil {
+					w.logger.Warnf("创建文件失败：%v", err)
+					continue
+				}
+				for _, pending := range w.pending {
+					n, err := w.writer.Write(pending)
+					if n != len(pending) {
+						w.logger.Warnf("写入待缓存数据长度不完整：%d/%d", n, len(pending))
+					}
+					if err != nil {
+						w.logger.Warnf("写入待缓存数据失败：%v", err)
+					}
+					w.bytesWritten += int64(n)
+					w.bytesPool.PutBytes(pending)
+				}
+				w.pending = nil
+				w.pendingBytes = 0
+				continue
 			}
-			// Return buffer to pool after writing (if pool is enabled).
-			if w.bytesPool != nil {
+
+			if w.writer != nil {
+				n, err := w.writer.Write(data)
+				if n != len(data) {
+					w.logger.Warnf("写入数据长度不完整：%d/%d", n, len(data))
+				}
+				if err != nil {
+					w.logger.Warnf("写入数据失败：%v", err)
+				}
+				w.bytesWritten += int64(n)
 				w.bytesPool.PutBytes(data)
 			}
 		case <-flushTimer.C:
+			w.logger.Infof("flushTimer triggered.")
+			if w.writer == nil {
+				w.logger.Infof("flushTimer: writer not initialized yet, skipping flush")
+				flushTimer.Reset(w.flushPeriod)
+				continue
+			}
 			flushStart := time.Now()
 			if err := w.writer.Flush(); err != nil {
 				w.logger.Warnf("刷新写入器失败：%v", err)
@@ -215,6 +269,25 @@ func (w *BufferedStreamWriterProcessor) flushJitter() time.Duration {
 	return time.Duration(h.Sum64() % uint64(maxJitter))
 }
 
+func (w *BufferedStreamWriterProcessor) createFileAndWriter() error {
+	if w.file.Load() != nil {
+		return nil
+	}
+
+	file, err := os.Create(w.path)
+	if err != nil {
+		return err
+	}
+	w.file.Store(file)
+	flushLocker := utils.TernaryFunc(
+		w.sequentialWrite,
+		func() sync.Locker { return &globalFlushMu },
+		func() sync.Locker { return &noOpLocker{} },
+	)
+	w.writer = rw.NewFlushLockedBufferedWriter(file, w.bufferSize, flushLocker)
+	return nil
+}
+
 // syncWorker handles periodic fsync operations in a separate goroutine to avoid
 // blocking the main writer loop on slow I/O (especially important for SD cards).
 // It owns a ticker and independently drives sync operations at w.syncPeriod intervals
@@ -227,9 +300,13 @@ func (w *BufferedStreamWriterProcessor) syncWorker() {
 	for {
 		select {
 		case <-syncTicker.C:
+			file := w.file.Load()
+			if file == nil {
+				continue
+			}
 			// Perform the actual sync to disk (can be slow on SD cards).
 			syncStart := time.Now()
-			if err := w.file.Sync(); err != nil {
+			if err := file.Sync(); err != nil {
 				w.logger.Warnf("同步文件失败：%v", err)
 			}
 			if syncCost := time.Since(syncStart); syncCost > slowSyncWarnThreshold {
