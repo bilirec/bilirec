@@ -74,6 +74,7 @@
 > 本程序使用了大量内存池，因此先前使用的一部分内存会回到内存池中等待日后重用，以减轻GC压力。
 >
 > 此外，本程序默认使用针对microSD卡优化的配置，因此内存占用会稍高以减少写入磨损。
+> `SKIP_SMALL_FLUSH=true` 时，是否落盘由 `SKIP_SMALL_FLUSH_THRESHOLD` 决定（默认 1MB，独立于 `LIVE_STREAM_WRITER_BUFFER_SIZE`）。
 > 你可以透过[调控配置](#配置)进一步降低内存占用。
 
 ## 安装
@@ -307,7 +308,8 @@ Android 模式下会先注入一组移动端默认值（如 `HOST=127.0.0.1`、`
 | `LIVE_STREAM_WRITER_FLUSH_PERIOD_SECS` | 实时流写入器执行周期性 `flush` 的周期（秒）；值越大 flush 频率越低，越有利于减少 SD 卡写入频次 | `10` |
 | `LIVE_STREAM_WRITER_CHAN_BUFFER_SIZE` | 实时流写入器通道缓冲区大小（数据块数）；更大的值可容忍写入延迟突变，但会增加内存占用 | `64` |
 | `LIVE_STREAM_WRITER_BYTES_POOL_SIZE` | 实时流写入器内存池的单个缓冲区大小（字节）；应与实际流 chunk 大小相匹配 | `524288` (512 KB) |
-| `SKIP_SMALL_FLUSH` | 启用 microSD 磨损保护：若录制总写入量低于缓冲区大小则跳过 flush，避免写入小块数据（特别是低比特率流） | `true` |
+| `SKIP_SMALL_FLUSH_THRESHOLD` | 启用 `SKIP_SMALL_FLUSH` 后，延迟创建文件并缓存内存的阈值（字节）；达到阈值后才开始落盘。该值独立于 `LIVE_STREAM_WRITER_BUFFER_SIZE` | `1048576` (1 MB) |
+| `SKIP_SMALL_FLUSH` | 启用 microSD 磨损保护：在达到 `SKIP_SMALL_FLUSH_THRESHOLD` 之前仅缓存内存，不创建文件 | `true` |
 | `SEQUENTIAL_WRITE` | 启用全局 flush 锁以序列化多路录制的写入操作；仅在多路并发录制写入同一物理磁盘时建议启用，可显著降低 I/O 峰值 | `true` |
 | `MIN_DISK_SPACE_BYTES` | 录制所需的最小磁盘空间（字节），低于此值将拒绝新录制任务 | `5368709120` (5 GB) |
 

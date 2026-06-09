@@ -32,6 +32,8 @@ const (
 	// defaultFlushPeriod controls how often buffered data is flushed to the OS.
 	// 15s reduces flush frequency to lower SD card wear.
 	defaultFlushPeriod = 15 * time.Second
+
+	defaultSkipSmallFlushThreshold = 1 * 1024 * 1024 // 1MB
 )
 
 // noOpLocker is a dummy locker that does nothing. Used when sequential write is disabled.
@@ -41,16 +43,17 @@ func (n *noOpLocker) Lock()   {}
 func (n *noOpLocker) Unlock() {}
 
 type BufferedStreamWriterProcessor struct {
-	file             atomic.Pointer[os.File]
-	path             string
-	bufferSize       int
-	chanBufferSize   int
-	syncPeriod       time.Duration
-	flushPeriod      time.Duration
-	sdcardProtection bool
-	sequentialWrite  bool
-	writer           *rw.FlushLockedBufferedWriter
-	logger           *logrus.Entry
+	file                    atomic.Pointer[os.File]
+	path                    string
+	bufferSize              int
+	chanBufferSize          int
+	syncPeriod              time.Duration
+	flushPeriod             time.Duration
+	sdcardProtection        bool
+	skipSmallFlushThreshold int
+	sequentialWrite         bool
+	writer                  *rw.FlushLockedBufferedWriter
+	logger                  *logrus.Entry
 
 	dataCh       chan []byte
 	stopCh       chan struct{} // Signal to stop syncWorker (only used if syncPeriod > 0)
@@ -59,9 +62,8 @@ type BufferedStreamWriterProcessor struct {
 
 	// bytesPool is used to reduce allocations when copying incoming data.
 	// When nil, fallback to direct allocation via make().
-	bytesPool    *pool.BytesPool
-	pending      [][]byte
-	pendingBytes int
+	bytesPool  *pool.BytesPool
+	pendingBuf []byte
 }
 
 // globalFlushMu is used to serialize flushes across multiple instances when sequentialWrite is enabled.
@@ -73,15 +75,19 @@ type BufferedStreamWriterOptions = func(*BufferedStreamWriterProcessor)
 
 func NewBufferedStreamWriter(path string, opts ...BufferedStreamWriterOptions) *pipeline.ProcessorInfo[[]byte] {
 	processor := &BufferedStreamWriterProcessor{
-		path:             path,
-		bufferSize:       1 * 1024 * 1024, // default 1MB
-		chanBufferSize:   defaultChanBufferSize,
-		syncPeriod:       45 * time.Second,
-		flushPeriod:      defaultFlushPeriod,
-		sdcardProtection: false,
-		sequentialWrite:  false,
+		path:                    path,
+		bufferSize:              1 * 1024 * 1024, // default 1MB
+		chanBufferSize:          defaultChanBufferSize,
+		syncPeriod:              45 * time.Second,
+		flushPeriod:             defaultFlushPeriod,
+		sdcardProtection:        false,
+		skipSmallFlushThreshold: defaultSkipSmallFlushThreshold,
+		sequentialWrite:         false,
 	}
 	processor.applyOptions(opts...)
+	if processor.skipSmallFlushThreshold <= 0 {
+		processor.skipSmallFlushThreshold = defaultSkipSmallFlushThreshold
+	}
 	if processor.bytesPool == nil {
 		processor.bytesPool = pool.NewBytesPool(defaultChanBufferSize * 1024) // default pool buffers to match chan buffer size
 	}
@@ -100,7 +106,7 @@ func (w *BufferedStreamWriterProcessor) Open(ctx context.Context, log *logrus.En
 	)
 
 	// File creation is delayed when SD card protection is enabled. We keep
-	// small writes in memory until the total queued bytes reach bufferSize.
+	// small writes in memory until the total queued bytes reach skipSmallFlushThreshold.
 	if !w.sdcardProtection {
 		file, err := os.Create(w.path)
 		if err != nil {
@@ -108,6 +114,9 @@ func (w *BufferedStreamWriterProcessor) Open(ctx context.Context, log *logrus.En
 		}
 		w.file.Store(file)
 		w.writer = rw.NewFlushLockedBufferedWriter(file, w.bufferSize, flushLocker)
+	} else {
+		// Pre-allocate pending buffer up to the configured threshold.
+		w.pendingBuf = make([]byte, 0, w.skipSmallFlushThreshold)
 	}
 
 	w.logger = log.WithField("file", w.path)
@@ -135,13 +144,13 @@ func (w *BufferedStreamWriterProcessor) Process(ctx context.Context, log *logrus
 	pooledBuf := w.bytesPool.GetBytes()
 	if cap(pooledBuf) >= len(data) {
 		cp = pooledBuf[:len(data)]
-		copy(cp, data)
 	} else {
 		// Buffer too small; put it back and allocate.
 		w.bytesPool.PutBytes(pooledBuf)
 		cp = make([]byte, len(data))
-		copy(cp, data)
 	}
+	copy(cp, data)
+
 	select {
 	case w.dataCh <- cp:
 	case <-ctx.Done():
@@ -159,8 +168,9 @@ func (w *BufferedStreamWriterProcessor) Close() error {
 	w.wait.Wait()
 
 	if w.sdcardProtection && w.file.Load() == nil {
-		w.logger.Warnf("未创建文件且总写入字节数（%d）小于缓冲区大小（%d），直接丢弃内存中的数据", w.bytesWritten+int64(w.pendingBytes), w.bufferSize)
-		w.pending = nil
+		threshold := w.skipSmallFlushThreshold
+		w.logger.Warnf("未创建文件且总写入字节数（%d）小于保护阈值（%d），直接丢弃内存中的数据", w.bytesWritten+int64(len(w.pendingBuf)), threshold)
+		w.pendingBuf = nil
 		return nil
 	}
 
@@ -198,9 +208,10 @@ func (w *BufferedStreamWriterProcessor) writePeriodically() {
 			}
 
 			if w.sdcardProtection && w.file.Load() == nil {
-				w.pending = append(w.pending, data)
-				w.pendingBytes += len(data)
-				if w.pendingBytes < w.bufferSize {
+				threshold := w.skipSmallFlushThreshold
+				w.pendingBuf = append(w.pendingBuf, data...)
+				w.bytesPool.PutBytes(data)
+				if len(w.pendingBuf) < threshold {
 					continue
 				}
 				// Buffer threshold reached; create file and flush pending data.
@@ -208,19 +219,15 @@ func (w *BufferedStreamWriterProcessor) writePeriodically() {
 					w.logger.Warnf("创建文件失败：%v", err)
 					continue
 				}
-				for _, pending := range w.pending {
-					n, err := w.writer.Write(pending)
-					if n != len(pending) {
-						w.logger.Warnf("写入待缓存数据长度不完整：%d/%d", n, len(pending))
-					}
-					if err != nil {
-						w.logger.Warnf("写入待缓存数据失败：%v", err)
-					}
-					w.bytesWritten += int64(n)
-					w.bytesPool.PutBytes(pending)
+				n, err := w.writer.Write(w.pendingBuf)
+				if n != len(w.pendingBuf) {
+					w.logger.Warnf("写入待缓存数据长度不完整：%d/%d", n, len(w.pendingBuf))
 				}
-				w.pending = nil
-				w.pendingBytes = 0
+				if err != nil {
+					w.logger.Warnf("写入待缓存数据失败：%v", err)
+				}
+				w.bytesWritten += int64(n)
+				w.pendingBuf = nil // after nil, no need to put back to pool, let it GC!!
 				continue
 			}
 
@@ -236,9 +243,7 @@ func (w *BufferedStreamWriterProcessor) writePeriodically() {
 				w.bytesPool.PutBytes(data)
 			}
 		case <-flushTimer.C:
-			w.logger.Infof("flushTimer triggered.")
 			if w.writer == nil {
-				w.logger.Infof("flushTimer: writer not initialized yet, skipping flush")
 				flushTimer.Reset(w.flushPeriod)
 				continue
 			}
@@ -327,6 +332,12 @@ func (p *BufferedStreamWriterProcessor) applyOptions(opts ...BufferedStreamWrite
 func WithSDCardProtection(enabled bool) BufferedStreamWriterOptions {
 	return func(p *BufferedStreamWriterProcessor) {
 		p.sdcardProtection = enabled
+	}
+}
+
+func WithSkipSmallFlushThreshold(threshold int) BufferedStreamWriterOptions {
+	return func(p *BufferedStreamWriterProcessor) {
+		p.skipSmallFlushThreshold = threshold
 	}
 }
 

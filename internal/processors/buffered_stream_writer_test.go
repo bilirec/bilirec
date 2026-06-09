@@ -414,6 +414,7 @@ func TestBufferedStreamWriter_SDCardProtection_SkipsFlushWhenUnderBufferSize(t *
 	writerInfo := processors.NewBufferedStreamWriter(testFile,
 		processors.WithBufferSize(bufferSize),
 		processors.WithSDCardProtection(true),
+		processors.WithSkipSmallFlushThreshold(bufferSize),
 	)
 	pipe := pipeline.New(writerInfo)
 
@@ -451,6 +452,7 @@ func TestBufferedStreamWriter_SDCardProtection_WritesNormallyWhenOverBufferSize(
 	writerInfo := processors.NewBufferedStreamWriter(testFile,
 		processors.WithBufferSize(bufferSize),
 		processors.WithSDCardProtection(true),
+		processors.WithSkipSmallFlushThreshold(bufferSize),
 	)
 	pipe := pipeline.New(writerInfo)
 
@@ -485,7 +487,10 @@ func TestBufferedStreamWriter_SDCardProtection_WritesNormallyWhenOverBufferSize(
 }
 
 func TestBufferedStreamWriter_SDCardProtection_WritesAfterThresholdWithPeriodicFlush(t *testing.T) {
-	const bufferSize = 512 * 1024 // 512KB
+	const (
+		bufferSize = 512 * 1024 // 512KB
+		threshold  = 512 * 1024 // 512KB
+	)
 
 	tempDir := t.TempDir()
 	testFile := filepath.Join(tempDir, "threshold_write.flv")
@@ -493,6 +498,7 @@ func TestBufferedStreamWriter_SDCardProtection_WritesAfterThresholdWithPeriodicF
 	writerInfo := processors.NewBufferedStreamWriter(testFile,
 		processors.WithBufferSize(bufferSize),
 		processors.WithSDCardProtection(true),
+		processors.WithSkipSmallFlushThreshold(threshold),
 		processors.WithChanBufferSize(4),
 		processors.WithFlushPeriod(10*time.Millisecond),
 	)

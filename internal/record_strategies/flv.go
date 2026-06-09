@@ -41,6 +41,7 @@ func (s *FlvStrategy) BuildPipeline(ctx context.Context, outputPath string, stat
 		processors.NewBufferedStreamWriter(
 			outputPath,
 			processors.WithBufferSize(config.ReadOnly.LiveStreamWriterBufferSize()),
+			processors.WithSkipSmallFlushThreshold(config.ReadOnly.SkipSmallFlushThreshold()),
 			processors.WithSyncPeriod(time.Duration(config.ReadOnly.LiveStreamWriterSyncPeriodSecs())*time.Second),
 			processors.WithFlushPeriod(time.Duration(config.ReadOnly.LiveStreamWriterFlushPeriodSecs())*time.Second),
 			processors.WithChanBufferSize(config.ReadOnly.LiveStreamWriterChanBufferSize()),

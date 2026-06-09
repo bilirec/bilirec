@@ -14,6 +14,7 @@ const (
 	defaultLiveStreamWriterFlushPeriodSecs               = 15
 	defaultLiveStreamWriterChanBufferSize                = 64
 	defaultLiveStreamWriterBytesPoolSize                 = 512 * 1024 // 512KB per buffer
+	defaultSkipSmallFlushThreshold                       = 1 * 1024 * 1024
 )
 
 // for global readonly access
@@ -63,6 +64,13 @@ func (g *GlobalReadOnly) LiveStreamWriterBytesPoolSize() int {
 		return defaultLiveStreamWriterBytesPoolSize
 	}
 	return g.config.liveStreamWriterBytesPoolSize
+}
+
+func (g *GlobalReadOnly) SkipSmallFlushThreshold() int {
+	if g.config.skipSmallFlushThreshold <= 0 {
+		return defaultSkipSmallFlushThreshold
+	}
+	return g.config.skipSmallFlushThreshold
 }
 
 func (g *GlobalReadOnly) SkipSmallFlush() bool {
@@ -146,6 +154,9 @@ func (g *GlobalReadOnly) Validate() error {
 	}
 	if g.config.liveStreamWriterFlushPeriod <= 0 {
 		logger.Warnf("LIVE_STREAM_WRITER_FLUSH_PERIOD_SECS 无效（%d），使用默认值 %d 秒", g.config.liveStreamWriterFlushPeriod, defaultLiveStreamWriterFlushPeriodSecs)
+	}
+	if g.config.skipSmallFlushThreshold <= 0 {
+		logger.Warnf("SKIP_SMALL_FLUSH_THRESHOLD 无效（%d），使用默认值 %d 字节", g.config.skipSmallFlushThreshold, defaultSkipSmallFlushThreshold)
 	}
 	// Reject protocol-mismatch configs between FRP backend mode and Fiber listener mode.
 	if g.config.ServerCrt != "" && g.config.ServerKey != "" && g.config.FRPEnabled && !g.config.FRPHttps {
