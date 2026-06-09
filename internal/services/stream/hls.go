@@ -33,8 +33,24 @@ var (
 	segmentPrefetchAhead  = 2
 )
 
+type playlistStatusError struct {
+	status int
+}
+
+func (e *playlistStatusError) Error() string {
+	return fmt.Sprintf("m3u8 状态码 %d", e.status)
+}
+
 func isM3u8URLExpiredErr(err error) bool {
 	return errors.Is(err, ErrM3u8Expired)
+}
+
+func isRetryablePlaylistStatusErr(err error) bool {
+	var statusErr *playlistStatusError
+	if !errors.As(err, &statusErr) {
+		return false
+	}
+	return statusErr.status >= 500 && statusErr.status < 600
 }
 
 func isRetryablePlaylistFetchErr(err error) bool {
@@ -129,6 +145,9 @@ func (r *Service) ReadHlsStream(fetchM3u8URL func() (string, error), playlistCli
 			if hlsutil.IsM3u8URLExpiredStatus(resp.StatusCode()) {
 				return nil, fmt.Errorf("%w (status=%d)", ErrM3u8Expired, resp.StatusCode())
 			} else if resp.StatusCode() != 200 {
+				if resp.StatusCode() >= 500 && resp.StatusCode() < 600 {
+					return nil, &playlistStatusError{status: resp.StatusCode()}
+				}
 				return nil, fmt.Errorf("m3u8 状态码 %d", resp.StatusCode())
 			}
 
@@ -143,6 +162,7 @@ func (r *Service) ReadHlsStream(fetchM3u8URL func() (string, error), playlistCli
 	}
 
 	fetchPlaylistWithRefresh := func() (*hlsPlaylist, error) {
+		refreshAttempts := 0
 		for {
 			pl, err := fetchPlaylist()
 			if err == nil {
@@ -151,7 +171,10 @@ func (r *Service) ReadHlsStream(fetchM3u8URL func() (string, error), playlistCli
 			if isCanceled(err, ctx) || ctx.Err() == context.Canceled {
 				return nil, err
 			}
-			if !isM3u8URLExpiredErr(err) {
+			if !isM3u8URLExpiredErr(err) && !isRetryablePlaylistStatusErr(err) {
+				return nil, err
+			}
+			if refreshAttempts >= 1 {
 				return nil, err
 			}
 
@@ -159,7 +182,8 @@ func (r *Service) ReadHlsStream(fetchM3u8URL func() (string, error), playlistCli
 			if refreshErr != nil {
 				return nil, refreshErr
 			}
-			logger.Warn("hls：播放列表过期后已刷新 m3u8 URL，正在重试拉取播放列表")
+			refreshAttempts++
+			logger.Warnf("hls：播放列表异常后已刷新 m3u8 URL（原因：%v），正在重试拉取播放列表", err)
 		}
 	}
 
