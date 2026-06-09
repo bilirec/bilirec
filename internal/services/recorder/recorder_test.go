@@ -69,9 +69,9 @@ func TestFlvRecord(t *testing.T) {
 		}
 		t.Fatal(err)
 	}
+	outputPath := waitForOutputPathAfterStart(t, recorderService, room)
 
 	<-time.After(time.Duration(utils.Ternary(os.Getenv("CI") != "", 15, 3)) * time.Minute)
-	outputPath := waitForOutputPath(t, recorderService, room, 3*time.Second)
 
 	runtime.ReadMemStats(&m2)
 
@@ -84,8 +84,8 @@ func TestFlvRecord(t *testing.T) {
 	t.Logf("memory before start: %.2f MB", float64(m1.Alloc/1024/1024))
 	t.Logf("memory before stop: %.2f MB", float64(m2.Alloc/1024/1024))
 	t.Logf("memory after stop: %.2f MB", float64(m3.Alloc/1024/1024))
-	t.Logf("growth during recording: %.2f MB", float64((m2.Alloc-m1.Alloc)/1024/1024))
-	t.Logf("growth after stop: %.2f MB", float64((m3.Alloc-m2.Alloc)/1024/1024))
+	t.Logf("growth during recording: %.2f MB", memAllocDiffMB(m2.Alloc, m1.Alloc))
+	t.Logf("growth after stop: %.2f MB", memAllocDiffMB(m3.Alloc, m2.Alloc))
 
 	// Verify recorded file playability
 	if checkFFmpegAvailable(t) {
@@ -138,9 +138,9 @@ func TestTsRecord(t *testing.T) {
 		}
 		t.Fatal(err)
 	}
+	outputPath := waitForOutputPathAfterStart(t, recorderService, room)
 
 	<-time.After(time.Duration(utils.Ternary(os.Getenv("CI") != "", 15, 3)) * time.Minute)
-	outputPath := waitForOutputPath(t, recorderService, room, 3*time.Second)
 
 	runtime.ReadMemStats(&m2)
 
@@ -153,8 +153,8 @@ func TestTsRecord(t *testing.T) {
 	t.Logf("memory before start: %.2f MB", float64(m1.Alloc/1024/1024))
 	t.Logf("memory before stop: %.2f MB", float64(m2.Alloc/1024/1024))
 	t.Logf("memory after stop: %.2f MB", float64(m3.Alloc/1024/1024))
-	t.Logf("growth during recording: %.2f MB", float64((m2.Alloc-m1.Alloc)/1024/1024))
-	t.Logf("growth after stop: %.2f MB", float64((m3.Alloc-m2.Alloc)/1024/1024))
+	t.Logf("growth during recording: %.2f MB", memAllocDiffMB(m2.Alloc, m1.Alloc))
+	t.Logf("growth after stop: %.2f MB", memAllocDiffMB(m3.Alloc, m2.Alloc))
 
 	// Verify recorded file playability
 	if checkFFmpegAvailable(t) {
@@ -207,9 +207,9 @@ func TestFmp4Record(t *testing.T) {
 		}
 		t.Fatal(err)
 	}
+	outputPath := waitForOutputPathAfterStart(t, recorderService, room)
 
 	<-time.After(time.Duration(utils.Ternary(os.Getenv("CI") != "", 15, 3)) * time.Minute)
-	outputPath := waitForOutputPath(t, recorderService, room, 3*time.Second)
 
 	runtime.ReadMemStats(&m2)
 
@@ -222,8 +222,8 @@ func TestFmp4Record(t *testing.T) {
 	t.Logf("memory before start: %.2f MB", float64(m1.Alloc/1024/1024))
 	t.Logf("memory before stop: %.2f MB", float64(m2.Alloc/1024/1024))
 	t.Logf("memory after stop: %.2f MB", float64(m3.Alloc/1024/1024))
-	t.Logf("growth during recording: %.2f MB", float64((m2.Alloc-m1.Alloc)/1024/1024))
-	t.Logf("growth after stop: %.2f MB", float64((m3.Alloc-m2.Alloc)/1024/1024))
+	t.Logf("growth during recording: %.2f MB", memAllocDiffMB(m2.Alloc, m1.Alloc))
+	t.Logf("growth after stop: %.2f MB", memAllocDiffMB(m3.Alloc, m2.Alloc))
 
 	// Verify recorded file playability
 	if checkFFmpegAvailable(t) {
@@ -365,15 +365,49 @@ func TestInfoOutputPath_AtomicConcurrentReadWrite(t *testing.T) {
 
 func waitForOutputPath(t *testing.T, recorderService *recorder.Service, room int, timeout time.Duration) string {
 	deadline := time.Now().Add(timeout)
+	polls := 0
+	hasAnyStats := false
+	lastStatus := recorder.Idle
+	lastOutputPath := ""
+	lastElapsedSeconds := int64(0)
 	for time.Now().Before(deadline) {
+		polls++
 		stats, hasStats := recorderService.GetStats(room)
-		if hasStats && stats != nil && stats.OutputPath != "" {
-			return stats.OutputPath
+		if hasStats && stats != nil {
+			hasAnyStats = true
+			lastStatus = stats.Status
+			lastOutputPath = stats.OutputPath
+			lastElapsedSeconds = stats.ElapsedSeconds
+			if stats.OutputPath != "" {
+				return stats.OutputPath
+			}
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
-	t.Log("output path still empty before stop")
+	if !hasAnyStats {
+		t.Logf("output path wait timeout: no stats for room=%d (recording may have been removed before assertion), polls=%d, timeout=%s", room, polls, timeout)
+		return ""
+	}
+	t.Logf("output path wait timeout: stats available but output path is still empty, room=%d, last_status=%s, last_elapsed=%ds, polls=%d, timeout=%s, last_output_path=%q", room, lastStatus, lastElapsedSeconds, polls, timeout, lastOutputPath)
 	return ""
+}
+
+func waitForOutputPathAfterStart(t *testing.T, recorderService *recorder.Service, room int) string {
+	t.Helper()
+	timeout := time.Duration(utils.Ternary(os.Getenv("CI") != "", 30, 10)) * time.Second
+	outputPath := waitForOutputPath(t, recorderService, room, timeout)
+	if outputPath == "" {
+		t.Fatalf("recording started but output path was not available within %s", timeout)
+	}
+	t.Logf("captured output path early for room=%d: %s", room, outputPath)
+	return outputPath
+}
+
+func memAllocDiffMB(after uint64, before uint64) float64 {
+	if after >= before {
+		return float64(after-before) / 1024 / 1024
+	}
+	return -float64(before-after) / 1024 / 1024
 }
 
 // checkFFmpegAvailable checks if ffmpeg and ffprobe are available in the system PATH
