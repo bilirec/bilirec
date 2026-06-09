@@ -12,10 +12,10 @@ import (
 )
 
 const (
-	recorderLiveValidationMaxRounds = 2
-	recorderLiveValidationBackoff   = 1500 * time.Millisecond
-	recorderLiveValidationMinPool   = 12
-	recorderLiveValidationPerRoom   = 6
+	recorderLiveValidationMaxRetriesAfterUnableValidateAllRooms = 2
+	recorderLiveValidationBackoff                               = 1500 * time.Millisecond
+	recorderLiveValidationMinPool                               = 12
+	recorderLiveValidationPerRoom                               = 6
 )
 
 func resolveLiveTestRoomID(tb testing.TB, roomSvc *room.Service) int {
@@ -42,12 +42,13 @@ func resolveLiveTestRoomIDs(tb testing.TB, roomSvc *room.Service, required int) 
 	tb.Logf("live room validation candidates: %v", candidates)
 	var attemptErrors []string
 
-	for round := 1; round <= recorderLiveValidationMaxRounds; round++ {
+	maxRounds := recorderLiveValidationMaxRetriesAfterUnableValidateAllRooms + 1
+	for round := 1; round <= maxRounds; round++ {
 		roomSvc.InvalidateRooms(candidates...)
 		infos, err := roomSvc.GetMultipleRoomInfos(candidates...)
 		if err != nil {
 			attemptErrors = append(attemptErrors, fmt.Sprintf("round %d fetch error: %v", round, err))
-			if round < recorderLiveValidationMaxRounds {
+			if round < maxRounds {
 				time.Sleep(recorderLiveValidationBackoff)
 			}
 			continue
@@ -71,7 +72,7 @@ func resolveLiveTestRoomIDs(tb testing.TB, roomSvc *room.Service, required int) 
 			attemptErrors = append(attemptErrors, fmt.Sprintf("round %d room %d offline (live_status=%d)", round, roomID, info.LiveStatus))
 		}
 
-		if round < recorderLiveValidationMaxRounds {
+		if round < maxRounds {
 			time.Sleep(recorderLiveValidationBackoff)
 		}
 	}

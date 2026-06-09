@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math/rand"
 	"net/http"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -19,12 +20,14 @@ const (
 	envLiveRoomID          = "BILIBILI_TEST_ROOM_ID"
 	envLiveRoomIDs         = "BILIBILI_TEST_ROOM_IDS"
 	broadcastsFetchTimeout = 10 * time.Second
+	broadcastsMaxPages     = 10
 )
 
 type broadcastsResponse struct {
 	Code int `json:"code"`
 	Data []struct {
-		RoomID int `json:"roomId"`
+		RoomID   int    `json:"roomId"`
+		LiveTime string `json:"live_time"`
 	} `json:"data"`
 }
 
@@ -149,7 +152,55 @@ func fetchBroadcastRoomIDs() ([]int, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), broadcastsFetchTimeout)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, broadcastsEndpoint, nil)
+	seen := make(map[int]struct{})
+	ids := make([]int, 0, 64)
+	cursor := ""
+
+	for page := 1; page <= broadcastsMaxPages; page++ {
+		payload, err := fetchBroadcastPage(ctx, cursor)
+		if err != nil {
+			return nil, err
+		}
+		if len(payload.Data) == 0 {
+			break
+		}
+
+		nextCursor := ""
+		for _, item := range payload.Data {
+			if item.LiveTime != "" {
+				nextCursor = item.LiveTime
+			}
+			if item.RoomID <= 0 {
+				continue
+			}
+			if _, ok := seen[item.RoomID]; ok {
+				continue
+			}
+			seen[item.RoomID] = struct{}{}
+			ids = append(ids, item.RoomID)
+		}
+
+		if nextCursor == "" || nextCursor == cursor {
+			break
+		}
+		cursor = nextCursor
+	}
+
+	if len(ids) == 0 {
+		return nil, fmt.Errorf("broadcast API 未返回有效的直播间 ID")
+	}
+	return ids, nil
+}
+
+func fetchBroadcastPage(ctx context.Context, liveTimeCursor string) (*broadcastsResponse, error) {
+	requestURL := broadcastsEndpoint
+	if liveTimeCursor != "" {
+		query := url.Values{}
+		query.Set("live_time", liveTimeCursor)
+		requestURL = requestURL + "?" + query.Encode()
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, requestURL, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -171,21 +222,5 @@ func fetchBroadcastRoomIDs() ([]int, error) {
 	if payload.Code != 0 {
 		return nil, fmt.Errorf("broadcast API 返回代码 %d", payload.Code)
 	}
-
-	seen := make(map[int]struct{}, len(payload.Data))
-	ids := make([]int, 0, len(payload.Data))
-	for _, item := range payload.Data {
-		if item.RoomID <= 0 {
-			continue
-		}
-		if _, ok := seen[item.RoomID]; ok {
-			continue
-		}
-		seen[item.RoomID] = struct{}{}
-		ids = append(ids, item.RoomID)
-	}
-	if len(ids) == 0 {
-		return nil, fmt.Errorf("broadcast API 未返回有效的直播间 ID")
-	}
-	return ids, nil
+	return &payload, nil
 }
