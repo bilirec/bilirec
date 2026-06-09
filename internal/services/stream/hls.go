@@ -288,7 +288,7 @@ func (r *Service) ReadHlsStream(fetchM3u8URL func() (string, error), playlistCli
 
 				baseSeq, segs := pl.MediaSeq, pl.Segments
 				pendingSegments := hlsutil.CountPendingSegments(baseSeq, segs, nextSeq)
-				logger.Debugf("hls: playlist window base=%d len=%d next=%d pending=%d map=%t", baseSeq, len(segs), nextSeq, pendingSegments, pl.MapURI != "")
+				logger.Tracef("hls: playlist window base=%d len=%d next=%d pending=%d map=%t", baseSeq, len(segs), nextSeq, pendingSegments, pl.MapURI != "")
 
 				if baseSeq > nextSeq {
 					lost := baseSeq - nextSeq
@@ -367,7 +367,7 @@ func (r *Service) ReadHlsStream(fetchM3u8URL func() (string, error), playlistCli
 						if nextPrefetchSeq < nextSeq {
 							continue
 						}
-						logger.Debugf("hls: prefetch start seq=%d uri=%s", nextPrefetchSeq, segs[nextIdx].URI)
+						logger.Tracef("hls: prefetch start seq=%d uri=%s", nextPrefetchSeq, segs[nextIdx].URI)
 						prefetcher.Start(nextPrefetchSeq, segs[nextIdx].URI)
 					}
 
@@ -380,7 +380,7 @@ func (r *Service) ReadHlsStream(fetchM3u8URL func() (string, error), playlistCli
 						logger.Warnf("hls：拉取分片失败（seq=%d）：%v", segSeq, err)
 						continue
 					}
-					logger.Debugf("hls: segment ready seq=%d bytes=%d wait=%v", segSeq, len(data), time.Since(waitStart))
+					logger.Tracef("hls: segment ready seq=%d bytes=%d wait=%v", segSeq, len(data), time.Since(waitStart))
 
 					nextSeq = segSeq + 1
 
