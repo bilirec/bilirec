@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"math/rand"
 	"net/http"
-	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -16,19 +15,14 @@ import (
 )
 
 const (
-	broadcastsEndpoint     = "https://api.livestats.top/api/v1/lives/broadcasts"
+	broadcastsEndpoint     = "https://workers.vrp.moe/laplace/ranking?type=danmakus"
 	envLiveRoomID          = "BILIBILI_TEST_ROOM_ID"
 	envLiveRoomIDs         = "BILIBILI_TEST_ROOM_IDS"
 	broadcastsFetchTimeout = 10 * time.Second
-	broadcastsMaxPages     = 10
 )
 
-type broadcastsResponse struct {
-	Code int `json:"code"`
-	Data []struct {
-		RoomID   int    `json:"roomId"`
-		LiveTime string `json:"live_time"`
-	} `json:"data"`
+type broadcastEntry struct {
+	RoomID int `json:"roomid"`
 }
 
 var (
@@ -152,38 +146,22 @@ func fetchBroadcastRoomIDs() ([]int, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), broadcastsFetchTimeout)
 	defer cancel()
 
-	seen := make(map[int]struct{})
-	ids := make([]int, 0, 64)
-	cursor := ""
+	payload, err := fetchBroadcastPage(ctx)
+	if err != nil {
+		return nil, err
+	}
 
-	for page := 1; page <= broadcastsMaxPages; page++ {
-		payload, err := fetchBroadcastPage(ctx, cursor)
-		if err != nil {
-			return nil, err
+	seen := make(map[int]struct{}, len(payload))
+	ids := make([]int, 0, len(payload))
+	for _, item := range payload {
+		if item.RoomID <= 0 {
+			continue
 		}
-		if len(payload.Data) == 0 {
-			break
+		if _, ok := seen[item.RoomID]; ok {
+			continue
 		}
-
-		nextCursor := ""
-		for _, item := range payload.Data {
-			if item.LiveTime != "" {
-				nextCursor = item.LiveTime
-			}
-			if item.RoomID <= 0 {
-				continue
-			}
-			if _, ok := seen[item.RoomID]; ok {
-				continue
-			}
-			seen[item.RoomID] = struct{}{}
-			ids = append(ids, item.RoomID)
-		}
-
-		if nextCursor == "" || nextCursor == cursor {
-			break
-		}
-		cursor = nextCursor
+		seen[item.RoomID] = struct{}{}
+		ids = append(ids, item.RoomID)
 	}
 
 	if len(ids) == 0 {
@@ -192,18 +170,14 @@ func fetchBroadcastRoomIDs() ([]int, error) {
 	return ids, nil
 }
 
-func fetchBroadcastPage(ctx context.Context, liveTimeCursor string) (*broadcastsResponse, error) {
-	requestURL := broadcastsEndpoint
-	if liveTimeCursor != "" {
-		query := url.Values{}
-		query.Set("live_time", liveTimeCursor)
-		requestURL = requestURL + "?" + query.Encode()
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, requestURL, nil)
+func fetchBroadcastPage(ctx context.Context) ([]broadcastEntry, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, broadcastsEndpoint, nil)
 	if err != nil {
 		return nil, err
 	}
+
+	// add user agent
+	req.Header.Set("User-Agent", "Mozilla/5.0 (compatible; bilirec/1.0; +https://github.com/bilirec/bilirec)")
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -215,12 +189,9 @@ func fetchBroadcastPage(ctx context.Context, liveTimeCursor string) (*broadcasts
 		return nil, fmt.Errorf("broadcast API 返回状态 %s", resp.Status)
 	}
 
-	var payload broadcastsResponse
+	var payload []broadcastEntry
 	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
 		return nil, err
 	}
-	if payload.Code != 0 {
-		return nil, fmt.Errorf("broadcast API 返回代码 %d", payload.Code)
-	}
-	return &payload, nil
+	return payload, nil
 }
