@@ -76,7 +76,7 @@ func resolveLiveTestRoomIDs(tb testing.TB, roomSvc *room.Service, required int) 
 		}
 	}
 
-	tb.Skipf("unable to validate %d live room(s); candidates=%v; details=%s", required, candidates, strings.Join(attemptErrors, "; "))
+	tb.Skipf("unable to validate %d live room(s); candidates=%v; details=%s", required, candidates, strings.Join(attemptErrors, "\n"))
 	return nil
 }
 
