@@ -237,14 +237,13 @@ make android os=windows
 
 其中 `basePath` 必填，`env` 可选（用于覆盖默认环境变量）。
 
-Android 模式下会先注入一组移动端默认值（如 `HOST=127.0.0.1`、`PORT=8080`、`OUTPUT_DIR/SECRET_DIR/DATABASE_DIR` 指向 `basePath` 下目录），再套用 `env` 覆盖；并强制启用以下行为（与服务器版区分）：
+Android 模式下会先注入一组移动端默认值（如 `HOST=127.0.0.1`、`PORT=8080`、`OUTPUT_DIR/SECRET_DIR/DATABASE_DIR` 指向 `basePath` 下目录），再套用 `env` 覆盖；并默认设置以下行为（与服务器版区分，可通过 `env` 覆盖）：
 
 - `BILIBILI_LOGIN_MODE=controller`
 - `FRP_ENABLED=false`
 - `SILENT_ACCESS_LOG=true`
-- `CONVERT_TO_MP4=false`
 
-并使用更保守的移动端 I/O / 内存参数（例如较小写入缓冲、较低磁盘空间阈值）以避免前台卡顿。
+并使用更保守的移动端 I/O / 内存参数（例如较小写入缓冲、较低磁盘空间阈值）以避免前台卡顿。Android 已支持本机 FFmpeg 转码，如需录制后自动转 MP4，可在 `env` 中设置 `CONVERT_TO_MP4=true`。
 
 ### 其他接入方式
 
@@ -301,8 +300,8 @@ Android 模式下会先注入一组移动端默认值（如 `HOST=127.0.0.1`、`
 | `UPLOAD_BUFFER_SIZE` | 上传时或向外部服务（如 CloudConvert）传输文件使用的缓冲区大小（字节） | `5242880` (5 MB) |
 | `DOWNLOAD_BUFFER_SIZE` | 文件下载 / 导出时使用的缓冲区大小（字节） | `5242880` (5 MB) |
 | `STREAM_WRITER_BUFFER_SIZE` | 流写入器（写入文件）缓冲区大小（字节） | `1048576` (1 MB) |
-| `READ_STREAM_BYTES_POOL_SIZE` | 读取直播流时使用的字节池单块大小（字节）；`FLV` / `HLS` 共用，建议与常见 chunk 大小一致 | `524288` (512 KB) |
-| `READ_STREAM_CHAN_BUFFER_SIZE` | 读取直播流时的通道缓冲区大小（chunk 数）；更大值可容忍网络/写入短时抖动，但会增加在途内存 | `16` |
+| `READ_STREAM_BYTES_POOL_SIZE` | 读取直播流时使用的字节池单块大小（字节）；`FLV` / `HLS` 共用，建议与常见 chunk 大小一致。录制默认画质为原画（`qn=10000`），即按此缓冲设计；录 4K/杜比等高码率流时请调大此项及 `READ_STREAM_CHAN_BUFFER_SIZE` | `524288` (512 KB) |
+| `READ_STREAM_CHAN_BUFFER_SIZE` | 读取直播流时的通道缓冲区大小（chunk 数）；更大值可容忍网络/写入短时抖动，但会增加在途内存。高画质录制时建议同步调大 | `16` |
 | `LIVE_STREAM_WRITER_BUFFER_SIZE` | 实时流写入缓冲区（用于直播录制或实时下载，字节）；更大的值减少 flush 频率，降低 SD 卡磨损 | `8388608` (8 MB) |
 | `LIVE_STREAM_WRITER_SYNC_PERIOD_SECS` | 实时流写入器执行周期性 `sync` 的周期（秒）；设为 0 禁用周期性 sync（仅在 Close 时 sync），大幅减少 SD 卡磨损 | `0` |
 | `LIVE_STREAM_WRITER_FLUSH_PERIOD_SECS` | 实时流写入器执行周期性 `flush` 的周期（秒）；值越大 flush 频率越低，越有利于减少 SD 卡写入频次 | `10` |
@@ -618,7 +617,7 @@ curl -s -b cookies.txt http://127.0.0.1:8080/auth/bilibili/status
 
   | 值 | 说明 |
   | -- | ---- |
-  | 不传 | 请求最高画质并自动回退 |
+  | 不传 | 原画（`10000`） |
   | `80` | 流畅 |
   | `150` | 高清 |
   | `250` | 超清 |
@@ -627,6 +626,10 @@ curl -s -b cookies.txt http://127.0.0.1:8080/auth/bilibili/status
   | `20000` | 4K |
   | `30000` | 杜比 |
 
+  > [!NOTE]
+  >  不传 `qn` 时默认请求原画，是为了配合 `READ_STREAM_*` 的默认缓冲大小——高码率流（如 4K、杜比）更容易把读取缓冲撑满。
+  >  若要录这类画质，请显式传 `qn`，并调大 `READ_STREAM_BYTES_POOL_SIZE` / `READ_STREAM_CHAN_BUFFER_SIZE`。
+  
   `only_audio` 为**可选** bool query 参数：
 
   | 值 | 说明 |

@@ -124,7 +124,7 @@ func defaultGetStreamURLsOptions() getStreamURLsOptions {
 	return getStreamURLsOptions{
 		profiles:  []StreamProfile{ProfileHTTPFLV, ProfileHLSTS, ProfileHLSFMP4},
 		codecs:    []Codec{CodecAVC, CodecHEVC, CodecOther},
-		qn:        QualityDolby, // it will auto fallback to lower qualities if not found, so just request the highest one
+		qn:        QualityOriginal, // matches READ_STREAM defaults; auto-fallback still applies if unavailable
 		onlyAudio: false,
 	}
 }

@@ -194,7 +194,6 @@ func defaultAndroidEnv(basePath string) map[string]string {
 		"LIVE_STREAM_WRITER_FLUSH_PERIOD_SECS": "10",
 		"SKIP_SMALL_FLUSH":                     "false",
 		"SILENT_ACCESS_LOG":                    "true",
-		"CONVERT_TO_MP4":                       "false",
 	}
 }
 
