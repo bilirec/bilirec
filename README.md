@@ -625,10 +625,6 @@ curl -s -b cookies.txt http://127.0.0.1:8080/auth/bilibili/status
   | `10000` | 原画 |
   | `20000` | 4K |
   | `30000` | 杜比 |
-
-  > [!NOTE]
-  >  不传 `qn` 时默认请求原画，是为了配合 `READ_STREAM_*` 的默认缓冲大小——高码率流（如 4K、杜比）更容易把读取缓冲撑满。
-  >  若要录这类画质，请显式传 `qn`，并调大 `READ_STREAM_BYTES_POOL_SIZE` / `READ_STREAM_CHAN_BUFFER_SIZE`。
   
   `only_audio` 为**可选** bool query 参数：
 
@@ -636,6 +632,10 @@ curl -s -b cookies.txt http://127.0.0.1:8080/auth/bilibili/status
   | -- | ---- |
   | 不传 / `false` | 录制默认流，包含音视频 |
   | `true` | 尝试仅录制音频流（请求 `only_audio=1`） |
+
+  **注意**：
+  - 不传 `qn` 时默认请求原画，是为了配合 `READ_STREAM_*` 的默认缓冲大小——高码率流（如 4K、杜比）更容易把读取缓冲撑满。
+  - 若要录这类画质，请显式传 `qn`，并调大 `READ_STREAM_BYTES_POOL_SIZE` / `READ_STREAM_CHAN_BUFFER_SIZE`。
 
   例如：
 
@@ -1008,8 +1008,7 @@ curl -s -b cookies.txt http://127.0.0.1:8080/auth/bilibili/status
   | `-1` | 无限录制，不自动停止 |
   | `N`（正整数） | N 分钟后自动停止 |
 
-  > ![NOTE]
-  > 如果你想让这个录制时长套用到手动触发的录制任务，请自行在调用 `/record/:roomID/start` 时传入相同的 `duration_minutes` 参数；否则手动录制将不受此配置影响，仍然使用系统预设或你在启动录制时指定的时长。
+  **注意**： 如果你想让这个录制时长套用到手动触发的录制任务，请自行在调用 `/record/:roomID/start` 时传入相同的 `duration_minutes` 参数；否则手动录制将不受此配置影响，仍然使用系统预设或你在启动录制时指定的时长。
 
 #### 实时通知
 
