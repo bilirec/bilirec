@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/bilirec/bilirec/internal/processors"
+	"github.com/bilirec/bilirec/pkg/benchreport"
 	"github.com/bilirec/bilirec/pkg/pipeline"
 	"github.com/bilirec/bilirec/pkg/pool"
 )
@@ -27,13 +28,16 @@ func benchmarkWriterPipeline(b *testing.B, chunkSize int, chanBuf int, flushPeri
 	defer pipe.Close()
 
 	chunk := make([]byte, chunkSize)
+	mon := benchreport.Start(b, int64(len(chunk)))
 	b.ReportAllocs()
 	b.SetBytes(int64(len(chunk)))
 	b.ResetTimer()
+	mon.MarkTimerStart()
 	for i := 0; i < b.N; i++ {
 		if _, err := pipe.Process(ctx, chunk); err != nil {
 			b.Fatalf("Process failed: %v", err)
 		}
+		mon.SamplePeriodically(i)
 	}
 }
 

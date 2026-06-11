@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/bilirec/bilirec/pkg/benchreport"
 	"github.com/sirupsen/logrus"
 )
 
@@ -31,9 +32,11 @@ func benchmarkSegmentDedup(b *testing.B, payloadSize int, duplicate bool) {
 	a := makePayload(payloadSize, 0x11)
 	bData := makePayload(payloadSize, 0x77)
 
+	mon := benchreport.Start(b, int64(payloadSize))
 	b.ReportAllocs()
 	b.SetBytes(int64(payloadSize))
 	b.ResetTimer()
+	mon.MarkTimerStart()
 
 	for i := 0; i < b.N; i++ {
 		var payload []byte
@@ -48,6 +51,7 @@ func benchmarkSegmentDedup(b *testing.B, payloadSize int, duplicate bool) {
 		if _, err := proc.Process(context.Background(), entry, payload); err != nil {
 			b.Fatalf("process failed: %v", err)
 		}
+		mon.SamplePeriodically(i)
 	}
 }
 
@@ -88,14 +92,17 @@ func BenchmarkSegmentDedup_VaryingSize(b *testing.B) {
 		segs[i] = makePayload(base+i*512, byte(i))
 	}
 
+	mon := benchreport.Start(b, int64(base))
 	b.ReportAllocs()
 	b.SetBytes(base)
 	b.ResetTimer()
+	mon.MarkTimerStart()
 
 	for i := 0; i < b.N; i++ {
 		payload := segs[i%len(segs)]
 		if _, err := proc.Process(context.Background(), entry, payload); err != nil {
 			b.Fatalf("process failed: %v", err)
 		}
+		mon.SamplePeriodically(i)
 	}
 }

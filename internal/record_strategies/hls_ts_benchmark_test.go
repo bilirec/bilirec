@@ -4,6 +4,8 @@ import (
 	"context"
 	"path/filepath"
 	"testing"
+
+	"github.com/bilirec/bilirec/pkg/benchreport"
 )
 
 func makeBenchmarkTSPacket(pid uint16, cc byte) []byte {
@@ -27,6 +29,7 @@ func makeBenchmarkTSSegment(packetCount int) []byte {
 }
 
 func BenchmarkHlsTsStrategy_PipelineThroughput(b *testing.B) {
+	ensureBenchmarkConfig()
 	ctx := context.Background()
 	strategy := NewHlsTsStrategy()
 	outputPath := filepath.Join(b.TempDir(), "bench.ts")
@@ -40,12 +43,15 @@ func BenchmarkHlsTsStrategy_PipelineThroughput(b *testing.B) {
 	defer pipe.Close()
 
 	segment := makeBenchmarkTSSegment(700) // ~131KB
+	mon := benchreport.Start(b, int64(len(segment)))
 	b.ReportAllocs()
 	b.SetBytes(int64(len(segment)))
 	b.ResetTimer()
+	mon.MarkTimerStart()
 	for i := 0; i < b.N; i++ {
 		if _, err := pipe.Process(ctx, segment); err != nil {
 			b.Fatalf("Process failed: %v", err)
 		}
+		mon.SamplePeriodically(i)
 	}
 }

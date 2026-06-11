@@ -3,6 +3,8 @@ package hls
 import (
 	"encoding/binary"
 	"testing"
+
+	"github.com/bilirec/bilirec/pkg/benchreport"
 )
 
 func box(typ string, payload []byte) []byte {
@@ -177,13 +179,16 @@ func BenchmarkNormalizeFragmentTimestamps_Version1(b *testing.B) {
 	base := makeMoof(1, 1, 180000)
 	work := make([]byte, len(base))
 
+	mon := benchreport.Start(b, int64(len(base)))
 	b.ReportAllocs()
 	b.SetBytes(int64(len(base)))
 	b.ResetTimer()
+	mon.MarkTimerStart()
 
 	for i := 0; i < b.N; i++ {
 		copy(work, base)
 		_ = NormalizeFragmentTimestamps(work, bases)
+		mon.SamplePeriodically(i)
 	}
 }
 
@@ -192,13 +197,16 @@ func BenchmarkNormalizeFragmentTimestamps_Version0(b *testing.B) {
 	base := makeMoof(2, 0, 1600)
 	work := make([]byte, len(base))
 
+	mon := benchreport.Start(b, int64(len(base)))
 	b.ReportAllocs()
 	b.SetBytes(int64(len(base)))
 	b.ResetTimer()
+	mon.MarkTimerStart()
 
 	for i := 0; i < b.N; i++ {
 		copy(work, base)
 		_ = NormalizeFragmentTimestamps(work, bases)
+		mon.SamplePeriodically(i)
 	}
 }
 
@@ -211,12 +219,15 @@ func BenchmarkNormalizeFragmentTimestamps_ComplexFragment(b *testing.B) {
 	base := makeComplexMoof(3, 1, 180000)
 	work := make([]byte, len(base))
 
+	mon := benchreport.Start(b, int64(len(base)))
 	b.ReportAllocs()
 	b.SetBytes(int64(len(base)))
 	b.ResetTimer()
+	mon.MarkTimerStart()
 
 	for i := 0; i < b.N; i++ {
 		copy(work, base)
 		_ = NormalizeFragmentTimestamps(work, bases)
+		mon.SamplePeriodically(i)
 	}
 }

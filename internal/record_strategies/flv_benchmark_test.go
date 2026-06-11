@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/bilirec/bilirec/pkg/benchreport"
 	"github.com/bilirec/bilirec/pkg/flv"
 )
 
@@ -19,6 +20,7 @@ func makeFLVStreamChunk() []byte {
 }
 
 func BenchmarkFlvStrategy_PipelineWriterThroughput(b *testing.B) {
+	ensureBenchmarkConfig()
 	ctx := context.Background()
 	strategy := NewFlvStrategy()
 	outputPath := filepath.Join(b.TempDir(), "bench.flv")
@@ -37,12 +39,15 @@ func BenchmarkFlvStrategy_PipelineWriterThroughput(b *testing.B) {
 	}
 
 	chunk := makeFLVStreamChunk()
+	mon := benchreport.Start(b, int64(len(chunk)))
 	b.ReportAllocs()
 	b.SetBytes(int64(len(chunk)))
 	b.ResetTimer()
+	mon.MarkTimerStart()
 	for i := 0; i < b.N; i++ {
 		if _, err := pipe.Process(ctx, chunk); err != nil {
 			b.Fatalf("Process failed: %v", err)
 		}
+		mon.SamplePeriodically(i)
 	}
 }

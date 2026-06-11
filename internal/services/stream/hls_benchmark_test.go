@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bilirec/bilirec/pkg/benchreport"
 	"github.com/go-resty/resty/v2"
 )
 
@@ -53,8 +54,11 @@ func BenchmarkReadHlsStream_DeliveryLatency(b *testing.B) {
 	segmentClient := resty.New().SetTimeout(5 * time.Second)
 	fetchURL := func() (string, error) { return server.URL + playlistPath, nil }
 
+	// map (~1KB) + first segment (~256KB) per iteration
+	mon := benchreport.Start(b, 257*1024)
 	b.ReportAllocs()
 	b.ResetTimer()
+	mon.MarkTimerStart()
 
 	for i := 0; i < b.N; i++ {
 		ctx, cancel := context.WithCancel(context.Background())
@@ -83,5 +87,6 @@ func BenchmarkReadHlsStream_DeliveryLatency(b *testing.B) {
 		timeout.Stop()
 		cancel()
 		b.ReportMetric(float64(time.Since(start).Microseconds()), "fetch_to_deliver_us")
+		mon.SamplePeriodically(i)
 	}
 }

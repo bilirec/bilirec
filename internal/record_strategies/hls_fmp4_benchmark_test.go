@@ -5,6 +5,8 @@ import (
 	"encoding/binary"
 	"path/filepath"
 	"testing"
+
+	"github.com/bilirec/bilirec/pkg/benchreport"
 )
 
 func boxBytes(typ string, payload []byte) []byte {
@@ -32,6 +34,7 @@ func makeFmp4Fragment(trackID uint32, decodeTime uint64) []byte {
 }
 
 func BenchmarkHlsFmp4Strategy_PipelineThroughput(b *testing.B) {
+	ensureBenchmarkConfig()
 	ctx := context.Background()
 	strategy := NewHlsFmp4Strategy()
 	outputPath := filepath.Join(b.TempDir(), "bench.fmp4")
@@ -45,12 +48,20 @@ func BenchmarkHlsFmp4Strategy_PipelineThroughput(b *testing.B) {
 	defer pipe.Close()
 
 	fragment := makeFmp4Fragment(1, 90000)
+	fragBytes := len(fragment)
+	mon := benchreport.Start(b, int64(fragBytes))
 	b.ReportAllocs()
-	b.SetBytes(int64(len(fragment)))
+	b.SetBytes(int64(fragBytes))
 	b.ResetTimer()
+	mon.MarkTimerStart()
 	for i := 0; i < b.N; i++ {
+		// Vary decode time so segment-dedup does not drop every iteration after the first.
+		if i > 0 {
+			fragment = makeFmp4Fragment(1, uint64(i+1)*90000)
+		}
 		if _, err := pipe.Process(ctx, fragment); err != nil {
 			b.Fatalf("Process failed: %v", err)
 		}
+		mon.SamplePeriodically(i)
 	}
 }

@@ -1,6 +1,10 @@
 package pool
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/bilirec/bilirec/pkg/benchreport"
+)
 
 func BenchmarkBucketedBytesPool_GetPut(b *testing.B) {
 	cases := []struct {
@@ -17,12 +21,15 @@ func BenchmarkBucketedBytesPool_GetPut(b *testing.B) {
 		tc := tc
 		b.Run(tc.name, func(b *testing.B) {
 			p := NewBucketedBytesPool(tc.base)
+			mon := benchreport.Start(b, int64(tc.size))
 			b.ReportAllocs()
 			b.SetBytes(int64(tc.size))
 			b.ResetTimer()
+			mon.MarkTimerStart()
 			for i := 0; i < b.N; i++ {
 				buf := p.GetSized(tc.size)
 				p.Put(buf)
+				mon.SamplePeriodically(i)
 			}
 		})
 	}
