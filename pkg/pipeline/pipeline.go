@@ -1,4 +1,4 @@
-﻿package pipeline
+package pipeline
 
 import (
 	"context"
@@ -91,8 +91,6 @@ func (p *Pipe[T]) closeOpened(count int) {
 
 func (p *Pipe[T]) process(ctx context.Context, tp *ProcessorInfo[T], item T) (T, error) {
 	start := time.Now()
-	c, cancel := context.WithTimeout(ctx, tp.timeout)
-	defer cancel()
 	defer func() {
 		elapsed := time.Since(start)
 		if elapsed > tp.timeout/2 {
@@ -101,7 +99,7 @@ func (p *Pipe[T]) process(ctx context.Context, tp *ProcessorInfo[T], item T) (T,
 			tp.logger.Tracef("processor executed: %vms", elapsed.Microseconds())
 		}
 	}()
-	next, err := tp.process(c, item)
+	next, err := p.callWithTimeout(ctx, tp, item)
 	if err != nil {
 		switch tp.errorStrategy {
 		case StopOnError:
@@ -116,9 +114,7 @@ func (p *Pipe[T]) process(ctx context.Context, tp *ProcessorInfo[T], item T) (T,
 				tp.logger.Warnf("处理器 %s 因错误重试：%v", tp.name, err)
 				select {
 				case <-time.After(tp.retryInterval):
-					c, cancel = context.WithTimeout(ctx, tp.timeout)
-					next, retryErr := tp.process(c, item)
-					cancel()
+					next, retryErr := p.callWithTimeout(ctx, tp, item)
 					if retryErr == nil {
 						tp.logger.Infof("处理器 %s 重试成功", tp.name)
 						return next, nil
@@ -133,4 +129,18 @@ func (p *Pipe[T]) process(ctx context.Context, tp *ProcessorInfo[T], item T) (T,
 		}
 	}
 	return next, err
+}
+
+func (p *Pipe[T]) callWithTimeout(ctx context.Context, tp *ProcessorInfo[T], item T) (T, error) {
+	if tp.timeout <= 0 {
+		return tp.process(ctx, item)
+	}
+	if deadline, ok := ctx.Deadline(); ok {
+		if time.Until(deadline) <= tp.timeout {
+			return tp.process(ctx, item)
+		}
+	}
+	c, cancel := context.WithTimeout(ctx, tp.timeout)
+	defer cancel()
+	return tp.process(c, item)
 }
