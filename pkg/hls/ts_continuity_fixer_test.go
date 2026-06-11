@@ -123,3 +123,17 @@ func BenchmarkTsContinuityFixer_FixSegment_1200Packets(b *testing.B) {
 		_ = fixer.FixSegment(work)
 	}
 }
+
+func BenchmarkTsContinuityFixer_FixSegment_Parallel(b *testing.B) {
+	base := buildTSSegment(600, 128)
+	b.ReportAllocs()
+	b.SetBytes(int64(len(base)))
+	b.RunParallel(func(pb *testing.PB) {
+		fixer := NewTsContinuityFixer()
+		work := make([]byte, len(base))
+		for pb.Next() {
+			copy(work, base)
+			_ = fixer.FixSegment(work)
+		}
+	})
+}

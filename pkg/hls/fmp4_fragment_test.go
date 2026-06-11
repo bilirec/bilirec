@@ -45,6 +45,34 @@ func makeMoof(trackID uint32, tfdtVersion byte, decodeTime uint64) []byte {
 	return append(moof, mdat...)
 }
 
+func makeComplexMoof(trackCount int, tfdtVersion byte, decodeTime uint64) []byte {
+	if trackCount < 1 {
+		trackCount = 1
+	}
+	moofPayload := make([]byte, 0, trackCount*64)
+	for i := 0; i < trackCount; i++ {
+		trackID := uint32(i + 1)
+		tfhdPayload := make([]byte, 4)
+		binary.BigEndian.PutUint32(tfhdPayload, trackID)
+		tfhd := box("tfhd", fullBox(0, 0, tfhdPayload))
+
+		var tfdtPayload []byte
+		if tfdtVersion == 1 {
+			tfdtPayload = make([]byte, 8)
+			binary.BigEndian.PutUint64(tfdtPayload, decodeTime+uint64(i*900))
+		} else {
+			tfdtPayload = make([]byte, 4)
+			binary.BigEndian.PutUint32(tfdtPayload, uint32(decodeTime+uint64(i*900)))
+		}
+		tfdt := box("tfdt", fullBox(tfdtVersion, 0, tfdtPayload))
+		traf := box("traf", append(tfhd, tfdt...))
+		moofPayload = append(moofPayload, traf...)
+	}
+	moof := box("moof", moofPayload)
+	mdatPayload := make([]byte, 64*1024)
+	return append(moof, box("mdat", mdatPayload)...)
+}
+
 func firstTfdtValue(segment []byte) (uint64, bool) {
 	for off := 0; off < len(segment); {
 		size, typ, _, ok := ReadBoxHeader(segment, off)
@@ -162,6 +190,25 @@ func BenchmarkNormalizeFragmentTimestamps_Version1(b *testing.B) {
 func BenchmarkNormalizeFragmentTimestamps_Version0(b *testing.B) {
 	bases := map[uint32]uint64{2: 1000}
 	base := makeMoof(2, 0, 1600)
+	work := make([]byte, len(base))
+
+	b.ReportAllocs()
+	b.SetBytes(int64(len(base)))
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		copy(work, base)
+		_ = NormalizeFragmentTimestamps(work, bases)
+	}
+}
+
+func BenchmarkNormalizeFragmentTimestamps_ComplexFragment(b *testing.B) {
+	bases := map[uint32]uint64{
+		1: 90000,
+		2: 45000,
+		3: 18000,
+	}
+	base := makeComplexMoof(3, 1, 180000)
 	work := make([]byte, len(base))
 
 	b.ReportAllocs()

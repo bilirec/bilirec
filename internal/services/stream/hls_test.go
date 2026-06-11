@@ -360,3 +360,34 @@ func BenchmarkParseM3u8_FromBodyBytes(b *testing.B) {
 		}
 	}
 }
+
+func BenchmarkParseM3u8_Scalability(b *testing.B) {
+	cases := []struct {
+		name     string
+		segments int
+		withMap  bool
+	}{
+		{name: "window6_noMap", segments: 6, withMap: false},
+		{name: "window20_withMap", segments: 20, withMap: true},
+		{name: "window100_withMap", segments: 100, withMap: true},
+		{name: "window500_withMap", segments: 500, withMap: true},
+	}
+	for _, tc := range cases {
+		tc := tc
+		b.Run(tc.name, func(b *testing.B) {
+			body := []byte(buildPlaylistBody(tc.segments, tc.withMap))
+			b.ReportAllocs()
+			b.SetBytes(int64(len(body)))
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				pl, err := hlsutil.ParseBytes(body)
+				if err != nil {
+					b.Fatalf("parseM3u8 failed: %v", err)
+				}
+				if len(pl.Segments) != tc.segments {
+					b.Fatalf("unexpected segment count: got=%d want=%d", len(pl.Segments), tc.segments)
+				}
+			}
+		})
+	}
+}
