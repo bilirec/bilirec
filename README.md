@@ -113,17 +113,11 @@ docker build -t bilirec:latest .
 docker run -d \
   --name bilirec \
   -p 8080:8080 \
-  -e BILIBILI_LOGIN_MODE=controller \
-  -e PORT=8080 \
-  -e FRONTEND_URL=http://localhost:8080 \
   -v /path/to/records:/app/records \
   -v /path/to/secrets:/app/secrets \
   -v /path/to/database:/app/database \
-  -e CLOUDCONVERT_API_KEY=your_api_key \
   bilirec:latest
 ```
-
-如果不需要 CloudConvert，可直接移除 `-e CLOUDCONVERT_API_KEY=...`。
 
 你也可以直接从 Docker Hub 拉取并运行镜像：
 
@@ -132,17 +126,11 @@ docker pull eric1008818/bilirec:latest # 最新测试版本请用 :edge
 docker run -d \
   --name bilirec \
   -p 8080:8080 \
-  -e BILIBILI_LOGIN_MODE=controller \
-  -e PORT=8080 \
-  -e FRONTEND_URL=http://localhost:8080 \
   -v /path/to/records:/app/records \
   -v /path/to/secrets:/app/secrets \
   -v /path/to/database:/app/database \
-  -e CLOUDCONVERT_API_KEY=your_api_key \
   eric1008818/bilirec:latest
 ```
-
-如果不需要 CloudConvert，可直接移除 `-e CLOUDCONVERT_API_KEY=...`。
 
 ### Android（嵌入 App）
 
@@ -228,8 +216,6 @@ make android os=windows
     "PORT": "8080",
     "HOST": "127.0.0.1",
     "FRONTEND_URL": "https://app.bilirec.org",
-    "USERNAME": "admin",
-    "PASSWORD": "changeme",
     "MAX_CONCURRENT_RECORDINGS": "3"
   }
 }
