@@ -58,6 +58,9 @@ func (p *FlvStreamFixerProcessor) Open(ctx context.Context, log *logrus.Entry) e
 }
 
 func (p *FlvStreamFixerProcessor) Process(ctx context.Context, log *logrus.Entry, data []byte) ([]byte, error) {
+	if len(data) == 0 {
+		return data, nil
+	}
 	return p.fixer.Fix(data)
 }
 

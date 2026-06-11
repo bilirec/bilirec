@@ -224,6 +224,8 @@ func TestFlvPipeline_ResolutionChangeRotation(t *testing.T) {
 				pipe.Close()
 				videoHdr = headerChanged.VideoHeaderTag
 				audioHdr = headerChanged.AudioHeaderTag
+				sharedFixer.ResetTimestampStore()
+				sharedFixer.ResetDedupCache()
 				rotations++
 				segment++
 				pipe = openPipe(videoHdr, audioHdr, outFile(segment))
@@ -333,7 +335,7 @@ func TestFlvPipeline_ResolutionChangeRotation_RealFixtures(t *testing.T) {
 			end = len(stream)
 		}
 
-		result, procErr := pipe.Process(context.Background(), stream[offset:end])
+		_, procErr := pipe.Process(context.Background(), stream[offset:end])
 		offset = end
 
 		if procErr != nil {
@@ -343,7 +345,8 @@ func TestFlvPipeline_ResolutionChangeRotation_RealFixtures(t *testing.T) {
 				pipe.Close()
 				videoHdr = headerChanged.VideoHeaderTag
 				audioHdr = headerChanged.AudioHeaderTag
-				pendingData = result
+				sharedFixer.ResetTimestampStore()
+				sharedFixer.ResetDedupCache()
 				rotations++
 				segment++
 				pipe = openPipe(videoHdr, audioHdr, outFile(segment))
@@ -516,6 +519,7 @@ func TestFlvPipeline_GenerateBeforeAfterArtifacts(t *testing.T) {
 				audioHdr = headerChanged.AudioHeaderTag
 				// Reset fixer's timestamp state for new segment so timestamps start from 0
 				sharedFixer.ResetTimestampStore()
+				sharedFixer.ResetDedupCache()
 				rotations++
 				segment++
 				pipe = openPipe(videoHdr, audioHdr, outFile(segment))

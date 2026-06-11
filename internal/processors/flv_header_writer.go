@@ -40,6 +40,10 @@ func (p *flvHeaderWriterProcessor) Open(ctx context.Context, log *logrus.Entry) 
 func (p *flvHeaderWriterProcessor) Process(ctx context.Context, log *logrus.Entry, data []byte) ([]byte, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	if len(data) == 0 {
+		// Preserve first-write semantics: do not mark written on empty/no-op input.
+		return data, nil
+	}
 	if p.written {
 		return data, nil
 	}

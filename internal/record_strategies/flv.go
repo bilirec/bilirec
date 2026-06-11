@@ -56,8 +56,11 @@ func (s *FlvStrategy) BuildPipeline(ctx context.Context, outputPath string, stat
 func (s *FlvStrategy) HandleErr(err error) ErrHandleResult {
 	var headerChanged *flv.FlvHeaderChangedError
 	if errors.As(err, &headerChanged) {
-		// Reset timestamp tracking so the new segment's timestamps start from 0.
+		// Reset per-stream fixer state on rotation:
+		// - timestamps should restart from 0 in the new segment
+		// - dedup cache should not suppress fresh leading tags across segment boundary
 		s.sharedFixer.ResetTimestampStore()
+		s.sharedFixer.ResetDedupCache()
 		state := &RotationState{
 			Data: map[string][]byte{
 				flvStateVideoHdr: headerChanged.VideoHeaderTag,

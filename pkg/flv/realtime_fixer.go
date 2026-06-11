@@ -18,6 +18,7 @@ type RealtimeFixer struct {
 	dedupCache        *DedupCache // 🔥 新增:  去重緩存
 	dupCount          int64       // 🔥 新增: 重複計數
 	lastDedupClean    int32       // timestamp of last dedup clean
+	fixCalls          uint32      // throttle infrequent maintenance checks
 	jumpReporter      TimestampJumpReporter
 }
 
@@ -42,16 +43,20 @@ func (rf *RealtimeFixer) GetDedupStats() (duplicates int64, cacheSize int, cache
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
 
-	size, capacity := rf.dedupCache.GetStats()
+	size, capacity := rf.dedupCache.GetStatsUnsafe()
 	return rf.dupCount, size, capacity
 }
 
-// Fix processes incoming bytes and returns fixed FLV data
+// Fix processes incoming bytes and returns fixed FLV data.
+// Return semantics:
+//   - (nil, nil) means "no complete output tag is ready yet" (normal for streaming).
+//   - non-nil []byte contains serialized FLV tags ready for downstream processing.
 func (rf *RealtimeFixer) Fix(input []byte) ([]byte, error) {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
 
 	rf.buffer.Write(input)
+	parsedTags := 0
 
 	// 🔥 優化: 從 pool 取得輸出 buffer
 	output := realtimeBufferPool.Get()
@@ -76,63 +81,36 @@ func (rf *RealtimeFixer) Fix(input []byte) ([]byte, error) {
 		rf.sourceHeaderOK = true
 	}
 
-	headerBytes := headerBytesPool.GetBytes()
-	defer headerBytesPool.PutBytes(headerBytes)
-
 	// Parse complete tags from buffer
 	for {
+		availableBytes := rf.buffer.Bytes()
+
 		// Need PreviousTagSize (4) + TagHeader (11) minimum
-		if rf.buffer.Len() < 15 {
+		if len(availableBytes) < PrevTagSizeBytes+TagHeaderSize {
 			break
 		}
 
-		// Skip PreviousTagSize
-		rf.buffer.Next(PrevTagSizeBytes)
+		headerSlice := availableBytes[PrevTagSizeBytes : PrevTagSizeBytes+TagHeaderSize]
 
-		// Peek tag header
-		// Not enough bytes for header yet: rebuild PrevTagSize + remaining bytes safely.
-		if rf.buffer.Len() < TagHeaderSize {
-			tmp := realtimeBufferPool.Get()
-			tmp.Reset()
-			tmp.Write([]byte{0, 0, 0, 0}) // PrevTagSize
-			tmp.Write(rf.buffer.Bytes())
-			rf.buffer.Reset()
-			rf.buffer.Write(tmp.Bytes())
-			tmp.Reset()
-			realtimeBufferPool.Put(tmp)
+		tagType := headerSlice[0]
+		dataSize := uint32(headerSlice[1])<<16 | uint32(headerSlice[2])<<8 | uint32(headerSlice[3])
+
+		totalRequired := PrevTagSizeBytes + TagHeaderSize + int(dataSize)
+		if len(availableBytes) < totalRequired {
 			break
 		}
 
-		// 🔥 優化: 從 pool 取得 header buffer
-		rf.buffer.Read(headerBytes)
-
-		tagType := headerBytes[0]
-		dataSize := uint32(headerBytes[1])<<16 | uint32(headerBytes[2])<<8 | uint32(headerBytes[3])
-
-		// Check if we have complete tag data
-		if rf.buffer.Len() < int(dataSize) {
-			// Need more bytes: reconstruct PrevTagSize + header + current remainder
-			tempBuf := realtimeBufferPool.Get()
-			tempBuf.Reset()
-			tempBuf.Write([]byte{0, 0, 0, 0}) // PrevTagSize
-			tempBuf.Write(headerBytes)        // use headerBytes while valid
-			tempBuf.Write(rf.buffer.Bytes())
-
-			rf.buffer.Reset()
-			rf.buffer.Write(tempBuf.Bytes())
-
-			tempBuf.Reset()
-			realtimeBufferPool.Put(tempBuf)
-			break
-		}
-
-		// 🔥 優化: 從 pool 取得指定長度的 tagData 切片
-		tagData := tagDataSlicePool.GetSized(int(dataSize))
-		rf.buffer.Read(tagData)
+		payloadStart := PrevTagSizeBytes + TagHeaderSize
+		payloadEnd := payloadStart + int(dataSize)
+		// WARNING: tagData aliases rf.buffer's underlying bytes; keep usage synchronous.
+		tagData := availableBytes[payloadStart:payloadEnd]
+		// Consume only after full-tag length check succeeds.
+		rf.buffer.Next(totalRequired)
+		parsedTags++
 
 		// Parse timestamp (24bit + 8bit extended)
-		timestamp := int32(headerBytes[7])<<24 | int32(headerBytes[4])<<16 |
-			int32(headerBytes[5])<<8 | int32(headerBytes[6])
+		timestamp := int32(headerSlice[7])<<24 | int32(headerSlice[4])<<16 |
+			int32(headerSlice[5])<<8 | int32(headerSlice[6])
 
 		// Create tag
 		tag := tagPool.Get().(*Tag)
@@ -141,7 +119,7 @@ func (rf *RealtimeFixer) Fix(input []byte) ([]byte, error) {
 		tag.DataSize = dataSize
 		tag.Timestamp = timestamp
 		tag.Data = tagData
-		copy(tag.StreamID[:], headerBytes[8:11])
+		copy(tag.StreamID[:], headerSlice[8:11])
 
 		// Detect header/keyframe
 		if len(tagData) >= 2 {
@@ -159,12 +137,13 @@ func (rf *RealtimeFixer) Fix(input []byte) ([]byte, error) {
 		}
 
 		// 🔥 新增: 去重檢查 (在修復時間戳之前)
-		if rf.dedupCache.IsDuplicate(tag) {
+		if rf.dedupCache.IsDuplicateUnsafe(tag) {
 			rf.dupCount++
-			// 回收 tagData 到 pool
-			tagDataSlicePool.Put(tagData)
 			tag.Reset() // clear Data and other fields before pooling
 			tagPool.Put(tag)
+			if dataSize >= MaxBufferSize {
+				rf.compactBufferIfNeeded()
+			}
 			continue // 跳過重複的 tag
 		}
 
@@ -173,30 +152,52 @@ func (rf *RealtimeFixer) Fix(input []byte) ([]byte, error) {
 
 		// Write fixed tag
 		if err := writeTagOptimized(output, tag); err != nil {
-			// 回收 tagData 到 pool
-			tagDataSlicePool.Put(tagData)
 			output.Reset()
 			realtimeBufferPool.Put(output)
 			return nil, err
 		}
 
-		// 🔥 優化:  返還 tagData 到 pool (在清空 tag 引用之前)
-		tagDataSlicePool.Put(tagData)
 		tag.Reset()
 		tagPool.Put(tag)
+		if dataSize >= MaxBufferSize {
+			rf.compactBufferIfNeeded()
+		}
 	}
 
 	// 🔥 新增: 定期清理過期去重記錄
 	// 🔥 FIX: Clean more frequently (every 500ms instead of 1000ms) to prevent memory buildup
 	if rf.tsStore.LastOriginal > 0 {
-		if rf.tsStore.LastOriginal-rf.lastDedupClean > 500 {
-			rf.dedupCache.CleanOld(rf.tsStore.LastOriginal)
+		shouldCleanByTime := rf.tsStore.LastOriginal-rf.lastDedupClean > 500
+		shouldCleanByTagCount := parsedTags >= 128
+		shouldCleanByHighWater := rf.dedupCache.IsAboveHighWaterUnsafe()
+		if shouldCleanByTime || shouldCleanByTagCount || shouldCleanByHighWater {
+			if shouldCleanByHighWater {
+				rf.dedupCache.CleanHighWaterUnsafe(rf.tsStore.LastOriginal)
+			} else {
+				rf.dedupCache.CleanOldUnsafe(rf.tsStore.LastOriginal)
+			}
 			rf.lastDedupClean = rf.tsStore.LastOriginal
 		}
 	}
 
-	// Try to compact the internal buffer if it grew large
-	rf.compactBufferIfNeeded()
+	// Periodic compaction; event-driven compaction below handles large-tag / low-utilization cases.
+	rf.fixCalls++
+	if rf.fixCalls%16 == 0 {
+		rf.compactBufferIfNeeded()
+	}
+	if parsedTags > 0 {
+		c, l := rf.buffer.Cap(), rf.buffer.Len()
+		if c > MaxBufferSize && l*4 < c {
+			rf.compactBufferIfNeeded()
+		}
+	}
+
+	// 🔥 優化: 沒有任何有效輸出時直接返回，避免額外分配
+	if output.Len() == 0 {
+		output.Reset()
+		realtimeBufferPool.Put(output)
+		return nil, nil
+	}
 
 	// 🔥 優化:  返回複製的數據，這樣 output buffer 可以被復用
 	result := make([]byte, output.Len())
@@ -260,6 +261,8 @@ func (rf *RealtimeFixer) Close() {
 }
 
 // compactBufferIfNeeded shrinks rf.buffer when capacity is much larger than used length.
+// Triggered periodically (every 16 Fix calls), after large tags (>= MaxBufferSize), or when
+// parsed tags leave the buffer underutilized (len < cap/4 while cap > MaxBufferSize).
 func (rf *RealtimeFixer) compactBufferIfNeeded() {
 	if rf.buffer == nil {
 		return
@@ -267,18 +270,24 @@ func (rf *RealtimeFixer) compactBufferIfNeeded() {
 	c := rf.buffer.Cap()
 	l := rf.buffer.Len()
 
-	// Heuristic: if buffer is very large (>> MaxBufferSize) and largely empty, shrink it.
-	if c > MaxBufferSize && l <= c/4 {
-		newBuf := realtimeBufferPool.Get()
-		newBuf.Reset()
-		if l > 0 {
-			newBuf.Write(rf.buffer.Bytes())
-		}
-		old := rf.buffer
-		rf.buffer = newBuf
-		// Return old to pool (Put only keeps buffers <= maxCap; otherwise allow GC)
-		realtimeBufferPool.Put(old)
+	// Heuristic: shrink when buffer grows large with low utilization.
+	// Relaxed from c/4 to c/2 to better handle zero-copy scenarios where
+	// the underlying array accumulates capacity without releasing memory.
+	// Additional condition: force compact if capacity exceeds 4x the max threshold.
+	needsCompact := (c > MaxBufferSize && l <= c/2) || c > 4*MaxBufferSize
+	if !needsCompact {
+		return
 	}
+
+	newBuf := realtimeBufferPool.Get()
+	newBuf.Reset()
+	if l > 0 {
+		newBuf.Write(rf.buffer.Bytes())
+	}
+	old := rf.buffer
+	rf.buffer = newBuf
+	// Return old to pool (Put only keeps buffers <= maxCap; otherwise allow GC)
+	realtimeBufferPool.Put(old)
 }
 func (rf *RealtimeFixer) fixTimestamp(tag *Tag) {
 	ts := rf.tsStore

@@ -60,6 +60,10 @@ func (p *flvHeaderSplitDetectorProcessor) Open(ctx context.Context, log *logrus.
 }
 
 func (p *flvHeaderSplitDetectorProcessor) Process(ctx context.Context, log *logrus.Entry, data []byte) ([]byte, error) {
+	if len(data) == 0 {
+		return data, nil
+	}
+
 	err := p.detector.DetectChange(data)
 	if err == nil {
 		return data, nil
