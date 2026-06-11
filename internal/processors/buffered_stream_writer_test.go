@@ -26,7 +26,7 @@ func TestBufferedStreamWriter_MemoryLeak(t *testing.T) {
 		testFile,
 		processors.WithBufferSize(5*1024*1024), // 5MB buffer
 		processors.WithChanBufferSize(32),
-		processors.WithBytesPool(pool.NewBytesPool(256*1024)), // align pool size with test chunk size
+		processors.WithBytesPool(pool.NewBucketedBytesPool(256*1024)), // align pool size with test chunk size
 	)
 	pipe := pipeline.New(writerInfo)
 
@@ -184,7 +184,7 @@ func TestBufferedStreamWriter_ConcurrentMemoryLeak(t *testing.T) {
 				testFile,
 				processors.WithBufferSize(5*1024*1024),
 				processors.WithChanBufferSize(16),
-				processors.WithBytesPool(pool.NewBytesPool(chunkSize)),
+				processors.WithBytesPool(pool.NewBucketedBytesPool(chunkSize)),
 			)
 			pipe := pipeline.New(writerInfo)
 
@@ -245,7 +245,7 @@ func TestBufferedStreamWriter_LongRunningMemoryProfile(t *testing.T) {
 		testFile,
 		processors.WithBufferSize(5*1024*1024),
 		processors.WithChanBufferSize(16),
-		processors.WithBytesPool(pool.NewBytesPool(128*1024)),
+		processors.WithBytesPool(pool.NewBucketedBytesPool(128*1024)),
 	)
 	pipe := pipeline.New(writerInfo)
 
@@ -328,7 +328,7 @@ func TestBufferedStreamWriter_NoReturnedDataLeak(t *testing.T) {
 		testFile,
 		processors.WithBufferSize(5*1024*1024),
 		processors.WithChanBufferSize(16),
-		processors.WithBytesPool(pool.NewBytesPool(128*1024)),
+		processors.WithBytesPool(pool.NewBucketedBytesPool(128*1024)),
 	)
 	pipe := pipeline.New(writerInfo)
 

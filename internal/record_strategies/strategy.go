@@ -58,13 +58,13 @@ type StreamRecordStrategy interface {
 
 var (
 	initPoolOnce    sync.Once
-	writerBytesPool *pool.BytesPool
+	writerBytesPool *pool.BucketedBytesPool
 )
 
 // getWriterBytesPool returns the writer bytes pool, initializing it on first call
-func getWriterBytesPool() *pool.BytesPool {
+func getWriterBytesPool() *pool.BucketedBytesPool {
 	initPoolOnce.Do(func() {
-		writerBytesPool = pool.NewBytesPool(config.ReadOnly.LiveStreamWriterBytesPoolSize())
+		writerBytesPool = pool.NewBucketedBytesPool(config.ReadOnly.LiveStreamWriterBytesPoolSize())
 	})
 	return writerBytesPool
 }
