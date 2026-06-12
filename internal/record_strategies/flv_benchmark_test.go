@@ -22,7 +22,7 @@ func makeFLVStreamChunk() []byte {
 func BenchmarkFlvStrategy_PipelineWriterThroughput(b *testing.B) {
 	ensureBenchmarkConfig()
 	ctx := context.Background()
-	strategy := NewFlvStrategy()
+	strategy := NewFlvStrategy(10000)
 	outputPath := filepath.Join(b.TempDir(), "bench.flv")
 	pipe, err := strategy.BuildPipeline(ctx, outputPath, &RotationState{Data: map[string][]byte{}})
 	if err != nil {

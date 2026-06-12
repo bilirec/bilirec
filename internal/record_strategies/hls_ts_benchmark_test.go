@@ -31,7 +31,7 @@ func makeBenchmarkTSSegment(packetCount int) []byte {
 func BenchmarkHlsTsStrategy_PipelineThroughput(b *testing.B) {
 	ensureBenchmarkConfig()
 	ctx := context.Background()
-	strategy := NewHlsTsStrategy()
+	strategy := NewHlsTsStrategy(10000)
 	outputPath := filepath.Join(b.TempDir(), "bench.ts")
 	pipe, err := strategy.BuildPipeline(ctx, outputPath, &RotationState{Data: map[string][]byte{}})
 	if err != nil {

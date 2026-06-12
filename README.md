@@ -286,17 +286,39 @@ Android 模式下会先注入一组移动端默认值（如 `HOST=127.0.0.1`、`
 | `UPLOAD_BUFFER_SIZE` | 上传时或向外部服务（如 CloudConvert）传输文件使用的缓冲区大小（字节） | `5242880` (5 MB) |
 | `DOWNLOAD_BUFFER_SIZE` | 文件下载 / 导出时使用的缓冲区大小（字节） | `5242880` (5 MB) |
 | `STREAM_WRITER_BUFFER_SIZE` | 流写入器（写入文件）缓冲区大小（字节） | `1048576` (1 MB) |
-| `READ_STREAM_BYTES_POOL_SIZE` | 读取直播流时使用的字节池单块大小（字节）；`FLV` / `HLS` 共用，建议与常见 chunk 大小一致 | `524288` (512 KB) |
-| `READ_STREAM_CHAN_BUFFER_SIZE` | 读取直播流时的通道缓冲区大小（chunk 数）；更大值可容忍网络/写入短时抖动，但会增加在途内存 | `16` |
+| `READ_STREAM_BYTES_POOL_SIZE` | 1080p 及以下 FLV 每次读取的缓冲块大小（字节） | `524288` (512 KB) |
+| `READ_STREAM_BYTES_POOL_SIZE_HIGH` | 2K/4K FLV 读块大小（`qn ≥ 20000` 时自动启用，见下方说明） | `1048576` (1 MB) |
+| `READ_STREAM_CHAN_BUFFER_SIZE` | 1080p 及以下读侧 channel 深度（chunk 数） | `16` |
+| `READ_STREAM_CHAN_BUFFER_SIZE_HIGH` | 2K/4K 读侧 channel 深度（`qn ≥ 20000` 时自动启用）；高码率时建议高于默认值 | `48` |
 | `LIVE_STREAM_WRITER_BUFFER_SIZE` | 实时流写入缓冲区（用于直播录制或实时下载，字节）；更大的值减少 flush 频率，降低 SD 卡磨损 | `8388608` (8 MB) |
 | `LIVE_STREAM_WRITER_SYNC_PERIOD_SECS` | 实时流写入器执行周期性 `sync` 的周期（秒）；设为 0 禁用周期性 sync（仅在 Close 时 sync），大幅减少 SD 卡磨损 | `0` |
 | `LIVE_STREAM_WRITER_FLUSH_PERIOD_SECS` | 实时流写入器执行周期性 `flush` 的周期（秒）；值越大 flush 频率越低，越有利于减少 SD 卡写入频次 | `10` |
 | `LIVE_STREAM_WRITER_CHAN_BUFFER_SIZE` | 实时流写入器通道缓冲区大小（数据块数）；更大的值可容忍写入延迟突变，但会增加内存占用 | `64` |
-| `LIVE_STREAM_WRITER_BYTES_POOL_SIZE` | 实时流写入器内存池的单个缓冲区大小（字节）；应与实际流 chunk 大小相匹配 | `524288` (512 KB) |
+| `LIVE_STREAM_WRITER_BYTES_POOL_SIZE` | 1080p 及以下写侧缓冲块大小（字节） | `524288` (512 KB) |
+| `LIVE_STREAM_WRITER_BYTES_POOL_SIZE_HIGH` | 2K/4K 写侧块大小（`qn ≥ 20000` 时自动启用，见下方说明） | `1048576` (1 MB) |
 | `SKIP_SMALL_FLUSH_THRESHOLD` | 启用 `SKIP_SMALL_FLUSH` 后，延迟创建文件并缓存内存的阈值（字节）；达到阈值后才开始落盘。该值独立于 `LIVE_STREAM_WRITER_BUFFER_SIZE` | `1048576` (1 MB) |
 | `SKIP_SMALL_FLUSH` | 启用 microSD 磨损保护：在达到 `SKIP_SMALL_FLUSH_THRESHOLD` 之前仅缓存内存，不创建文件 | `true` |
 | `SEQUENTIAL_WRITE` | 启用全局 flush 锁以序列化多路录制的写入操作；仅在多路并发录制写入同一物理磁盘时建议启用，可显著降低 I/O 峰值 | `true` |
 | `MIN_DISK_SPACE_BYTES` | 录制所需的最小磁盘空间（字节），低于此值将拒绝新录制任务 | `5368709120` (5 GB) |
+
+#### 2K/4K 双池说明
+
+Bilirec 为 **1080p** 与 **高画质（2K/4K/杜比）** 各准备了一套内存池。录制时根据实际流的 `qn` 自动选用，无需在配置里手动切换「4K 模式」。
+
+| 画质 | 判定（`qn`） | FLV 读块 | 读侧 channel | 写侧块 |
+| ---- | ------------ | -------- | ------------ | ------ |
+| 1080p 及以下 | `< 20000` | `READ_STREAM_BYTES_POOL_SIZE`（512 KB） | `READ_STREAM_CHAN_BUFFER_SIZE`（16） | `LIVE_STREAM_WRITER_BYTES_POOL_SIZE`（512 KB） |
+| 2K / 4K / 杜比 | `≥ 20000` | `READ_STREAM_BYTES_POOL_SIZE_HIGH`（1 MB） | `READ_STREAM_CHAN_BUFFER_SIZE_HIGH`（48） | `LIVE_STREAM_WRITER_BYTES_POOL_SIZE_HIGH`（1 MB） |
+
+高规格专用变量共三个：`READ_STREAM_BYTES_POOL_SIZE_HIGH`、`READ_STREAM_CHAN_BUFFER_SIZE_HIGH`、`LIVE_STREAM_WRITER_BYTES_POOL_SIZE_HIGH`（读写块大小建议保持一致）。
+
+补充说明：
+
+| 要点 | 说明 |
+| ---- | ---- |
+| 懒加载 | 只有真的在录高画质时才初始化 `*_HIGH` 池；不录 4K 时不会常驻占内存 |
+| HLS 读侧 | 不走 bytes pool，但 `qn ≥ 20000` 时同样使用 `READ_STREAM_CHAN_BUFFER_SIZE_HIGH` |
+| 写侧 channel | `LIVE_STREAM_WRITER_CHAN_BUFFER_SIZE` 不分档，1080p 与 4K 共用 |
 
 #### FRP 内网穿透配置说明
 
@@ -440,45 +462,41 @@ Bilirec 当前默认配置已针对树莓派 5B + microSD 场景优化，在“�
 
 ### 高码率 / 4K 调参建议
 
-默认 `READ_STREAM_*` 与 `LIVE_STREAM_WRITER_BYTES_POOL_SIZE=512 KB` 面向 **1080p 原画**（含 30/60fps）。该配置下 FLV 单次读块上限为 512 KB，1080p 场景通常**不会**出现数 MB 级别的单块数据，无需额外调整。
+默认的 512 KB（1080p）+ 三个 `*_HIGH` 变量（高画质）已覆盖大多数场景：**录 1080p 不用改**；录 4K / 杜比时传对应 `qn` 即可，程序会自动启用高规格配置。
 
-录制 **4K（`qn=20000`）**、**杜比（`qn=30000`）** 或极高码率 HLS 时，单块数据（FLV 读块或 HLS 整段 segment）可能超过默认内存池最大桶（约 2 MB），从而触发池外分配。此时应**同时**调大读取池与写入池。
+只有出现卡顿、内存不足、或单块数据（FLV 读块 / HLS segment）明显偏大时，再按下表微调。
 
-**三个变量分工：**
+**常见场景：**
 
-| 变量 | 作用 |
-| ---- | ---- |
-| `READ_STREAM_BYTES_POOL_SIZE` | FLV 每次 `Read` 的上限；也影响读侧在途内存 |
-| `LIVE_STREAM_WRITER_BYTES_POOL_SIZE` | Writer 入队拷贝时的分桶池；决定「多大以内的块可以复用缓冲」 |
-| `LIVE_STREAM_WRITER_BUFFER_SIZE` | 写文件的 bufio 缓冲；影响 flush 频次与 SD 磨损，**不解决**大块池外分配 |
+| 场景 | 要不要改配置 | 建议 |
+| ---- | ------------ | ---- |
+| 1080p 原画 | 否 | 保持默认 |
+| 首次录 4K / 杜比 | 通常否 | API 传 `qn=20000`（或 `30000`），自动走高画质池 |
+| 4K FLV 块被拆太碎、分配频繁 | 是 | 同时加大 `READ_STREAM_BYTES_POOL_SIZE_HIGH` 与 `LIVE_STREAM_WRITER_BYTES_POOL_SIZE_HIGH`（两者保持一致） |
+| 4K HLS segment 很大 | 是 | 主要加大 `LIVE_STREAM_WRITER_BYTES_POOL_SIZE_HIGH` |
+| 4K 网络抖动、读侧阻塞 | 是 | 加大 `READ_STREAM_CHAN_BUFFER_SIZE_HIGH`（默认 48） |
+| 4GB 设备多路 4K | 视情况 | 优先减小 `LIVE_STREAM_WRITER_CHAN_BUFFER_SIZE`（如 `48`）或 `MAX_CONCURRENT_RECORDINGS` |
 
-**推荐起点（按设备内存酌情调大/调小）：**
+**推荐起点（三个 `*_HIGH` 默认值通常已够用，下表供参考）：**
 
-| 场景 | `READ_STREAM_BYTES_POOL_SIZE` | `LIVE_STREAM_WRITER_BYTES_POOL_SIZE` | `READ_STREAM_CHAN_BUFFER_SIZE` | `LIVE_STREAM_WRITER_CHAN_BUFFER_SIZE` | 说明 |
-| ---- | ----------------------------- | -------------------------------------- | ------------------------------ | ------------------------------------- | ---- |
-| 1080p 原画（默认） | `524288` (512 KB) | `524288` (512 KB) | `16` | `64` | 树莓派 5B / 4GB 默认即可 |
-| 4K / 杜比 FLV | `1048576` (1 MB) | `1048576` (1 MB) | `16`～`24` | `64` | 读写池保持一致；`base=1 MB` 时最大池桶约 4 MB |
-| 4K / 杜比 HLS | `1048576` (1 MB) | `1048576` (1 MB) | `16` | `64` | HLS 按整段 segment 入队，**写入池**比读池更关键 |
-| 4GB 设备多路 4K | `1048576` (1 MB) | `1048576` (1 MB) | `16` | `48`～`64` | 优先控制 `CHAN` 深度，避免队列内存线性膨胀 |
-| SSD / NAS 单路 4K | `1048576`～`2097152` (1～2 MB) | 与 read **相同** | `24` | `128` | 存储较快时可略增队列深度 |
+| 场景 | `READ_STREAM_BYTES_POOL_SIZE_HIGH` | `READ_STREAM_CHAN_BUFFER_SIZE_HIGH` | `LIVE_STREAM_WRITER_BYTES_POOL_SIZE_HIGH` | `LIVE_STREAM_WRITER_CHAN_BUFFER_SIZE` |
+| ---- | ---------------------------------- | ----------------------------------- | ----------------------------------------- | ------------------------------------- |
+| 4K / 杜比 FLV 单路 | `1048576` (1 MB) | `48` | `1048576` (1 MB) | `64` |
+| 4K / 杜比 HLS 单路 | 对 FLV 读块无影响 | `48` | `1048576` (1 MB) | `64` |
+| SSD / NAS 单路极高码率 | `1048576`～`2097152` | `48`～`64` | 与读块 `*_HIGH` 相同 | `64`～`128` |
 
-**示例（4K FLV 原画）：**
+> **注意**：调 4K 请改带 `_HIGH` 后缀的变量。不要动不带 `_HIGH` 的基础变量——那是 1080p 用的，改大只会让所有录制都多占内存。
+
+**示例（4K 默认仍不够用时）：**
 
 ```bash
-export READ_STREAM_BYTES_POOL_SIZE=1048576
-export READ_STREAM_CHAN_BUFFER_SIZE=16
-export LIVE_STREAM_WRITER_BYTES_POOL_SIZE=1048576
-# 以下与池大小无关，按存储介质沿用默认或 HDD/SSD 章节建议即可
-export LIVE_STREAM_WRITER_BUFFER_SIZE=8388608
-export LIVE_STREAM_WRITER_CHAN_BUFFER_SIZE=64
+export READ_STREAM_BYTES_POOL_SIZE_HIGH=2097152       # 2 MB，与写侧保持一致
+export READ_STREAM_CHAN_BUFFER_SIZE_HIGH=48
+export LIVE_STREAM_WRITER_BYTES_POOL_SIZE_HIGH=2097152
+export LIVE_STREAM_WRITER_CHAN_BUFFER_SIZE=64       # 多路 4K 可降到 48
 ```
 
-**粗算单路在途内存（上限估算）：**
-
-- 读侧：`READ_STREAM_CHAN_BUFFER_SIZE × READ_STREAM_BYTES_POOL_SIZE`（FLV；HLS 读侧占用通常更小）
-- 写侧：`LIVE_STREAM_WRITER_CHAN_BUFFER_SIZE ×` 典型块大小（FLV 约等于 read 块；HLS 约等于 segment 大小）
-
-例：默认 1080p 写队列约 `64 × 512 KB ≈ 32 MB`；若改为 4K 且 `1 MB` 块、`CHAN=64`，写队列上限约 `64 MB`，多路录制时请相应降低 `MAX_CONCURRENT_RECORDINGS` 或 `LIVE_STREAM_WRITER_CHAN_BUFFER_SIZE`。
+**内存粗算（单路上限）：** FLV 读侧约 `READ_STREAM_CHAN_BUFFER_SIZE_HIGH × READ_STREAM_BYTES_POOL_SIZE_HIGH`；写侧约 `LIVE_STREAM_WRITER_CHAN_BUFFER_SIZE ×` 典型块大小。例如默认 4K：读约 `48 × 1 MB ≈ 48 MB`，写约 `64 × 1 MB ≈ 64 MB`。
 
 ### HDD/SSD 与 DIY NAS 调整建议
 
@@ -662,8 +680,9 @@ curl -s -b cookies.txt http://127.0.0.1:8080/auth/bilibili/status
   | `true` | 尝试仅录制音频流（请求 `only_audio=1`） |
 
   **注意**：
-  - 不传 `qn` 时默认请求原画，是为了配合 `READ_STREAM_*` 的默认缓冲大小——高码率流（如 4K、杜比）更容易把读取缓冲撑满。
-  - 若要录这类画质，请显式传 `qn`，并参照 [高码率 / 4K 调参建议](#高码率--4k-调参建议) 调整 `READ_STREAM_BYTES_POOL_SIZE`、`LIVE_STREAM_WRITER_BYTES_POOL_SIZE`（建议与 read 同值）及 `READ_STREAM_CHAN_BUFFER_SIZE`。
+  - 录 4K / 杜比请显式传 `qn`（如 `qn=20000`、`qn=30000`）。
+  - `qn ≥ 20000` 时自动启用 `*_BYTES_POOL_SIZE_HIGH` 高画质池，一般无需改环境变量。
+  - 若遇卡顿或内存不足，参见 [高码率 / 4K 调参建议](#高码率--4k-调参建议)。
 
   例如：
 

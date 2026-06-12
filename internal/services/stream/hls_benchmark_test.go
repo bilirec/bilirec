@@ -63,7 +63,7 @@ func BenchmarkReadHlsStream_DeliveryLatency(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		ctx, cancel := context.WithCancel(context.Background())
 		start := time.Now()
-		ch, err := svc.ReadHlsStream(fetchURL, playlistClient, segmentClient, ctx)
+		ch, err := svc.ReadHlsStream(fetchURL, playlistClient, segmentClient, ctx, 10000)
 		if err != nil {
 			cancel()
 			b.Fatalf("ReadHlsStream failed: %v", err)

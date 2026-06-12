@@ -57,14 +57,25 @@ type StreamRecordStrategy interface {
 }
 
 var (
-	initPoolOnce    sync.Once
-	writerBytesPool *pool.BucketedBytesPool
+	writerPoolOnce sync.Once
+	writerPools    *pool.LazyDualPool[*pool.BucketedBytesPool]
 )
 
-// getWriterBytesPool returns the writer bytes pool, initializing it on first call
-func getWriterBytesPool() *pool.BucketedBytesPool {
-	initPoolOnce.Do(func() {
-		writerBytesPool = pool.NewBucketedBytesPool(config.ReadOnly.LiveStreamWriterBytesPoolSize())
+func newWriterPool(size int) *pool.BucketedBytesPool {
+	return pool.NewBucketedBytesPool(size)
+}
+
+func getWriterPools() *pool.LazyDualPool[*pool.BucketedBytesPool] {
+	writerPoolOnce.Do(func() {
+		writerPools = pool.NewLazyDualPool(
+			15*time.Minute,
+			func() *pool.BucketedBytesPool { return newWriterPool(config.ReadOnly.LiveStreamWriterBytesPoolSize()) },
+			func() *pool.BucketedBytesPool { return newWriterPool(config.ReadOnly.LiveStreamWriterBytesPoolSizeHigh()) },
+		)
 	})
-	return writerBytesPool
+	return writerPools
+}
+
+func acquireWriterPool(qn int) (*pool.BucketedBytesPool, func()) {
+	return getWriterPools().Acquire(config.IsHighQualityQn(qn))
 }

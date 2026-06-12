@@ -85,7 +85,7 @@ func isRetryablePlaylistFetchErr(err error) bool {
 //
 // playlistClient should have a short timeout for m3u8 fetches.
 // segmentClient should have a longer timeout for segment and map downloads.
-func (r *Service) ReadHlsStream(fetchM3u8URL func() (string, error), playlistClient, segmentClient *resty.Client, ctx context.Context) (<-chan []byte, error) {
+func (r *Service) ReadHlsStream(fetchM3u8URL func() (string, error), playlistClient, segmentClient *resty.Client, ctx context.Context, qn int) (<-chan []byte, error) {
 	var (
 		m3u8URL        string
 		resolver       *hlsutil.URLResolver
@@ -246,7 +246,7 @@ func (r *Service) ReadHlsStream(fetchM3u8URL func() (string, error), playlistCli
 	currentMapURI = pl.MapURI
 	mapSent = false
 
-	ch := make(chan []byte, r.chanBufferSize)
+	ch := make(chan []byte, r.chanBufferSizeForQn(qn))
 	go func() {
 		defer close(ch)
 		ticker := time.NewTicker(pollInterval)
