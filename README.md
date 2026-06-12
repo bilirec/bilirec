@@ -1152,14 +1152,18 @@ curl -s -b cookies.txt http://127.0.0.1:8080/auth/bilibili/status
 
 - **HTTP-FLV 格式**： 当检测到直播 PK 等 FLV 文件头变更时（分辨率切换）录制器会自动轮转到新的分段文件；
 
-- **HLS-TS / HLS-fMP4 格式**: 不执行文件轮转，直播 PK 等不连续性由 HLS播放列表层自然处理，录制器仅在流中断时重连并继续写入同一文件。
+- **HLS-fMP4 格式**: 当检测到 init segment 重置（流不连续/服务器切换）时，自动轮转到新的分段文件，确保每个文件包含完整的 fMP4 结构；
 
-首个文件名形如 `标题-时间戳.ext`，后续分段（HTTP-FLV 轮转后）会命名为 `标题-时间戳-1.ext`、`标题-时间戳-2.ext`。如果启用了 `CONVERT_TO_MP4`，每个可转换分段在完成时都会自动加入转换队列，并由后台任务异步转换/封装为 `.mp4` 文件（转换行为受 `DELETE_SOURCE_AFTER_CONVERT` 控制，转换任务可通过 `/convert/tasks` 查询）。
+- **HLS-TS 格式**: 不执行文件轮转，直播 PK 等不连续性由 HLS 播放列表层自然处理，录制器仅在流中断时重连并继续写入同一文件。
+
+首个文件名形如 `标题-时间戳.ext`，后续分段（HTTP-FLV / HLS-fMP4 轮转后）会命名为 `标题-时间戳-1.ext`、`标题-时间戳-2.ext`。如果启用了 `CONVERT_TO_MP4`，每个可转换分段在完成时都会自动加入转换队列，并由后台任务异步转换/封装为 `.mp4` 文件（转换行为受 `DELETE_SOURCE_AFTER_CONVERT` 控制，转换任务可通过 `/convert/tasks` 查询）。
 
 ### 关键特性
 
 - **自动恢复**: 当流中断时自动重连，详见 [`recorder.Service`](internal/services/recorder/recorder.go)
-- **自动分段轮转（HTTP-FLV）**: 仅适用于 HTTP-FLV 格式；当检测到 FLV 文件头变更（直播 PK 等分辨率切换）时，自动轮转到新的分段文件并重写文件头，降低画质切换导致输出异常的风险。HLS-TS / HLS-fMP4 格式不使用文件轮转，不连续性由 HLS 播放列表层自然处理
+- **自动分段轮转（HTTP-FLV / HLS-fMP4）**: 
+  - **HTTP-FLV**: 当检测到 FLV 文件头变更（直播 PK 等分辨率切换）时，自动轮转到新的分段文件并重写文件头，降低画质切换导致输出异常的风险
+  - **HLS-fMP4**: 当检测到 init segment 重置（流不连续/服务器切换）时自动分段，确保每个文件结构完整，避免 ffprobe 解析失败
 - **自动录制**: 为订阅的直播间配置自动开播录制，后台定期检查直播间状态并自动启动录制，详见 [`subcheck.Service`](internal/services/subcheck/check.go)
 - **实时通知**: 支持 Web Push 与 SSE 两种通知方式，推送直播开播通知和自动录制状态，详见 [`notify.Service`](internal/services/notify/notify.go)
 - **Android 嵌入支持**: 提供 `cmd/androidlib` 以生成 Android c-shared 库，支持 `ffmpeg.so` / `ffmpeg-kit` 本机库以及 Android 端的本地转码执行
