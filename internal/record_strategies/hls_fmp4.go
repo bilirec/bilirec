@@ -2,6 +2,7 @@ package record_strategies
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/bilirec/bilirec/internal/modules/config"
@@ -49,6 +50,15 @@ func (s *HlsFmp4Strategy) BuildPipeline(ctx context.Context, outputPath string, 
 }
 
 func (s *HlsFmp4Strategy) HandleErr(err error) ErrHandleResult {
+	// Handle stream discontinuity: when a new init segment (ftyp) appears
+	// after media segments, we need to rotate to a new file to maintain
+	// valid fmp4 file structure (each file should have exactly one init segment)
+	if errors.Is(err, processors.ErrFmp4Discontinuity) {
+		// Reset timestamp bases for the new segment
+		s.bases = make(map[uint32]uint64)
+		return ErrHandleResult{Action: ErrActionRotate}
+	}
+
 	return ErrHandleResult{Action: ErrActionAbort}
 }
 
