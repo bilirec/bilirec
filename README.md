@@ -287,6 +287,7 @@ Android 模式下会先注入一组移动端默认值（如 `HOST=127.0.0.1`、`
 | `DOWNLOAD_BUFFER_SIZE` | 文件下载 / 导出时使用的缓冲区大小（字节） | `5242880` (5 MB) |
 | `STREAM_WRITER_BUFFER_SIZE` | 流写入器（写入文件）缓冲区大小（字节） | `1048576` (1 MB) |
 | `READ_STREAM_BYTES_POOL_SIZE` | 读取直播流时使用的字节池单块大小（字节）；`FLV` / `HLS` 共用，建议与常见 chunk 大小一致 | `524288` (512 KB) |
+| `READ_STREAM_BYTES_POOL_SIZE_HIGH` | 2K/4K 高画质 **FLV 读侧**池块大小（字节）；按实际流 `qn` 达到高画质时启用（懒加载） | `1048576` (1 MB) |
 | `READ_STREAM_CHAN_BUFFER_SIZE` | 读取直播流时的通道缓冲区大小（chunk 数）；更大值可容忍网络/写入短时抖动，但会增加在途内存 | `16` |
 | `PERF_PRESET` | 性能行为预设：`low-cpu`（默认，偏向更低 CPU）/ `low-mem`（偏向更低内存平台） | `low-cpu` |
 | `LIVE_STREAM_WRITER_BUFFER_SIZE` | 实时流写入缓冲区（用于直播录制或实时下载，字节）；更大的值减少 flush 频率，降低 SD 卡磨损 | `8388608` (8 MB) |
@@ -294,6 +295,7 @@ Android 模式下会先注入一组移动端默认值（如 `HOST=127.0.0.1`、`
 | `LIVE_STREAM_WRITER_FLUSH_PERIOD_SECS` | 实时流写入器执行周期性 `flush` 的周期（秒）；值越大 flush 频率越低，越有利于减少 SD 卡写入频次 | `10` |
 | `LIVE_STREAM_WRITER_CHAN_BUFFER_SIZE` | 实时流写入器通道缓冲区大小（数据块数）；更大的值可容忍写入延迟突变，但会增加内存占用 | `64` |
 | `LIVE_STREAM_WRITER_BYTES_POOL_SIZE` | 实时流写入器内存池的单个缓冲区大小（字节）；应与实际流 chunk 大小相匹配 | `524288` (512 KB) |
+| `LIVE_STREAM_WRITER_BYTES_POOL_SIZE_HIGH` | 2K/4K 高画质写侧池块大小（字节）；按实际流 `qn` 达到高画质时启用（懒加载） | `1048576` (1 MB) |
 | `SKIP_SMALL_FLUSH_THRESHOLD` | 启用 `SKIP_SMALL_FLUSH` 后，延迟创建文件并缓存内存的阈值（字节）；达到阈值后才开始落盘。该值独立于 `LIVE_STREAM_WRITER_BUFFER_SIZE` | `1048576` (1 MB) |
 | `SKIP_SMALL_FLUSH` | 启用 microSD 磨损保护：在达到 `SKIP_SMALL_FLUSH_THRESHOLD` 之前仅缓存内存，不创建文件 | `true` |
 | `SEQUENTIAL_WRITE` | 启用全局 flush 锁以序列化多路录制的写入操作；仅在多路并发录制写入同一物理磁盘时建议启用，可显著降低 I/O 峰值 | `true` |
@@ -317,6 +319,21 @@ Android 模式下会先注入一组移动端默认值（如 `HOST=127.0.0.1`、`
   - 在 `low-mem` 下，若进入恢复失败阶段，会临时降到 `1`，恢复后自动回到 preset 对应值。
 - **启动日志**  
   - 启动时会输出当前性能预设，便于线上排查（例如：`性能预设：low-mem`）。
+
+### 2K/4K 双池懒加载（按 qn 自动分流）
+
+当系统检测到实际流质量 `qn >= 20000`（例如 2K/4K）时，会启用高画质路径：
+
+- 写侧：`LIVE_STREAM_WRITER_BYTES_POOL_SIZE_HIGH`（双池懒加载）
+- FLV 读侧：`READ_STREAM_BYTES_POOL_SIZE_HIGH`（双池懒加载）
+- HLS 读侧：不走 bytes pool；按 `qn` 选择不同 channel depth（避免额外 copy）
+
+设计特点：
+
+- 1080p 及以下继续使用默认池（`*_BYTES_POOL_SIZE`）。
+- 高画质池采用懒加载：只有出现高画质任务才初始化。
+- 当高画质任务长期为空时，高画质池会释放引用（`= nil`），交由 GC 后续回收。
+- `*_CHAN_BUFFER_SIZE` 不区分 high 版本，继续沿用现有长度配置。
 
 > [!NOTE]
 > `PERF_PRESET` 只新增行为分支，不会覆盖你手动配置的数值型环境变量（例如 `LIVE_STREAM_WRITER_*`、`READ_STREAM_*`）。

@@ -36,7 +36,7 @@ func makeFmp4Fragment(trackID uint32, decodeTime uint64) []byte {
 func BenchmarkHlsFmp4Strategy_PipelineThroughput(b *testing.B) {
 	ensureBenchmarkConfig()
 	ctx := context.Background()
-	strategy := NewHlsFmp4Strategy()
+	strategy := NewHlsFmp4Strategy(10000)
 	outputPath := filepath.Join(b.TempDir(), "bench.fmp4")
 	pipe, err := strategy.BuildPipeline(ctx, outputPath, &RotationState{Data: map[string][]byte{}})
 	if err != nil {

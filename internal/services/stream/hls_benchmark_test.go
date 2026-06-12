@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/bilirec/bilirec/pkg/benchreport"
+	"github.com/bilirec/bilirec/pkg/pool"
 	"github.com/go-resty/resty/v2"
 )
 
@@ -49,7 +50,15 @@ func BenchmarkReadHlsStream_DeliveryLatency(b *testing.B) {
 	}))
 	defer server.Close()
 
-	svc := &Service{chanBufferSize: 64}
+	svc := &Service{
+		readPools: pool.NewLazyDualPool(
+			15*time.Minute,
+			func() *pool.BytesPool { return pool.NewBytesPool(512 * 1024) },
+			func() *pool.BytesPool { return pool.NewBytesPool(1024 * 1024) },
+		),
+		chanBufferSize:     64,
+		highChanBufferSize: 64,
+	}
 	playlistClient := resty.New().SetTimeout(3 * time.Second)
 	segmentClient := resty.New().SetTimeout(5 * time.Second)
 	fetchURL := func() (string, error) { return server.URL + playlistPath, nil }
@@ -63,7 +72,7 @@ func BenchmarkReadHlsStream_DeliveryLatency(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		ctx, cancel := context.WithCancel(context.Background())
 		start := time.Now()
-		ch, err := svc.ReadHlsStream(fetchURL, playlistClient, segmentClient, ctx)
+		ch, err := svc.ReadHlsStream(fetchURL, playlistClient, segmentClient, ctx, 10000)
 		if err != nil {
 			cancel()
 			b.Fatalf("ReadHlsStream failed: %v", err)

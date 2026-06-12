@@ -100,16 +100,16 @@ func isRetryablePlaylistFetchErr(err error) bool {
 //
 // playlistClient should have a short timeout for m3u8 fetches.
 // segmentClient should have a longer timeout for segment and map downloads.
-func (r *Service) ReadHlsStream(fetchM3u8URL func() (string, error), playlistClient, segmentClient *resty.Client, ctx context.Context) (<-chan []byte, error) {
+func (r *Service) ReadHlsStream(fetchM3u8URL func() (string, error), playlistClient, segmentClient *resty.Client, ctx context.Context, qn int) (<-chan []byte, error) {
 	var (
-		m3u8URL        string
-		resolver       *hlsutil.URLResolver
-		prefetcher     *hlsutil.SegmentPrefetcher
-		currentMapURI  string
-		mapSent        bool
-		lastEtag       string
-		lastModified   string
-		cachedPlaylist *hlsPlaylist
+		m3u8URL         string
+		resolver        *hlsutil.URLResolver
+		prefetcher      *hlsutil.SegmentPrefetcher
+		currentMapURI   string
+		mapSent         bool
+		lastEtag        string
+		lastModified    string
+		cachedPlaylist  *hlsPlaylist
 		prefetchWorkers int
 	)
 
@@ -263,7 +263,7 @@ func (r *Service) ReadHlsStream(fetchM3u8URL func() (string, error), playlistCli
 	currentMapURI = pl.MapURI
 	mapSent = false
 
-	ch := make(chan []byte, r.chanBufferSize)
+	ch := make(chan []byte, r.chanBufferSizeForQn(qn))
 	go func() {
 		defer close(ch)
 		ticker := time.NewTicker(pollInterval)
@@ -437,7 +437,6 @@ func (r *Service) ReadHlsStream(fetchM3u8URL func() (string, error), playlistCli
 							continue
 						}
 						logger.Debugf("hls: map fetch ok bytes=%d elapsed=%v", len(mapResp.Body()), time.Since(mapFetchStart))
-
 						select {
 						case ch <- mapResp.Body():
 							mapSent = true
@@ -469,7 +468,6 @@ func (r *Service) ReadHlsStream(fetchM3u8URL func() (string, error), playlistCli
 					}
 
 					nextSeq = segSeq + 1
-
 					select {
 					case ch <- data:
 					case <-ctx.Done():

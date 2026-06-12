@@ -271,7 +271,7 @@ func (r *Service) Start(roomId int, options ...RecordStartOption) error {
 				return "", nil
 			}
 
-			hlsCh, hlsErr := r.st.ReadHlsStream(fetchM3u8URL, r.bilic.GetLiveHlsPlaylistClient(), r.bilic.GetLiveHlsSegmentClient(), ctx)
+			hlsCh, hlsErr := r.st.ReadHlsStream(fetchM3u8URL, r.bilic.GetLiveHlsPlaylistClient(), r.bilic.GetLiveHlsSegmentClient(), ctx, streamInfo.Qn)
 			if hlsErr != nil {
 				l.Errorf("cannot start HLS stream: %v, will try next url", hlsErr)
 				continue
@@ -279,8 +279,8 @@ func (r *Service) Start(roomId int, options ...RecordStartOption) error {
 			ch = hlsCh
 			strategy = utils.TernaryFunc(
 				streamInfo.Format == "ts",
-				func() rs.StreamRecordStrategy { return rs.NewHlsTsStrategy() },
-				func() rs.StreamRecordStrategy { return rs.NewHlsFmp4Strategy() },
+				func() rs.StreamRecordStrategy { return rs.NewHlsTsStrategy(streamInfo.Qn) },
+				func() rs.StreamRecordStrategy { return rs.NewHlsFmp4Strategy(streamInfo.Qn) },
 			)
 		default: // "flv" and any unknown format
 			startTimeFlv := time.Now()
@@ -328,13 +328,13 @@ func (r *Service) Start(roomId int, options ...RecordStartOption) error {
 				utils.TruncateString(finalURL, 160),
 			)
 
-			flvCh, flvErr := r.st.ReadFlvStream(resp, ctx)
+			flvCh, flvErr := r.st.ReadFlvStream(resp, ctx, streamInfo.Qn)
 			if flvErr != nil {
 				l.Errorf("cannot capture url stream: %v, will try next url", flvErr)
 				continue
 			}
 			ch = flvCh
-			strategy = rs.NewFlvStrategy()
+			strategy = rs.NewFlvStrategy(streamInfo.Qn)
 		}
 
 		// Resolve runtime max duration for recorder internals.

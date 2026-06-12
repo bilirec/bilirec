@@ -79,21 +79,23 @@ type Config struct {
 	FFmpegAllowDuringRecordingMaxActiveRecordings int
 
 	// configurable performances
-	ReadStreamBytesPoolSize  int
-	ReadStreamChanBufferSize int
+	ReadStreamBytesPoolSize     int
+	ReadStreamChanBufferSize    int
+	readStreamBytesPoolSizeHigh int
 
 	// configurable global performances
-	uploadBufferSize               int
-	downloadBufferSize             int
-	streamWriterBufferSize         int
-	liveStreamWriterBufferSize     int
-	liveStreamWriterSyncPeriod     int
-	liveStreamWriterFlushPeriod    int
-	liveStreamWriterChanBufferSize int
-	liveStreamWriterBytesPoolSize  int
-	skipSmallFlushThreshold        int
-	skipSmallFlush                 bool
-	sequentialWrite                bool
+	uploadBufferSize                  int
+	downloadBufferSize                int
+	streamWriterBufferSize            int
+	liveStreamWriterBufferSize        int
+	liveStreamWriterSyncPeriod        int
+	liveStreamWriterFlushPeriod       int
+	liveStreamWriterChanBufferSize    int
+	liveStreamWriterBytesPoolSize     int
+	liveStreamWriterBytesPoolSizeHigh int
+	skipSmallFlushThreshold           int
+	skipSmallFlush                    bool
+	sequentialWrite                   bool
 }
 
 var logger = logrus.WithField("module", "config")
@@ -185,21 +187,23 @@ func provider(lc fx.Lifecycle) (*Config, error) {
 		FFmpegAllowDuringRecordingMaxActiveRecordings: utils.MustAtoi(ffmpegAllowDuringRecordingMaxActives), // <1 = no limit; when >=1, ffmpeg during recording runs only if active recordings <= this value
 
 		// stream performance configs
-		ReadStreamBytesPoolSize:  utils.MustAtoi(utils.EmptyOrElse(os.Getenv("READ_STREAM_BYTES_POOL_SIZE"), "524288")), // default 512KB
-		ReadStreamChanBufferSize: utils.MustAtoi(utils.EmptyOrElse(os.Getenv("READ_STREAM_CHAN_BUFFER_SIZE"), "16")),    // default 16
+		ReadStreamBytesPoolSize:     utils.MustAtoi(utils.EmptyOrElse(os.Getenv("READ_STREAM_BYTES_POOL_SIZE"), "524288")),       // default 512KB
+		ReadStreamChanBufferSize:    utils.MustAtoi(utils.EmptyOrElse(os.Getenv("READ_STREAM_CHAN_BUFFER_SIZE"), "16")),          // default 16
+		readStreamBytesPoolSizeHigh: utils.MustAtoi(utils.EmptyOrElse(os.Getenv("READ_STREAM_BYTES_POOL_SIZE_HIGH"), "1048576")), // default 1MB for 2K/4K
 
 		// global performance configs
-		uploadBufferSize:               utils.MustAtoi(utils.EmptyOrElse(os.Getenv("UPLOAD_BUFFER_SIZE"), "5242880")),                // default 5MB
-		downloadBufferSize:             utils.MustAtoi(utils.EmptyOrElse(os.Getenv("DOWNLOAD_BUFFER_SIZE"), "5242880")),              // default 5MB
-		streamWriterBufferSize:         utils.MustAtoi(utils.EmptyOrElse(os.Getenv("STREAM_WRITER_BUFFER_SIZE"), "1048576")),         // default 1MB
-		liveStreamWriterBufferSize:     utils.MustAtoi(utils.EmptyOrElse(os.Getenv("LIVE_STREAM_WRITER_BUFFER_SIZE"), "8388608")),    // 8MB: prioritize lower flush frequency for SD card longevity
-		liveStreamWriterSyncPeriod:     utils.MustAtoi(utils.EmptyOrElse(os.Getenv("LIVE_STREAM_WRITER_SYNC_PERIOD_SECS"), "0")),     // 0 = disabled; sync only on Close() to minimize SD card wear
-		liveStreamWriterFlushPeriod:    utils.MustAtoi(utils.EmptyOrElse(os.Getenv("LIVE_STREAM_WRITER_FLUSH_PERIOD_SECS"), "10")),   // default 10s: fewer flush operations, lower SD card wear
-		liveStreamWriterChanBufferSize: utils.MustAtoi(utils.EmptyOrElse(os.Getenv("LIVE_STREAM_WRITER_CHAN_BUFFER_SIZE"), "64")),    // default 64: limits in-flight memory while still tolerating write latency bursts
-		liveStreamWriterBytesPoolSize:  utils.MustAtoi(utils.EmptyOrElse(os.Getenv("LIVE_STREAM_WRITER_BYTES_POOL_SIZE"), "524288")), // 512KB per buffer
-		skipSmallFlushThreshold:        utils.MustAtoi(utils.EmptyOrElse(os.Getenv("SKIP_SMALL_FLUSH_THRESHOLD"), "1048576")),        // default 1MB: delay file creation until buffered bytes reach this threshold
-		skipSmallFlush:                 os.Getenv("SKIP_SMALL_FLUSH") != "false",                                                     // enabled by default; when true, SD-card protection mode is enabled
-		sequentialWrite:                os.Getenv("SEQUENTIAL_WRITE") != "false",                                                     // enabled by default; set false to disable global flush serialization
+		uploadBufferSize:                  utils.MustAtoi(utils.EmptyOrElse(os.Getenv("UPLOAD_BUFFER_SIZE"), "5242880")),                      // default 5MB
+		downloadBufferSize:                utils.MustAtoi(utils.EmptyOrElse(os.Getenv("DOWNLOAD_BUFFER_SIZE"), "5242880")),                    // default 5MB
+		streamWriterBufferSize:            utils.MustAtoi(utils.EmptyOrElse(os.Getenv("STREAM_WRITER_BUFFER_SIZE"), "1048576")),               // default 1MB
+		liveStreamWriterBufferSize:        utils.MustAtoi(utils.EmptyOrElse(os.Getenv("LIVE_STREAM_WRITER_BUFFER_SIZE"), "8388608")),          // 8MB: prioritize lower flush frequency for SD card longevity
+		liveStreamWriterSyncPeriod:        utils.MustAtoi(utils.EmptyOrElse(os.Getenv("LIVE_STREAM_WRITER_SYNC_PERIOD_SECS"), "0")),           // 0 = disabled; sync only on Close() to minimize SD card wear
+		liveStreamWriterFlushPeriod:       utils.MustAtoi(utils.EmptyOrElse(os.Getenv("LIVE_STREAM_WRITER_FLUSH_PERIOD_SECS"), "10")),         // default 10s: fewer flush operations, lower SD card wear
+		liveStreamWriterChanBufferSize:    utils.MustAtoi(utils.EmptyOrElse(os.Getenv("LIVE_STREAM_WRITER_CHAN_BUFFER_SIZE"), "64")),          // default 64: limits in-flight memory while still tolerating write latency bursts
+		liveStreamWriterBytesPoolSize:     utils.MustAtoi(utils.EmptyOrElse(os.Getenv("LIVE_STREAM_WRITER_BYTES_POOL_SIZE"), "524288")),       // 512KB per buffer
+		liveStreamWriterBytesPoolSizeHigh: utils.MustAtoi(utils.EmptyOrElse(os.Getenv("LIVE_STREAM_WRITER_BYTES_POOL_SIZE_HIGH"), "1048576")), // default 1MB for 2K/4K
+		skipSmallFlushThreshold:           utils.MustAtoi(utils.EmptyOrElse(os.Getenv("SKIP_SMALL_FLUSH_THRESHOLD"), "1048576")),              // default 1MB: delay file creation until buffered bytes reach this threshold
+		skipSmallFlush:                    os.Getenv("SKIP_SMALL_FLUSH") != "false",                                                           // enabled by default; when true, SD-card protection mode is enabled
+		sequentialWrite:                   os.Getenv("SEQUENTIAL_WRITE") != "false",                                                           // enabled by default; set false to disable global flush serialization
 	}
 
 	ReadOnly = &GlobalReadOnly{config: c}

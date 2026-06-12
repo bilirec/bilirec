@@ -57,20 +57,29 @@ type StreamRecordStrategy interface {
 }
 
 var (
-	initPoolOnce    sync.Once
-	writerBytesPool pool.ByteSlicePool
+	writerPoolOnce sync.Once
+	writerPools    *pool.LazyDualPool[pool.ByteSlicePool]
 )
 
-// getWriterBytesPool returns the writer bytes pool, initializing it on first call
-func getWriterBytesPool() pool.ByteSlicePool {
-	initPoolOnce.Do(func() {
-		baseSize := config.ReadOnly.LiveStreamWriterBytesPoolSize()
-		if config.ReadOnly.IsLowMemPreset() {
-			// low-mem keeps a single-cap pool to reduce bucketed long-tail retention.
-			writerBytesPool = pool.NewBytesSlicePool(baseSize, baseSize)
-			return
-		}
-		writerBytesPool = pool.NewBucketedBytesPool(baseSize)
+func newWriterPool(size int) pool.ByteSlicePool {
+	if config.ReadOnly.IsLowMemPreset() {
+		// low-mem keeps a single-cap pool to reduce bucketed long-tail retention.
+		return pool.NewBytesSlicePool(size, size)
+	}
+	return pool.NewBucketedBytesPool(size)
+}
+
+func getWriterPools() *pool.LazyDualPool[pool.ByteSlicePool] {
+	writerPoolOnce.Do(func() {
+		writerPools = pool.NewLazyDualPool(
+			15*time.Minute,
+			func() pool.ByteSlicePool { return newWriterPool(config.ReadOnly.LiveStreamWriterBytesPoolSize()) },
+			func() pool.ByteSlicePool { return newWriterPool(config.ReadOnly.LiveStreamWriterBytesPoolSizeHigh()) },
+		)
 	})
-	return writerBytesPool
+	return writerPools
+}
+
+func acquireWriterPool(qn int) (pool.ByteSlicePool, func()) {
+	return getWriterPools().Acquire(config.IsHighQualityQn(qn))
 }

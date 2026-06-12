@@ -1,4 +1,4 @@
-﻿package config
+package config
 
 import "fmt"
 
@@ -8,15 +8,17 @@ const (
 	perfPresetLowCPU = "low-cpu"
 	perfPresetLowMem = "low-mem"
 
-	defaultCloudConvertCheckIntervalSecs                 = 180
-	defaultCloudConvertMaxConcurrentDownloads            = 1
-	defaultFFmpegCheckIntervalSecs                       = 60
-	defaultFFmpegMaxConcurrentTasks                      = 1
-	defaultLiveStreamWriterSyncPeriodSecs                = 0 // Disable periodic sync to reduce SD card wear; data syncs only on Close()
-	defaultLiveStreamWriterFlushPeriodSecs               = 15
-	defaultLiveStreamWriterChanBufferSize                = 64
-	defaultLiveStreamWriterBytesPoolSize                 = 512 * 1024 // 512KB per buffer
-	defaultSkipSmallFlushThreshold                       = 1 * 1024 * 1024
+	defaultCloudConvertCheckIntervalSecs      = 180
+	defaultCloudConvertMaxConcurrentDownloads = 1
+	defaultFFmpegCheckIntervalSecs            = 60
+	defaultFFmpegMaxConcurrentTasks           = 1
+	defaultLiveStreamWriterSyncPeriodSecs     = 0 // Disable periodic sync to reduce SD card wear; data syncs only on Close()
+	defaultLiveStreamWriterFlushPeriodSecs    = 15
+	defaultLiveStreamWriterChanBufferSize     = 64
+	defaultLiveStreamWriterBytesPoolSize      = 512 * 1024 // 512KB per buffer
+	defaultReadStreamBytesPoolSizeHigh        = 1024 * 1024
+	defaultLiveStreamWriterBytesPoolSizeHigh  = 1024 * 1024
+	defaultSkipSmallFlushThreshold            = 1 * 1024 * 1024
 )
 
 // for global readonly access
@@ -90,6 +92,24 @@ func (g *GlobalReadOnly) LiveStreamWriterBytesPoolSize() int {
 		return defaultLiveStreamWriterBytesPoolSize
 	}
 	return g.config.liveStreamWriterBytesPoolSize
+}
+
+func (g *GlobalReadOnly) ReadStreamBytesPoolSizeHigh() int {
+	if g.config.readStreamBytesPoolSizeHigh <= 0 {
+		return defaultReadStreamBytesPoolSizeHigh
+	}
+	return g.config.readStreamBytesPoolSizeHigh
+}
+
+func (g *GlobalReadOnly) LiveStreamWriterBytesPoolSizeHigh() int {
+	if g.config.liveStreamWriterBytesPoolSizeHigh <= 0 {
+		return defaultLiveStreamWriterBytesPoolSizeHigh
+	}
+	return g.config.liveStreamWriterBytesPoolSizeHigh
+}
+
+func IsHighQualityQn(qn int) bool {
+	return qn >= 20000
 }
 
 func (g *GlobalReadOnly) SkipSmallFlushThreshold() int {
@@ -183,6 +203,12 @@ func (g *GlobalReadOnly) Validate() error {
 	}
 	if g.config.skipSmallFlushThreshold <= 0 {
 		logger.Warnf("SKIP_SMALL_FLUSH_THRESHOLD 无效（%d），使用默认值 %d 字节", g.config.skipSmallFlushThreshold, defaultSkipSmallFlushThreshold)
+	}
+	if g.config.readStreamBytesPoolSizeHigh <= 0 {
+		logger.Warnf("READ_STREAM_BYTES_POOL_SIZE_HIGH 无效（%d），使用默认值 %d 字节", g.config.readStreamBytesPoolSizeHigh, defaultReadStreamBytesPoolSizeHigh)
+	}
+	if g.config.liveStreamWriterBytesPoolSizeHigh <= 0 {
+		logger.Warnf("LIVE_STREAM_WRITER_BYTES_POOL_SIZE_HIGH 无效（%d），使用默认值 %d 字节", g.config.liveStreamWriterBytesPoolSizeHigh, defaultLiveStreamWriterBytesPoolSizeHigh)
 	}
 	switch g.config.perfPreset {
 	case "", perfPresetLowCPU, perfPresetLowMem:
