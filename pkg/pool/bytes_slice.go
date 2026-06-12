@@ -11,6 +11,8 @@ type BytesSlicePool struct {
 	initCap int
 }
 
+var _ ByteSlicePool = (*BytesSlicePool)(nil)
+
 // NewBytesSlicePool creates a new variable-size bytes slice pool.
 // initCap: initial capacity for newly allocated slices.
 // maxCap: maximum capacity to pool; slices larger than this are discarded (GC'd).
@@ -42,9 +44,7 @@ func (p *BytesSlicePool) Get() []byte {
 // GetSized retrieves a slice and ensures its length is exactly size.
 // If the pooled slice capacity is insufficient, a new slice is allocated.
 func (p *BytesSlicePool) GetSized(size int) []byte {
-	if size < 0 {
-		size = 0
-	}
+	size = normalizeByteSliceSize(size)
 	b := p.Get()
 	if cap(b) < size {
 		p.Put(b)
@@ -57,7 +57,7 @@ func (p *BytesSlicePool) GetSized(size int) []byte {
 // Slices with capacity > maxCap are not pooled (left for GC).
 func (p *BytesSlicePool) Put(b []byte) {
 	if b == nil || cap(b) > p.maxCap {
-        return
-    }
-    p.pool.Put(b[:0])
+		return
+	}
+	p.pool.Put(b[:0])
 }

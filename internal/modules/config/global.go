@@ -5,11 +5,13 @@ import "fmt"
 var ReadOnly *GlobalReadOnly = nil
 
 const (
+	perfPresetLowCPU = "low-cpu"
+	perfPresetLowMem = "low-mem"
+
 	defaultCloudConvertCheckIntervalSecs                 = 180
 	defaultCloudConvertMaxConcurrentDownloads            = 1
 	defaultFFmpegCheckIntervalSecs                       = 60
 	defaultFFmpegMaxConcurrentTasks                      = 1
-	defaultFFmpegAllowDuringRecordingMaxActiveRecordings = 1
 	defaultLiveStreamWriterSyncPeriodSecs                = 0 // Disable periodic sync to reduce SD card wear; data syncs only on Close()
 	defaultLiveStreamWriterFlushPeriodSecs               = 15
 	defaultLiveStreamWriterChanBufferSize                = 64
@@ -20,6 +22,30 @@ const (
 // for global readonly access
 type GlobalReadOnly struct {
 	config *Config
+}
+
+func (g *GlobalReadOnly) PerfPreset() string {
+	switch g.config.perfPreset {
+	case perfPresetLowMem:
+		return perfPresetLowMem
+	default:
+		return perfPresetLowCPU
+	}
+}
+
+func (g *GlobalReadOnly) IsLowMemPreset() bool {
+	return g.PerfPreset() == perfPresetLowMem
+}
+
+func (g *GlobalReadOnly) IsLowCPUPreset() bool {
+	return g.PerfPreset() == perfPresetLowCPU
+}
+
+func (g *GlobalReadOnly) HlsSegmentFetchWorkers() int {
+	if g.IsLowMemPreset() {
+		return 2
+	}
+	return 4
 }
 
 func (g *GlobalReadOnly) UploadBufferSize() int {
@@ -157,6 +183,11 @@ func (g *GlobalReadOnly) Validate() error {
 	}
 	if g.config.skipSmallFlushThreshold <= 0 {
 		logger.Warnf("SKIP_SMALL_FLUSH_THRESHOLD 无效（%d），使用默认值 %d 字节", g.config.skipSmallFlushThreshold, defaultSkipSmallFlushThreshold)
+	}
+	switch g.config.perfPreset {
+	case "", perfPresetLowCPU, perfPresetLowMem:
+	default:
+		return fmt.Errorf("配置无效：PERF_PRESET 仅支持 %s、%s，当前值：%s", perfPresetLowCPU, perfPresetLowMem, g.config.perfPreset)
 	}
 	// Reject protocol-mismatch configs between FRP backend mode and Fiber listener mode.
 	if g.config.ServerCrt != "" && g.config.ServerKey != "" && g.config.FRPEnabled && !g.config.FRPHttps {

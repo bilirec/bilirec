@@ -58,13 +58,19 @@ type StreamRecordStrategy interface {
 
 var (
 	initPoolOnce    sync.Once
-	writerBytesPool *pool.BucketedBytesPool
+	writerBytesPool pool.ByteSlicePool
 )
 
 // getWriterBytesPool returns the writer bytes pool, initializing it on first call
-func getWriterBytesPool() *pool.BucketedBytesPool {
+func getWriterBytesPool() pool.ByteSlicePool {
 	initPoolOnce.Do(func() {
-		writerBytesPool = pool.NewBucketedBytesPool(config.ReadOnly.LiveStreamWriterBytesPoolSize())
+		baseSize := config.ReadOnly.LiveStreamWriterBytesPoolSize()
+		if config.ReadOnly.IsLowMemPreset() {
+			// low-mem keeps a single-cap pool to reduce bucketed long-tail retention.
+			writerBytesPool = pool.NewBytesSlicePool(baseSize, baseSize)
+			return
+		}
+		writerBytesPool = pool.NewBucketedBytesPool(baseSize)
 	})
 	return writerBytesPool
 }

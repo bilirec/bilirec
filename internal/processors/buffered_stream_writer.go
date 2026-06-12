@@ -68,9 +68,9 @@ type BufferedStreamWriterProcessor struct {
 
 	// bytesPool is used to reduce allocations when copying incoming data.
 	// When nil, fallback to direct allocation via make().
-	bytesPool     *pool.BucketedBytesPool
-	pendingChunks [][]byte
-	pendingBytes  int
+	bytesPool   pool.ByteSlicePool
+	pendingBuf  []byte
+	pendingSize int
 
 	lastCreateFileFailureLog time.Time
 	suppressedCreateFailures int
@@ -125,8 +125,8 @@ func (w *BufferedStreamWriterProcessor) Open(ctx context.Context, log *logrus.En
 		w.file.Store(file)
 		w.writer = rw.NewFlushLockedBufferedWriter(file, w.bufferSize, flushLocker)
 	} else {
-		w.pendingChunks = make([][]byte, 0, 16)
-		w.pendingBytes = 0
+		w.pendingBuf = make([]byte, 0, w.skipSmallFlushThreshold)
+		w.pendingSize = 0
 	}
 
 	w.logger = log.WithField("file", w.path)
@@ -174,8 +174,8 @@ func (w *BufferedStreamWriterProcessor) Close() error {
 
 	if w.sdcardProtection && w.file.Load() == nil {
 		threshold := w.skipSmallFlushThreshold
-		w.logger.Warnf("未创建文件且总写入字节数（%d）小于保护阈值（%d），直接丢弃内存中的数据", w.bytesWritten+int64(w.pendingBytes), threshold)
-		w.releasePendingChunks()
+		w.logger.Warnf("未创建文件且总写入字节数（%d）小于保护阈值（%d），直接丢弃内存中的数据", w.bytesWritten+int64(w.pendingSize), threshold)
+		w.releasePendingBuffer()
 		return nil
 	}
 
@@ -214,19 +214,19 @@ func (w *BufferedStreamWriterProcessor) writePeriodically() {
 
 			if w.sdcardProtection && w.file.Load() == nil {
 				threshold := w.skipSmallFlushThreshold
-				w.pendingChunks = append(w.pendingChunks, data)
-				w.pendingBytes += len(data)
-				if w.pendingBytes < threshold {
+				w.pendingBuf = append(w.pendingBuf, data...)
+				w.pendingSize += len(data)
+				w.bytesPool.Put(data)
+				if w.pendingSize < threshold {
 					continue
 				}
 				// Buffer threshold reached; create file and flush pending data.
 				if err := w.createFileAndWriter(); err != nil {
-					if w.pendingBytes <= maxPendingBytesBeforeDrop {
+					if w.pendingSize <= maxPendingBytesBeforeDrop {
 						if w.shouldLogCreateFileFailure() {
 							w.logger.Warnf(
-								"创建文件失败，暂不丢弃待写数据：pending=%dB chunks=%d limit=%dB suppressed=%d err=%v",
-								w.pendingBytes,
-								len(w.pendingChunks),
+								"创建文件失败，暂不丢弃待写数据：pending=%dB limit=%dB suppressed=%d err=%v",
+								w.pendingSize,
 								maxPendingBytesBeforeDrop,
 								w.suppressedCreateFailures,
 								err,
@@ -242,31 +242,26 @@ func (w *BufferedStreamWriterProcessor) writePeriodically() {
 						w.suppressedCreateFailures = 0
 					}
 					w.logger.Warnf(
-						"创建文件失败且待写数据超过硬阈值，丢弃待写数据以防止内存持续增长：dropped=%dB chunks=%d limit=%dB err=%v",
-						w.pendingBytes,
-						len(w.pendingChunks),
+						"创建文件失败且待写数据超过硬阈值，丢弃待写数据以防止内存持续增长：dropped=%dB limit=%dB err=%v",
+						w.pendingSize,
 						maxPendingBytesBeforeDrop,
 						err,
 					)
-					w.releasePendingChunks()
+					w.releasePendingBuffer()
 					continue
 				}
 				// Reset throttling state after file creation recovers.
 				w.lastCreateFileFailureLog = time.Time{}
 				w.suppressedCreateFailures = 0
-				for _, chunk := range w.pendingChunks {
-					n, err := w.writer.Write(chunk)
-					if n != len(chunk) {
-						w.logger.Warnf("写入待缓存数据长度不完整：%d/%d", n, len(chunk))
-					}
-					if err != nil {
-						w.logger.Warnf("写入待缓存数据失败：%v", err)
-					}
-					w.bytesWritten += int64(n)
-					w.bytesPool.Put(chunk)
+				n, err := w.writer.Write(w.pendingBuf)
+				if n != len(w.pendingBuf) {
+					w.logger.Warnf("写入待缓存数据长度不完整：%d/%d", n, len(w.pendingBuf))
 				}
-				w.pendingChunks = w.pendingChunks[:0]
-				w.pendingBytes = 0
+				if err != nil {
+					w.logger.Warnf("写入待缓存数据失败：%v", err)
+				}
+				w.bytesWritten += int64(n)
+				w.releasePendingBuffer()
 				continue
 			}
 
@@ -415,24 +410,21 @@ func WithChanBufferSize(size int) BufferedStreamWriterOptions {
 	}
 }
 
-// WithBytesPool configures a bucketed bytes pool to reuse buffers during copying,
-// reducing GC pressure. Buckets are typically computed from
-// LIVE_STREAM_WRITER_BYTES_POOL_SIZE and include several nearby sizes.
+// WithBytesPool configures a byte-slice pool for copy buffer reuse, reducing GC
+// pressure. Implementations can be bucketed (low-cpu) or single-cap/limited
+// (low-mem) based on runtime strategy.
 //
 //	pool := pool.NewBucketedBytesPool(512 * 1024)
 //	writer := NewBufferedStreamWriter(path, WithBytesPool(pool))
-func WithBytesPool(bp *pool.BucketedBytesPool) BufferedStreamWriterOptions {
+func WithBytesPool(bp pool.ByteSlicePool) BufferedStreamWriterOptions {
 	return func(p *BufferedStreamWriterProcessor) {
 		p.bytesPool = bp
 	}
 }
 
-func (w *BufferedStreamWriterProcessor) releasePendingChunks() {
-	for _, chunk := range w.pendingChunks {
-		w.bytesPool.Put(chunk)
-	}
-	w.pendingChunks = nil
-	w.pendingBytes = 0
+func (w *BufferedStreamWriterProcessor) releasePendingBuffer() {
+	w.pendingBuf = nil
+	w.pendingSize = 0
 }
 
 func (w *BufferedStreamWriterProcessor) shouldLogCreateFileFailure() bool {

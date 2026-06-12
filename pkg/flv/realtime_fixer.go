@@ -225,6 +225,7 @@ func (rf *RealtimeFixer) ResetTimestampStore() {
 	// Rotation segments start with split-detector-injected carried bytes, not a FLV header.
 	rf.isRotationSegment = true
 	rf.sourceHeaderOK = false
+	rf.trimBufferAtBoundary()
 }
 
 // ResetDedupCache clears the deduplication cache, which can be useful when starting a new segment to avoid false positives from old tags.
@@ -236,7 +237,7 @@ func (rf *RealtimeFixer) ResetDedupCache() {
 	if rf.dedupCache != nil {
 		rf.dedupCache.Reset()
 	}
-
+	rf.trimBufferAtBoundary()
 }
 
 func (rf *RealtimeFixer) Close() {
@@ -289,6 +290,24 @@ func (rf *RealtimeFixer) compactBufferIfNeeded() {
 	// Return old to pool (Put only keeps buffers <= maxCap; otherwise allow GC)
 	realtimeBufferPool.Put(old)
 }
+
+func (rf *RealtimeFixer) trimBufferAtBoundary() {
+	if rf.buffer == nil {
+		return
+	}
+	if rf.buffer.Cap() <= 2*DefaultBufferSize {
+		return
+	}
+	newBuf := realtimeBufferPool.Get()
+	newBuf.Reset()
+	if rf.buffer.Len() > 0 {
+		newBuf.Write(rf.buffer.Bytes())
+	}
+	old := rf.buffer
+	rf.buffer = newBuf
+	realtimeBufferPool.Put(old)
+}
+
 func (rf *RealtimeFixer) fixTimestamp(tag *Tag) {
 	ts := rf.tsStore
 	currentTimestamp := tag.Timestamp

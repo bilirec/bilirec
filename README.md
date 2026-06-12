@@ -288,6 +288,7 @@ Android 模式下会先注入一组移动端默认值（如 `HOST=127.0.0.1`、`
 | `STREAM_WRITER_BUFFER_SIZE` | 流写入器（写入文件）缓冲区大小（字节） | `1048576` (1 MB) |
 | `READ_STREAM_BYTES_POOL_SIZE` | 读取直播流时使用的字节池单块大小（字节）；`FLV` / `HLS` 共用，建议与常见 chunk 大小一致 | `524288` (512 KB) |
 | `READ_STREAM_CHAN_BUFFER_SIZE` | 读取直播流时的通道缓冲区大小（chunk 数）；更大值可容忍网络/写入短时抖动，但会增加在途内存 | `16` |
+| `PERF_PRESET` | 性能行为预设：`low-cpu`（默认，偏向更低 CPU）/ `low-mem`（偏向更低内存平台） | `low-cpu` |
 | `LIVE_STREAM_WRITER_BUFFER_SIZE` | 实时流写入缓冲区（用于直播录制或实时下载，字节）；更大的值减少 flush 频率，降低 SD 卡磨损 | `8388608` (8 MB) |
 | `LIVE_STREAM_WRITER_SYNC_PERIOD_SECS` | 实时流写入器执行周期性 `sync` 的周期（秒）；设为 0 禁用周期性 sync（仅在 Close 时 sync），大幅减少 SD 卡磨损 | `0` |
 | `LIVE_STREAM_WRITER_FLUSH_PERIOD_SECS` | 实时流写入器执行周期性 `flush` 的周期（秒）；值越大 flush 频率越低，越有利于减少 SD 卡写入频次 | `10` |
@@ -297,6 +298,29 @@ Android 模式下会先注入一组移动端默认值（如 `HOST=127.0.0.1`、`
 | `SKIP_SMALL_FLUSH` | 启用 microSD 磨损保护：在达到 `SKIP_SMALL_FLUSH_THRESHOLD` 之前仅缓存内存，不创建文件 | `true` |
 | `SEQUENTIAL_WRITE` | 启用全局 flush 锁以序列化多路录制的写入操作；仅在多路并发录制写入同一物理磁盘时建议启用，可显著降低 I/O 峰值 | `true` |
 | `MIN_DISK_SPACE_BYTES` | 录制所需的最小磁盘空间（字节），低于此值将拒绝新录制任务 | `5368709120` (5 GB) |
+
+### PERF_PRESET 行为预设
+
+`PERF_PRESET` 是“行为开关”，用于在不改变现有数值型环境变量语义的前提下，快速切换系统偏好：
+
+- `low-cpu`（默认）：偏向降低 CPU 抖动，沿用当前高复用路径。
+- `low-mem`：偏向降低内存常驻平台，牺牲部分峰值吞吐余量。
+
+当前版本的主要行为差异：
+
+- **writer pool 行为**  
+  - `low-cpu`：使用 bucketed bytes pool（更激进复用，减少分配/GC 抖动）。  
+  - `low-mem`：使用更保守的 bytes slice pool 固定容量策略（降低 bucket 常驻占用）。
+- **HLS prefetch worker**  
+  - `low-cpu`：`4`  
+  - `low-mem`：`2`  
+  - 在 `low-mem` 下，若进入恢复失败阶段，会临时降到 `1`，恢复后自动回到 preset 对应值。
+- **启动日志**  
+  - 启动时会输出当前性能预设，便于线上排查（例如：`性能预设：low-mem`）。
+
+> [!NOTE]
+> `PERF_PRESET` 只新增行为分支，不会覆盖你手动配置的数值型环境变量（例如 `LIVE_STREAM_WRITER_*`、`READ_STREAM_*`）。
+> 若你需要做精细调参，仍建议先确定 `PERF_PRESET`，再按设备特性调整具体数值。
 
 #### FRP 内网穿透配置说明
 

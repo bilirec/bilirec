@@ -23,6 +23,8 @@ type BucketedBytesPool struct {
 	oversized atomic.Uint64
 }
 
+var _ ByteSlicePool = (*BucketedBytesPool)(nil)
+
 type BucketedBytesPoolStats struct {
 	Hits      uint64
 	Misses    uint64
@@ -47,7 +49,8 @@ func NewBucketedBytesPool(baseSize int) *BucketedBytesPool {
 }
 
 func (p *BucketedBytesPool) GetSized(size int) []byte {
-	if size <= 0 {
+	size = normalizeByteSliceSize(size)
+	if size == 0 {
 		return []byte{}
 	}
 	idx := p.findBucketIndex(size)

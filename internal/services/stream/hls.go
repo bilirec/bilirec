@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/bilirec/bilirec/internal/modules/config"
 	hlsutil "github.com/bilirec/bilirec/pkg/hls"
 	"github.com/go-resty/resty/v2"
 	"github.com/sirupsen/logrus"
@@ -32,8 +33,22 @@ var (
 	segmentRetryAttempts  = 3
 	manifestSyncWaitRate  = 0.10
 	segmentPrefetchAhead  = 2
-	segmentFetchWorkers   = 4
 )
+
+func desiredPrefetchWorkersForState(baseWorkers int, lowMem bool, consecutiveFailures int) int {
+	if lowMem && consecutiveFailures > 0 {
+		return 1
+	}
+	return baseWorkers
+}
+
+func resolvePrefetchPolicy() (baseWorkers int, lowMem bool) {
+	// Keep stream path safe even in unusual bootstrap/test contexts.
+	if config.ReadOnly == nil {
+		return 4, false
+	}
+	return config.ReadOnly.HlsSegmentFetchWorkers(), config.ReadOnly.IsLowMemPreset()
+}
 
 type playlistStatusError struct {
 	status int
@@ -95,6 +110,7 @@ func (r *Service) ReadHlsStream(fetchM3u8URL func() (string, error), playlistCli
 		lastEtag       string
 		lastModified   string
 		cachedPlaylist *hlsPlaylist
+		prefetchWorkers int
 	)
 
 	refreshM3u8URL := func(reason string) error {
@@ -118,7 +134,8 @@ func (r *Service) ReadHlsStream(fetchM3u8URL func() (string, error), playlistCli
 
 		m3u8URL = nextURL
 		resolver = nextResolver
-		prefetcher = hlsutil.NewSegmentPrefetcher(ctx, segmentClient, resolver, segmentRetryAttempts, segmentRetryDelay, segmentFetchWorkers)
+		prefetcher = nil
+		prefetchWorkers = 0
 		currentMapURI = ""
 		mapSent = false
 		lastEtag = ""
@@ -280,6 +297,9 @@ func (r *Service) ReadHlsStream(fetchM3u8URL func() (string, error), playlistCli
 					}
 					consecutivePlaylistFailures++
 					logger.Warnf("hls：拉取/解析播放列表失败（第 %d 次）：%v", consecutivePlaylistFailures, err)
+					// Drop prefetcher references aggressively on failure boundaries.
+					prefetcher = nil
+					prefetchWorkers = 0
 
 					// Retry once immediately to reduce the chance of missing short HLS windows.
 					pl, err = fetchPlaylistWithRefresh()
@@ -293,6 +313,8 @@ func (r *Service) ReadHlsStream(fetchM3u8URL func() (string, error), playlistCli
 						}
 						consecutivePlaylistFailures++
 						logger.Warnf("hls：立即重试播放列表失败（第 %d 次）：%v", consecutivePlaylistFailures, err)
+						prefetcher = nil
+						prefetchWorkers = 0
 						if consecutivePlaylistFailures >= 3 {
 							logger.Warnf("hls：播放列表连续失败次数达到 %d", consecutivePlaylistFailures)
 							return
@@ -359,6 +381,21 @@ func (r *Service) ReadHlsStream(fetchM3u8URL func() (string, error), playlistCli
 						}
 						return
 					}
+				}
+				baseWorkers, lowMem := resolvePrefetchPolicy()
+				desiredPrefetchWorkers := desiredPrefetchWorkersForState(baseWorkers, lowMem, consecutivePlaylistFailures)
+				if prefetcher == nil || prefetchWorkers != desiredPrefetchWorkers {
+					if prefetchWorkers > 0 && prefetchWorkers != desiredPrefetchWorkers {
+						logger.Infof("hls：预取并发已从 %d 调整为 %d", prefetchWorkers, desiredPrefetchWorkers)
+					}
+					prefetcher = hlsutil.NewSegmentPrefetcher(ctx, segmentClient, resolver, segmentRetryAttempts, segmentRetryDelay, desiredPrefetchWorkers)
+					prefetchWorkers = desiredPrefetchWorkers
+				}
+				// Defensive: make sure downstream Start/Wait never touches a nil prefetcher.
+				if prefetcher == nil {
+					logger.Warnf("hls：prefetcher 为空，回退重建（workers=%d）", desiredPrefetchWorkers)
+					prefetcher = hlsutil.NewSegmentPrefetcher(ctx, segmentClient, resolver, segmentRetryAttempts, segmentRetryDelay, desiredPrefetchWorkers)
+					prefetchWorkers = desiredPrefetchWorkers
 				}
 				maxSeqInWindow := baseSeq + int64(len(segs)) - 1
 				if nextSeq <= maxSeqInWindow {
