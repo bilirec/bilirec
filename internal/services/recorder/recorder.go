@@ -444,7 +444,7 @@ func (r *Service) rotate(roomId int, ch <-chan []byte, strategy rs.StreamRecordS
 			handle := strategy.HandleErr(err)
 			switch handle.Action {
 			case rs.ErrActionRotate:
-				l.Info("rotating file due to strategy error handling")
+				l.Debugf("收到策略要求轮转文件的信号，开始分割录制文件: %v", err)
 				if handle.State == nil {
 					state = &rs.RotationState{Data: map[string][]byte{}}
 				} else {
@@ -453,7 +453,7 @@ func (r *Service) rotate(roomId int, ch <-chan []byte, strategy rs.StreamRecordS
 				segment++
 				continue
 			case rs.ErrActionAbort:
-				l.Warnf("strategy requested abort due to stream error: %v", err)
+				l.Debugf("收到录制停止信号：%v", err)
 				if handle.AbortDelay > 0 {
 					timer := time.NewTimer(handle.AbortDelay)
 					select {
@@ -463,7 +463,7 @@ func (r *Service) rotate(roomId int, ch <-chan []byte, strategy rs.StreamRecordS
 					}
 				}
 			default:
-				l.Errorf("error writing data to file: %v", err)
+				l.Errorf("写入文件失败：%v", err)
 			}
 		}
 		break
@@ -489,7 +489,7 @@ func (r *Service) rev(roomId int, ch <-chan []byte, info *Info, ctx context.Cont
 			//   ~4.6KB — carried bytes from a rotation split; replayed into next segment, not lost
 			// At 6 Mbps, 5000B ≈ 6 ms ≈ <0.25 frame at 60 fps — imperceptible in recordings.
 			if len(result) > 0 {
-				log.Warnf("已丢弃 FLV 流分块：%dB", len(result))
+				log.Warnf("已丢弃流数据分片：%dB", len(result))
 			}
 			return err
 		}
@@ -582,7 +582,7 @@ func (r *Service) recover(roomId int) {
 			if err == ErrStreamNotLive {
 				// use r.cfg.MaxRetryMinutes to limit the total retry duration, instead of max attempts, since the stream may be live again after some time
 				if time.Since(retryStart) >= time.Duration(r.cfg.MaxRetryMinutes)*time.Minute {
-					l.Infof("已达到最长重试时间 (%d 分钟)，不再恢复", r.cfg.MaxRetryMinutes)
+					l.Infof("直播已下线且已达到最长重试时间 (%d 分钟)，不再恢复", r.cfg.MaxRetryMinutes)
 					r.stopAndPublish(roomId, info)
 					return
 				}
@@ -634,13 +634,13 @@ func (r *Service) finalize(roomId int, outputPath string) {
 	}
 
 	if !r.cfg.ConvertToMp4 {
-		logger.Debug("no need to convert source to mp4, skipped")
+		logger.Debug("不需要转换为 mp4，跳过收尾")
 		return
 	}
 
-	// Skip files that are already in the final .mp4 format.
+	// 跳过已经转换为 mp4 的文件
 	if filepath.Ext(outputPath) == ".mp4" {
-		logger.Debugf("skipping finalize conversion for already-final mp4 file: %s", outputPath)
+		logger.Debugf("已经转换为 mp4，跳过收尾: %s", outputPath)
 		return
 	}
 
