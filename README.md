@@ -10,6 +10,7 @@
 - [Android（嵌入 App）](#android嵌入-app)
 - [使用方法](#使用方法)
 - [配置](#配置)
+  - [内存占用估算](#内存占用估算)
 - [REST API](#rest-api)
 - [开发与调试](#开发与调试)
 - [项目结构](#项目结构)
@@ -37,45 +38,23 @@
 
 ## 效能指标
 
-> 服务器为 **树莓派5B 16GB** · 同时录制多个直播间（默认配置）
+> 服务器为 **树莓派5B 16GB** · Docker 容器（1 GB 内存限制） · 默认配置 · 每路直播 1080p。
+>
+> **以下数据仅供参考**（实测快照，改配置或版本后会有偏差）。规划容器内存请用 [内存占用估算](#内存占用估算)。
 
-**初始闲置**
-<img width="1140" height="142" alt="初始闲置" src="https://github.com/user-attachments/assets/fca278a1-62ac-4828-9f28-fd3e577b2ab3" />
-
-**录制单个直播间**
-<img width="1138" height="153" alt="单路并发" src="https://github.com/user-attachments/assets/e582fb47-43f0-455e-a94a-536739d39160" />
-
-**同时录制2个直播间**
-<img width="1120" height="137" alt="2路并发" src="https://github.com/user-attachments/assets/b9d388cb-f019-4373-b55b-3225f32e330d" />
-
-**同时录制3个直播间**
-<img width="1139" height="144" alt="3路并发" src="https://github.com/user-attachments/assets/fa4e1a2e-3a15-4622-8778-adca44fa7184" />
-
-**同时录制4个直播间**
-<img width="1147" height="156" alt="4路并发" src="https://github.com/user-attachments/assets/26eca95e-fa50-4240-adfb-c8ba0b1671ea" />
-
-同时录制5个直播间
-<img width="1143" height="133" alt="5路并发" src="https://github.com/user-attachments/assets/19509190-c3ad-4565-9162-0a8d4899cba2" />
-
-恢复闲置时
-<img width="1142" height="150" alt="image" src="https://github.com/user-attachments/assets/90081087-7967-454d-91d7-1256e48b40e3" />
-
-| 并发路数 | CPU峰值占用 | 内存占用 |
+| 并发路数 | CPU峰值占用 | 内存峰值占用 |
 |---------|---------|----------|
 | 初始闲置 | ~0.0% | ~7MB |
-| 1路并发  | ~0.8% | ~42MB |
-| 2路并发  | ~2.6% | ~76MB |
-| 3路并发  | ~3.0% | ~96MB |
-| 4路并发  | ~3.4% | ~129MB |
-| 5路并发  | ~4.1% | ~142MB |
+| 1路并发  | ~1.8% | ~72MB |
+| 2路并发  | ~2.7% | ~117MB |
+| 3路并发  | ~3.1% | ~141MB |
+| 4路并发  | ~3.8% | ~165MB |
+| 5路并发  | ~4.6% | ~191MB |
 | 恢复闲置 | ~0.0% | ~54MB |
 
 > [!NOTE]
-> 本程序使用了大量内存池，因此先前使用的一部分内存会回到内存池中等待日后重用，以减轻GC压力。
->
-> 此外，本程序默认使用针对microSD卡优化的配置，因此内存占用会稍高以减少写入磨损。
-> `SKIP_SMALL_FLUSH=true` 时，是否落盘由 `SKIP_SMALL_FLUSH_THRESHOLD` 决定（默认 1MB，独立于 `LIVE_STREAM_WRITER_BUFFER_SIZE`）。
-> 你可以透过[调控配置](#配置)进一步降低内存占用。
+> 本程序使用了大量内存池，停止录制后部分内存会保留复用（见上表「恢复闲置」），以减轻 GC 压力。
+> 内存占用与缓冲配置、录制路数相关；**真实占用请按 [内存占用估算](#内存占用估算) 计算**，勿直接套用上表数字。
 
 ## 安装
 
@@ -296,7 +275,7 @@ Android 模式下会先注入一组移动端默认值（如 `HOST=127.0.0.1`、`
 | `LIVE_STREAM_WRITER_CHAN_BUFFER_SIZE` | 实时流写入器通道缓冲区大小（数据块数）；更大的值可容忍写入延迟突变，但会增加内存占用 | `64` |
 | `LIVE_STREAM_WRITER_BYTES_POOL_SIZE` | 1080p 及以下写侧缓冲块大小（字节） | `524288` (512 KB) |
 | `LIVE_STREAM_WRITER_BYTES_POOL_SIZE_HIGH` | 2K/4K 写侧块大小（`qn ≥ 20000` 时自动启用，见下方说明） | `1048576` (1 MB) |
-| `SKIP_SMALL_FLUSH_THRESHOLD` | 启用 `SKIP_SMALL_FLUSH` 后，延迟创建文件并缓存内存的阈值（字节）；达到阈值后才开始落盘。该值独立于 `LIVE_STREAM_WRITER_BUFFER_SIZE` | `1048576` (1 MB) |
+| `SKIP_SMALL_FLUSH_THRESHOLD` | 启用 `SKIP_SMALL_FLUSH` 后，延迟创建文件并缓存内存的阈值（字节）；达到阈值后才开始落盘。 | `1048576` (1 MB) |
 | `SKIP_SMALL_FLUSH` | 启用 microSD 磨损保护：在达到 `SKIP_SMALL_FLUSH_THRESHOLD` 之前仅缓存内存，不创建文件 | `true` |
 | `SEQUENTIAL_WRITE` | 启用全局 flush 锁以序列化多路录制的写入操作；仅在多路并发录制写入同一物理磁盘时建议启用，可显著降低 I/O 峰值 | `true` |
 | `MIN_DISK_SPACE_BYTES` | 录制所需的最小磁盘空间（字节），低于此值将拒绝新录制任务 | `5368709120` (5 GB) |
@@ -460,6 +439,8 @@ Bilirec 当前默认配置已针对树莓派 5B + microSD 场景优化，在“�
 
 容器运行时默认值也同步为树莓派 5B 取向：`GOMEMLIMIT=768MiB`、`GOGC=100`。
 
+`SKIP_SMALL_FLUSH=true` 时，是否落盘由 `SKIP_SMALL_FLUSH_THRESHOLD` 决定（默认 1MB，独立于 `LIVE_STREAM_WRITER_BUFFER_SIZE`）。
+
 ### 高码率 / 4K 调参建议
 
 默认的 512 KB（1080p）+ 三个 `*_HIGH` 变量（高画质）已覆盖大多数场景：**录 1080p 不用改**；录 4K / 杜比时传对应 `qn` 即可，程序会自动启用高规格配置。
@@ -496,7 +477,7 @@ export LIVE_STREAM_WRITER_BYTES_POOL_SIZE_HIGH=2097152
 export LIVE_STREAM_WRITER_CHAN_BUFFER_SIZE=64       # 多路 4K 可降到 48
 ```
 
-**内存粗算（单路上限）：** FLV 读侧约 `READ_STREAM_CHAN_BUFFER_SIZE_HIGH × READ_STREAM_BYTES_POOL_SIZE_HIGH`；写侧约 `LIVE_STREAM_WRITER_CHAN_BUFFER_SIZE ×` 典型块大小。例如默认 4K：读约 `48 × 1 MB ≈ 48 MB`，写约 `64 × 1 MB ≈ 64 MB`。
+**内存粗算（单路上限）：** 见 [内存占用估算](#内存占用估算)；默认 4K 单路总峰值约 **165~172 MB**。
 
 ### HDD/SSD 与 DIY NAS 调整建议
 
@@ -538,6 +519,78 @@ export MAX_CONCURRENT_RECORDINGS=5              # 视硬盘转速适度调整
 > * **与私有云服务共存：** 若你的硬盘同时还在运行其他个人服务（如 Cloudreve 私有云、影音服务器等），强烈建议保持 `SEQUENTIAL_WRITE=true`。这能有效避免 bilirec 的碎片化写入与其他服务发生磁头争抢，保障 NAS 在私人使用时的整体响应速度。
 > 
 > 
+
+### 内存占用估算
+
+录制时，直播数据会在内存里「排队」：先从网络读进来，再排队等待写入磁盘。用下面公式估算**规划容器时要留多少内存**即可（偏保守的上限，实际往往略低）。
+
+#### 会影响在途内存的环境变量
+
+每路录制的在途内存，由**读侧排队**、**写侧排队**、**落盘缓冲**三块组成。录 **1080p** 用不带 `_HIGH` 的变量；录 **4K / 杜比**（`qn ≥ 20000`）自动改用带 `_HIGH` 的读侧变量，写侧块大小也用 `_HIGH`。
+
+| 作用 | 1080p 环境变量 | 4K / 杜比环境变量 | 默认值 |
+| ---- | -------------- | ----------------- | ------ |
+| 读侧能排多少「块」 | `READ_STREAM_CHAN_BUFFER_SIZE` | `READ_STREAM_CHAN_BUFFER_SIZE_HIGH` | 16 / 48 |
+| 读侧每块多大 | `READ_STREAM_BYTES_POOL_SIZE` | `READ_STREAM_BYTES_POOL_SIZE_HIGH` | 512 KB / 1 MB |
+| 写侧能排多少「块」 | `LIVE_STREAM_WRITER_CHAN_BUFFER_SIZE` | （两档共用） | 64 |
+| 写侧每块多大 | `LIVE_STREAM_WRITER_BYTES_POOL_SIZE` | `LIVE_STREAM_WRITER_BYTES_POOL_SIZE_HIGH` | 512 KB / 1 MB |
+| 落盘前合并缓冲 | `LIVE_STREAM_WRITER_BUFFER_SIZE` | （两档共用） | 8 MB |
+
+路数由 `MAX_CONCURRENT_RECORDINGS` 决定，直接代入下方公式里的 N。
+
+> **注意**：读侧和写侧各有一份数据拷贝，下面公式已把两侧都算上。
+
+#### 怎么算（HTTP-FLV，最常见）
+
+```
+总峰值 ≈ 43~50 MB + N × 单路在途峰值
+
+单路在途峰值 = 读侧排队 + 写侧排队 + 落盘缓冲
+
+读侧排队 = (READ_STREAM_CHAN_BUFFER_SIZE + 1) × READ_STREAM_BYTES_POOL_SIZE
+写侧排队 = (LIVE_STREAM_WRITER_CHAN_BUFFER_SIZE + 1) × LIVE_STREAM_WRITER_BYTES_POOL_SIZE
+落盘缓冲 = LIVE_STREAM_WRITER_BUFFER_SIZE
+```
+
+其中 **43~50 MB** 是容器里程序本身 + 系统内核的固定开销（和缓冲配置几乎无关，也**不能通过环境变量调小**）。录 4K / 杜比时，读侧两个变量换成 `*_HIGH`，写侧块大小换成 `LIVE_STREAM_WRITER_BYTES_POOL_SIZE_HIGH`。
+
+**默认 1080p 示例：**
+
+| 路数 N | 计算 | 预计总峰值 |
+| ------ | ---- | ------ |
+| 1 | (43~50) + 1×49 | **约 92~99 MB** |
+| 3 | (43~50) + 3×49 | **约 190~197 MB** |
+| 5 | (43~50) + 5×49 | **约 288~295 MB** |
+
+（单路在途：读 8.5 MB + 写 32.5 MB + 落盘 8 MB ≈ 49 MB）
+
+**默认 4K 单路：** (43~50) + 122 ≈ **165~172 MB**（单路在途 ≈ 122 MB）
+
+#### HLS 怎么算
+
+HLS 读进来的是**一整段分片**（大小由 m3u8 决定，常见 2–6 MB），读侧用分片体积 `S` 估算：
+
+```
+总峰值 ≈ 43~50 MB + N × (读侧排队 + 写侧排队 + 落盘缓冲)
+
+读侧排队 ≈ (READ_STREAM_CHAN_BUFFER_SIZE + 3) × S
+```
+
+写侧仍按上一节的写侧排队 + 落盘缓冲计算。
+
+#### 其他说明
+
+- **容器总内存虚高**：写入磁盘后，系统可能额外缓存一份文件，容器监控显示的总用量会远高于上表，规划时以上表为准即可。
+- **停录后仍偏高**：内存池会保留部分已用过的块（见效能指标「恢复闲置 ~54 MB」），属正常。
+
+#### 想省内存，优先改哪几个
+
+按效果从大到小：
+
+1. `LIVE_STREAM_WRITER_CHAN_BUFFER_SIZE`（默认 64 → 32，写侧排队约减半）
+2. `READ_STREAM_CHAN_BUFFER_SIZE`（仅 FLV；HLS 同理改读侧 channel 或 `_HIGH` 版）
+3. `LIVE_STREAM_WRITER_BUFFER_SIZE`（减小落盘缓冲，但 flush 更频繁，SD 磨损增加）
+4. `MAX_CONCURRENT_RECORDINGS`（直接减少同时录制的路数）
 
 ## REST API
 
