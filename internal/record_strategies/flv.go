@@ -87,6 +87,7 @@ func (s *FlvStrategy) Close() error {
 	if s.releaseWriterPool != nil {
 		s.releaseWriterPool()
 		s.releaseWriterPool = nil
+		s.writerPool = nil
 	}
 	s.sharedFixer.Close()
 	return nil

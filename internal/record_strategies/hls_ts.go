@@ -55,6 +55,7 @@ func (s *HlsTsStrategy) Close() error {
 	if s.releaseWriterPool != nil {
 		s.releaseWriterPool()
 		s.releaseWriterPool = nil
+		s.writerPool = nil
 	}
 	return nil
 }

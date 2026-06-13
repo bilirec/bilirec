@@ -93,7 +93,7 @@ func (p *Pipe[T]) process(ctx context.Context, tp *ProcessorInfo[T], item T) (T,
 	start := time.Now()
 	defer func() {
 		elapsed := time.Since(start)
-		if elapsed > tp.timeout/2 {
+		if tp.timeout > 0 && elapsed > tp.timeout/2 {
 			tp.logger.Warnf("处理器执行耗时过长：%vms", elapsed.Microseconds())
 		} else {
 			tp.logger.Tracef("processor executed: %vms", elapsed.Microseconds())

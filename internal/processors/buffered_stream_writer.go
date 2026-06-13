@@ -174,9 +174,26 @@ func (w *BufferedStreamWriterProcessor) Close() error {
 
 	if w.sdcardProtection && w.file.Load() == nil {
 		threshold := w.skipSmallFlushThreshold
-		w.logger.Warnf("未创建文件且总写入字节数（%d）小于保护阈值（%d），直接丢弃内存中的数据", w.bytesWritten+int64(w.pendingBytes), threshold)
-		w.releasePendingChunks()
-		return nil
+		switch {
+		case w.pendingBytes == 0:
+			return nil
+		case w.pendingBytes < threshold:
+			w.logger.Warnf("未创建文件且总写入字节数（%d）小于保护阈值（%d），直接丢弃内存中的数据", w.pendingBytes, threshold)
+			w.releasePendingChunks()
+			return nil
+		default:
+			if err := w.createFileAndWriter(); err != nil {
+				w.logger.Warnf(
+					"关闭时最后尝试创建文件失败，丢弃待写数据：pending=%dB threshold=%dB err=%v",
+					w.pendingBytes,
+					threshold,
+					err,
+				)
+				w.releasePendingChunks()
+				return nil
+			}
+			w.writePendingChunksToWriter()
+		}
 	}
 
 	if w.writer != nil {
@@ -189,11 +206,14 @@ func (w *BufferedStreamWriterProcessor) Close() error {
 		}
 	}
 
+	var closeErr error
 	if file := w.file.Load(); file != nil {
 		w.logger.Debugf("file path: %s, total written %vB", w.path, w.bytesWritten)
-		return file.Close()
+		closeErr = file.Close()
 	}
-	return nil
+	w.writer = nil
+	w.file.Store(nil)
+	return closeErr
 }
 
 // writePeriodically is the single writer goroutine. It owns all access to w.writer
@@ -254,19 +274,7 @@ func (w *BufferedStreamWriterProcessor) writePeriodically() {
 				// Reset throttling state after file creation recovers.
 				w.lastCreateFileFailureLog = time.Time{}
 				w.suppressedCreateFailures = 0
-				for _, chunk := range w.pendingChunks {
-					n, err := w.writer.Write(chunk)
-					if n != len(chunk) {
-						w.logger.Warnf("写入待缓存数据长度不完整：%d/%d", n, len(chunk))
-					}
-					if err != nil {
-						w.logger.Warnf("写入待缓存数据失败：%v", err)
-					}
-					w.bytesWritten += int64(n)
-					w.bytesPool.Put(chunk)
-				}
-				w.pendingChunks = w.pendingChunks[:0]
-				w.pendingBytes = 0
+				w.writePendingChunksToWriter()
 				continue
 			}
 
@@ -432,6 +440,22 @@ func (w *BufferedStreamWriterProcessor) releasePendingChunks() {
 		w.bytesPool.Put(chunk)
 	}
 	w.pendingChunks = nil
+	w.pendingBytes = 0
+}
+
+func (w *BufferedStreamWriterProcessor) writePendingChunksToWriter() {
+	for _, chunk := range w.pendingChunks {
+		n, err := w.writer.Write(chunk)
+		if n != len(chunk) {
+			w.logger.Warnf("写入待缓存数据长度不完整：%d/%d", n, len(chunk))
+		}
+		if err != nil {
+			w.logger.Warnf("写入待缓存数据失败：%v", err)
+		}
+		w.bytesWritten += int64(n)
+		w.bytesPool.Put(chunk)
+	}
+	w.pendingChunks = w.pendingChunks[:0]
 	w.pendingBytes = 0
 }
 
