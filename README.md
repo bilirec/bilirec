@@ -40,7 +40,7 @@
 
 > 服务器为 **树莓派5B 16GB** · Docker 容器（1 GB 内存限制） · 默认配置 · 每路直播 1080p。
 >
-> **以下数据仅供参考**（实测快照，改配置或版本后会有偏差）。规划容器内存请用 [内存占用估算](#内存占用估算)。
+> **以下数据仅供参考**（实测快照，改配置或版本后会有偏差）。下表为默认配置下的**常见实测峰值**；按环境变量规划容器上限请用 [内存占用估算](#内存占用估算)（偏保守，通常高于本表）。
 
 | 并发路数 | CPU峰值占用 | 内存峰值占用 |
 |---------|---------|----------|
@@ -369,7 +369,7 @@ export TRUSTED_PROXIES=161.33.159.26      # 受信任代理 IP，默认值为公
 export FRP_HTTPS=false                  # 使用 HTTP 代理
 export FRP_SCHEME_HTTPS=true            # 公网 URL 为 HTTPS
 export MAX_CONCURRENT_RECORDINGS=3
-export MAX_RECORDING_HOURS=10
+export MAX_RECORDING_HOURS=5
 export MAX_RECOVERY_ATTEMPTS=5
 export MAX_RETRY_MINUTES=10
 export OUTPUT_DIR=/path/to/records
@@ -378,6 +378,7 @@ export NO_CONVERT_IF_INVALID=false
 export DATABASE_DIR=/path/to/database
 export CONVERT_TO_MP4=false
 export DELETE_SOURCE_AFTER_CONVERT=false
+export MIN_DISK_SPACE_BYTES=5368709120
 # 可选：CloudConvert（如果启用会对大文件使用云端转换）
 export CLOUDCONVERT_THRESHOLD=1073741824
 export CLOUDCONVERT_API_KEY=
@@ -396,12 +397,17 @@ export DOWNLOAD_BUFFER_SIZE=5242880
 export STREAM_WRITER_BUFFER_SIZE=1048576
 export READ_STREAM_BYTES_POOL_SIZE=524288
 export READ_STREAM_CHAN_BUFFER_SIZE=16
+export READ_STREAM_BYTES_POOL_SIZE_HIGH=1048576
+export READ_STREAM_CHAN_BUFFER_SIZE_HIGH=48
 export LIVE_STREAM_WRITER_BUFFER_SIZE=8388608
 export LIVE_STREAM_WRITER_SYNC_PERIOD_SECS=0
 export LIVE_STREAM_WRITER_FLUSH_PERIOD_SECS=10
 export LIVE_STREAM_WRITER_CHAN_BUFFER_SIZE=64
 export LIVE_STREAM_WRITER_BYTES_POOL_SIZE=524288
+export LIVE_STREAM_WRITER_BYTES_POOL_SIZE_HIGH=1048576
+export SKIP_SMALL_FLUSH_THRESHOLD=1048576
 export SKIP_SMALL_FLUSH=true
+export SEQUENTIAL_WRITE=true
 export JWT_SECRET=bilirec_secret
 export DEBUG=false
 # 可选：启用 REST API 认证
@@ -432,10 +438,10 @@ Bilirec 当前默认配置已针对树莓派 5B + microSD 场景优化，在“�
 | `LIVE_STREAM_WRITER_BUFFER_SIZE=8388608` (8MB) | 8MB 进一步降低 flush 频率，优先降低 SD 卡写入频次。@1080p30fps (4.5Mbps) 约每 14.2 秒触发一次满缓冲写入。 |
 | `LIVE_STREAM_WRITER_FLUSH_PERIOD_SECS=10` | 将周期性 flush 改为 10 秒，优先降低 SD 卡磨损；代价是异常断电时未 flush 数据窗口会略增。 |
 | `LIVE_STREAM_WRITER_CHAN_BUFFER_SIZE=64` | 控制在途内存占用。以 512KB chunk 估算，单录制任务约 32MB 队列数据；比 128（约 64MB）更适合 4GB 设备。 |
-| `SKIP_SMALL_FLUSH=true` | **启用小块跳过保护**，若录制总写入量 < 缓冲区大小则跳过 flush。特别有效于低比特率流（如 240p），防止多次小块写入磨损。 |
+| `SKIP_SMALL_FLUSH=true` | **延迟建文件**：开播后数据先缓存在内存，累计达到 `SKIP_SMALL_FLUSH_THRESHOLD`（默认 1 MB）后才创建文件并正常写盘，减少极短直播对 SD 卡的无效写入。 |
 | `LIVE_STREAM_WRITER_BYTES_POOL_SIZE=524288` (512KB) | 与常见 stream chunk 大小一致，减少额外分配与拷贝。 |
 | `SEQUENTIAL_WRITE=true` | **启用全局 flush 锁**，序列化多路录制的写入操作，多路并发时有效降低 I/O 峰值; 默认启用以保护 microSD。 |
-| `MAX_CONCURRENT_RECORDINGS=3` | 保守并发上限，直接限制 RAM 峰值。 |
+| `MAX_CONCURRENT_RECORDINGS=3` | 默认同时录制上限（保守值）；树莓派 5B + 1 GB 容器、1080p 默认缓冲下，生产环境可验证至 **5 路**（见效能指标），按需调大。 |
 
 容器运行时默认值也同步为树莓派 5B 取向：`GOMEMLIMIT=768MiB`、`GOGC=100`。
 
