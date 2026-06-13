@@ -2,11 +2,17 @@
 
 import (
 	"context"
+	"errors"
 
 	"github.com/bilirec/bilirec/pkg/hls"
 	"github.com/bilirec/bilirec/pkg/pipeline"
 	"github.com/sirupsen/logrus"
 )
+
+// ErrFmp4Discontinuity is returned when a new init segment (ftyp) is detected
+// after media segments have been processed, indicating a stream discontinuity.
+// This error signals the strategy to rotate to a new output file.
+var ErrFmp4Discontinuity = errors.New("fmp4: stream discontinuity detected, new init segment after media")
 
 // Fmp4BoxGuardProcessor validates that each fMP4 segment starts with a known
 // ISO BMFF box type before passing it downstream.
@@ -55,8 +61,10 @@ func (p *Fmp4BoxGuardProcessor) Process(_ context.Context, log *logrus.Entry, da
 	case "ftyp":
 		// Init segment — if we already saw media, it's a discontinuity
 		if p.seenMedia {
-			log.Warnf("fmp4-box-guard：媒体分片后出现新的 init 分片，检测到流不连续，正在重置")
-			*p.bases = make(map[uint32]uint64)
+			log.Warnf("fmp4-box-guard：媒体分片后出现新的 init 分片，检测到流不连续，需要切换文件")
+			// Return discontinuity error to trigger file rotation
+			// This prevents invalid fmp4 files with multiple init segments
+			return nil, ErrFmp4Discontinuity
 		}
 	case "styp", "moof":
 		// styp is a media-fragment prefix (styp+moof+mdat); moof is a plain

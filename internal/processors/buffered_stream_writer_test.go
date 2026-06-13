@@ -26,7 +26,7 @@ func TestBufferedStreamWriter_MemoryLeak(t *testing.T) {
 		testFile,
 		processors.WithBufferSize(5*1024*1024), // 5MB buffer
 		processors.WithChanBufferSize(32),
-		processors.WithBytesPool(pool.NewBytesPool(256*1024)), // align pool size with test chunk size
+		processors.WithBytesPool(pool.NewBucketedBytesPool(256*1024)), // align pool size with test chunk size
 	)
 	pipe := pipeline.New(writerInfo)
 
@@ -184,7 +184,7 @@ func TestBufferedStreamWriter_ConcurrentMemoryLeak(t *testing.T) {
 				testFile,
 				processors.WithBufferSize(5*1024*1024),
 				processors.WithChanBufferSize(16),
-				processors.WithBytesPool(pool.NewBytesPool(chunkSize)),
+				processors.WithBytesPool(pool.NewBucketedBytesPool(chunkSize)),
 			)
 			pipe := pipeline.New(writerInfo)
 
@@ -245,7 +245,7 @@ func TestBufferedStreamWriter_LongRunningMemoryProfile(t *testing.T) {
 		testFile,
 		processors.WithBufferSize(5*1024*1024),
 		processors.WithChanBufferSize(16),
-		processors.WithBytesPool(pool.NewBytesPool(128*1024)),
+		processors.WithBytesPool(pool.NewBucketedBytesPool(128*1024)),
 	)
 	pipe := pipeline.New(writerInfo)
 
@@ -328,7 +328,7 @@ func TestBufferedStreamWriter_NoReturnedDataLeak(t *testing.T) {
 		testFile,
 		processors.WithBufferSize(5*1024*1024),
 		processors.WithChanBufferSize(16),
-		processors.WithBytesPool(pool.NewBytesPool(128*1024)),
+		processors.WithBytesPool(pool.NewBucketedBytesPool(128*1024)),
 	)
 	pipe := pipeline.New(writerInfo)
 
@@ -561,6 +561,58 @@ func TestBufferedStreamWriter_SDCardProtection_WritesAfterThresholdWithPeriodicF
 	}
 
 	pipe.Close()
+}
+
+func TestBufferedStreamWriter_SDCardProtection_CreatesFileOnCloseAfterCreateFailure(t *testing.T) {
+	const threshold = 512 * 1024 // 512KB
+
+	tempDir := t.TempDir()
+	missingDir := filepath.Join(tempDir, "missing")
+	testFile := filepath.Join(missingDir, "close_retry.flv")
+
+	writerInfo := processors.NewBufferedStreamWriter(testFile,
+		processors.WithBufferSize(threshold),
+		processors.WithSDCardProtection(true),
+		processors.WithSkipSmallFlushThreshold(threshold),
+		processors.WithChanBufferSize(8),
+	)
+	pipe := pipeline.New(writerInfo)
+
+	ctx := context.Background()
+	if err := pipe.Open(ctx); err != nil {
+		t.Fatalf("failed to open pipeline: %v", err)
+	}
+
+	chunk := make([]byte, 256*1024)
+	if _, err := rand.Read(chunk); err != nil {
+		t.Fatalf("failed to generate random data: %v", err)
+	}
+	totalWritten := 0
+	for totalWritten < threshold+256*1024 {
+		if _, err := pipe.Process(ctx, chunk); err != nil {
+			t.Fatalf("failed to process chunk: %v", err)
+		}
+		totalWritten += len(chunk)
+	}
+
+	time.Sleep(50 * time.Millisecond)
+	if _, err := os.Stat(testFile); !os.IsNotExist(err) {
+		t.Fatalf("expected file to be missing before parent dir exists, got: %v", err)
+	}
+
+	if err := os.MkdirAll(missingDir, 0o755); err != nil {
+		t.Fatalf("failed to create missing parent dir: %v", err)
+	}
+
+	pipe.Close()
+
+	info, err := os.Stat(testFile)
+	if err != nil {
+		t.Fatalf("expected file created on close, got: %v", err)
+	}
+	if info.Size() == 0 {
+		t.Fatalf("expected file to contain salvaged data, got size 0")
+	}
 }
 
 func TestBufferedStreamWriter_NoSDCardProtection_AlwaysFlushes(t *testing.T) {

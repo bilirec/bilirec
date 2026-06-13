@@ -9,6 +9,7 @@ import (
 	"github.com/bilirec/bilirec/internal/processors"
 	"github.com/bilirec/bilirec/pkg/flv"
 	"github.com/bilirec/bilirec/pkg/pipeline"
+	"github.com/bilirec/bilirec/pkg/pool"
 )
 
 const (
@@ -19,12 +20,17 @@ const (
 // FlvStrategy handles HTTP-FLV byte streams.
 // It is a zero-invasion extraction of the logic previously inlined in rotate().
 type FlvStrategy struct {
-	sharedFixer *flv.RealtimeFixer
+	sharedFixer       *flv.RealtimeFixer
+	writerPool        *pool.BucketedBytesPool
+	releaseWriterPool func()
 }
 
-func NewFlvStrategy() *FlvStrategy {
+func NewFlvStrategy(qn int) *FlvStrategy {
+	writerPool, releaseWriterPool := acquireWriterPool(qn)
 	return &FlvStrategy{
-		sharedFixer: flv.NewRealtimeFixer(),
+		sharedFixer:       flv.NewRealtimeFixer(),
+		writerPool:        writerPool,
+		releaseWriterPool: releaseWriterPool,
 	}
 }
 
@@ -45,7 +51,7 @@ func (s *FlvStrategy) BuildPipeline(ctx context.Context, outputPath string, stat
 			processors.WithSyncPeriod(time.Duration(config.ReadOnly.LiveStreamWriterSyncPeriodSecs())*time.Second),
 			processors.WithFlushPeriod(time.Duration(config.ReadOnly.LiveStreamWriterFlushPeriodSecs())*time.Second),
 			processors.WithChanBufferSize(config.ReadOnly.LiveStreamWriterChanBufferSize()),
-			processors.WithBytesPool(getWriterBytesPool()),
+			processors.WithBytesPool(s.writerPool),
 			processors.WithSDCardProtection(config.ReadOnly.SkipSmallFlush()),
 			processors.WithSequentialWrite(config.ReadOnly.SequentialWrite()),
 		),
@@ -56,8 +62,11 @@ func (s *FlvStrategy) BuildPipeline(ctx context.Context, outputPath string, stat
 func (s *FlvStrategy) HandleErr(err error) ErrHandleResult {
 	var headerChanged *flv.FlvHeaderChangedError
 	if errors.As(err, &headerChanged) {
-		// Reset timestamp tracking so the new segment's timestamps start from 0.
+		// Reset per-stream fixer state on rotation:
+		// - timestamps should restart from 0 in the new segment
+		// - dedup cache should not suppress fresh leading tags across segment boundary
 		s.sharedFixer.ResetTimestampStore()
+		s.sharedFixer.ResetDedupCache()
 		state := &RotationState{
 			Data: map[string][]byte{
 				flvStateVideoHdr: headerChanged.VideoHeaderTag,
@@ -75,6 +84,11 @@ func (s *FlvStrategy) HandleErr(err error) ErrHandleResult {
 }
 
 func (s *FlvStrategy) Close() error {
+	if s.releaseWriterPool != nil {
+		s.releaseWriterPool()
+		s.releaseWriterPool = nil
+		s.writerPool = nil
+	}
 	s.sharedFixer.Close()
 	return nil
 }

@@ -1,4 +1,4 @@
-﻿package processors
+package processors
 
 import (
 	"context"
@@ -34,6 +34,12 @@ const (
 	defaultFlushPeriod = 15 * time.Second
 
 	defaultSkipSmallFlushThreshold = 1 * 1024 * 1024 // 1MB
+	// maxPendingBytesBeforeDrop avoids unbounded in-memory growth when the output
+	// file cannot be created for a long time (e.g., permission/disk/path issues).
+	// Once pending buffered bytes exceed this hard limit, buffered chunks are dropped.
+	maxPendingBytesBeforeDrop = 100 * 1024 * 1024 // 100MB
+	// createFileFailureLogInterval limits warning frequency when file creation keeps failing.
+	createFileFailureLogInterval = 5 * time.Second
 )
 
 // noOpLocker is a dummy locker that does nothing. Used when sequential write is disabled.
@@ -62,8 +68,12 @@ type BufferedStreamWriterProcessor struct {
 
 	// bytesPool is used to reduce allocations when copying incoming data.
 	// When nil, fallback to direct allocation via make().
-	bytesPool  *pool.BytesPool
-	pendingBuf []byte
+	bytesPool     *pool.BucketedBytesPool
+	pendingChunks [][]byte
+	pendingBytes  int
+
+	lastCreateFileFailureLog time.Time
+	suppressedCreateFailures int
 }
 
 // globalFlushMu is used to serialize flushes across multiple instances when sequentialWrite is enabled.
@@ -89,7 +99,7 @@ func NewBufferedStreamWriter(path string, opts ...BufferedStreamWriterOptions) *
 		processor.skipSmallFlushThreshold = defaultSkipSmallFlushThreshold
 	}
 	if processor.bytesPool == nil {
-		processor.bytesPool = pool.NewBytesPool(defaultChanBufferSize * 1024) // default pool buffers to match chan buffer size
+		processor.bytesPool = pool.NewBucketedBytesPool(defaultChanBufferSize * 1024)
 	}
 	return pipeline.NewProcessorInfo(
 		"buffered-writer",
@@ -115,8 +125,8 @@ func (w *BufferedStreamWriterProcessor) Open(ctx context.Context, log *logrus.En
 		w.file.Store(file)
 		w.writer = rw.NewFlushLockedBufferedWriter(file, w.bufferSize, flushLocker)
 	} else {
-		// Pre-allocate pending buffer up to the configured threshold.
-		w.pendingBuf = make([]byte, 0, w.skipSmallFlushThreshold)
+		w.pendingChunks = make([][]byte, 0, 16)
+		w.pendingBytes = 0
 	}
 
 	w.logger = log.WithField("file", w.path)
@@ -139,22 +149,17 @@ func (w *BufferedStreamWriterProcessor) Open(ctx context.Context, log *logrus.En
 // Process copies data into the write goroutine's channel and immediately returns,
 // decoupling TCP receive from file I/O to prevent backpressure-induced frame drops.
 func (w *BufferedStreamWriterProcessor) Process(ctx context.Context, log *logrus.Entry, data []byte) ([]byte, error) {
-	var cp []byte
-	// Try to get a pre-allocated buffer from the pool.
-	pooledBuf := w.bytesPool.GetBytes()
-	if cap(pooledBuf) >= len(data) {
-		cp = pooledBuf[:len(data)]
-	} else {
-		// Buffer too small; put it back and allocate.
-		w.bytesPool.PutBytes(pooledBuf)
-		cp = make([]byte, len(data))
+	if len(data) == 0 {
+		return data, nil
 	}
+
+	cp := w.bytesPool.GetSized(len(data))
 	copy(cp, data)
 
 	select {
 	case w.dataCh <- cp:
 	case <-ctx.Done():
-		w.bytesPool.PutBytes(cp)
+		w.bytesPool.Put(cp)
 		return data, ctx.Err()
 	}
 	return data, nil
@@ -169,9 +174,26 @@ func (w *BufferedStreamWriterProcessor) Close() error {
 
 	if w.sdcardProtection && w.file.Load() == nil {
 		threshold := w.skipSmallFlushThreshold
-		w.logger.Warnf("未创建文件且总写入字节数（%d）小于保护阈值（%d），直接丢弃内存中的数据", w.bytesWritten+int64(len(w.pendingBuf)), threshold)
-		w.pendingBuf = nil
-		return nil
+		switch {
+		case w.pendingBytes == 0:
+			return nil
+		case w.pendingBytes < threshold:
+			w.logger.Warnf("未创建文件且总写入字节数（%d）小于保护阈值（%d），直接丢弃内存中的数据", w.pendingBytes, threshold)
+			w.releasePendingChunks()
+			return nil
+		default:
+			if err := w.createFileAndWriter(); err != nil {
+				w.logger.Warnf(
+					"关闭时最后尝试创建文件失败，丢弃待写数据：pending=%dB threshold=%dB err=%v",
+					w.pendingBytes,
+					threshold,
+					err,
+				)
+				w.releasePendingChunks()
+				return nil
+			}
+			w.writePendingChunksToWriter()
+		}
 	}
 
 	if w.writer != nil {
@@ -184,11 +206,14 @@ func (w *BufferedStreamWriterProcessor) Close() error {
 		}
 	}
 
+	var closeErr error
 	if file := w.file.Load(); file != nil {
 		w.logger.Debugf("file path: %s, total written %vB", w.path, w.bytesWritten)
-		return file.Close()
+		closeErr = file.Close()
 	}
-	return nil
+	w.writer = nil
+	w.file.Store(nil)
+	return closeErr
 }
 
 // writePeriodically is the single writer goroutine. It owns all access to w.writer
@@ -209,25 +234,47 @@ func (w *BufferedStreamWriterProcessor) writePeriodically() {
 
 			if w.sdcardProtection && w.file.Load() == nil {
 				threshold := w.skipSmallFlushThreshold
-				w.pendingBuf = append(w.pendingBuf, data...)
-				w.bytesPool.PutBytes(data)
-				if len(w.pendingBuf) < threshold {
+				w.pendingChunks = append(w.pendingChunks, data)
+				w.pendingBytes += len(data)
+				if w.pendingBytes < threshold {
 					continue
 				}
 				// Buffer threshold reached; create file and flush pending data.
 				if err := w.createFileAndWriter(); err != nil {
-					w.logger.Warnf("创建文件失败：%v", err)
+					if w.pendingBytes <= maxPendingBytesBeforeDrop {
+						if w.shouldLogCreateFileFailure() {
+							w.logger.Warnf(
+								"创建文件失败，暂不丢弃待写数据：pending=%dB chunks=%d limit=%dB suppressed=%d err=%v",
+								w.pendingBytes,
+								len(w.pendingChunks),
+								maxPendingBytesBeforeDrop,
+								w.suppressedCreateFailures,
+								err,
+							)
+							w.suppressedCreateFailures = 0
+						} else {
+							w.suppressedCreateFailures++
+						}
+						continue
+					}
+					if w.suppressedCreateFailures > 0 {
+						w.logger.Warnf("创建文件失败日志节流期间累计 suppressed=%d", w.suppressedCreateFailures)
+						w.suppressedCreateFailures = 0
+					}
+					w.logger.Warnf(
+						"创建文件失败且待写数据超过硬阈值，丢弃待写数据以防止内存持续增长：dropped=%dB chunks=%d limit=%dB err=%v",
+						w.pendingBytes,
+						len(w.pendingChunks),
+						maxPendingBytesBeforeDrop,
+						err,
+					)
+					w.releasePendingChunks()
 					continue
 				}
-				n, err := w.writer.Write(w.pendingBuf)
-				if n != len(w.pendingBuf) {
-					w.logger.Warnf("写入待缓存数据长度不完整：%d/%d", n, len(w.pendingBuf))
-				}
-				if err != nil {
-					w.logger.Warnf("写入待缓存数据失败：%v", err)
-				}
-				w.bytesWritten += int64(n)
-				w.pendingBuf = nil // after nil, no need to put back to pool, let it GC!!
+				// Reset throttling state after file creation recovers.
+				w.lastCreateFileFailureLog = time.Time{}
+				w.suppressedCreateFailures = 0
+				w.writePendingChunksToWriter()
 				continue
 			}
 
@@ -240,7 +287,7 @@ func (w *BufferedStreamWriterProcessor) writePeriodically() {
 					w.logger.Warnf("写入数据失败：%v", err)
 				}
 				w.bytesWritten += int64(n)
-				w.bytesPool.PutBytes(data)
+				w.bytesPool.Put(data)
 			}
 		case <-flushTimer.C:
 			if w.writer == nil {
@@ -376,19 +423,49 @@ func WithChanBufferSize(size int) BufferedStreamWriterOptions {
 	}
 }
 
-// WithBytesPool configures a pool.BytesPool to reuse buffers during copying,
-// reducing GC pressure. Pool should be configured for a fixed buffer size
-// that matches your typical chunk size. Example:
+// WithBytesPool configures a bucketed bytes pool to reuse buffers during copying,
+// reducing GC pressure. Buckets are typically computed from
+// LIVE_STREAM_WRITER_BYTES_POOL_SIZE and include several nearby sizes.
 //
-//	pool := pool.NewBytesPool(256 * 1024) // 256KB chunks
+//	pool := pool.NewBucketedBytesPool(512 * 1024)
 //	writer := NewBufferedStreamWriter(path, WithBytesPool(pool))
-//
-// If incoming data is larger than the pool's configured size, the processor will
-// allocate a fresh buffer; oversized buffers are not returned to the pool (see BytesPool.PutBytes).
-func WithBytesPool(bp *pool.BytesPool) BufferedStreamWriterOptions {
+func WithBytesPool(bp *pool.BucketedBytesPool) BufferedStreamWriterOptions {
 	return func(p *BufferedStreamWriterProcessor) {
 		p.bytesPool = bp
 	}
+}
+
+func (w *BufferedStreamWriterProcessor) releasePendingChunks() {
+	for _, chunk := range w.pendingChunks {
+		w.bytesPool.Put(chunk)
+	}
+	w.pendingChunks = nil
+	w.pendingBytes = 0
+}
+
+func (w *BufferedStreamWriterProcessor) writePendingChunksToWriter() {
+	for _, chunk := range w.pendingChunks {
+		n, err := w.writer.Write(chunk)
+		if n != len(chunk) {
+			w.logger.Warnf("写入待缓存数据长度不完整：%d/%d", n, len(chunk))
+		}
+		if err != nil {
+			w.logger.Warnf("写入待缓存数据失败：%v", err)
+		}
+		w.bytesWritten += int64(n)
+		w.bytesPool.Put(chunk)
+	}
+	w.pendingChunks = w.pendingChunks[:0]
+	w.pendingBytes = 0
+}
+
+func (w *BufferedStreamWriterProcessor) shouldLogCreateFileFailure() bool {
+	now := time.Now()
+	if w.lastCreateFileFailureLog.IsZero() || now.Sub(w.lastCreateFileFailureLog) >= createFileFailureLogInterval {
+		w.lastCreateFileFailureLog = now
+		return true
+	}
+	return false
 }
 
 // WithSequentialWrite enables global flush locking to serialize all flush/write

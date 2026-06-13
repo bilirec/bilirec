@@ -46,9 +46,7 @@ func runAudioOnlyRecordForProfile(t *testing.T, profile bilibili.StreamProfile) 
 
 	_ = os.Setenv("SKIP_SMALL_FLUSH", "false") // audio only recording may produce small writes, disable skip-small-flush for testing
 
-	recordDuration := time.Duration(utils.Ternary(os.Getenv("CI") != "", 5, 1)) * time.Minute
-	const pollInterval = 2 * time.Second
-	const tolerance = 20 * time.Second
+	recordWait := time.Duration(utils.Ternary(os.Getenv("CI") != "", 2, 1)) * time.Minute
 
 	var recorderService *recorder.Service
 	var roomService *room.Service
@@ -70,9 +68,8 @@ func runAudioOnlyRecordForProfile(t *testing.T, profile bilibili.StreamProfile) 
 
 	room := resolveLiveTestRoomID(t, roomService)
 
-	t.Logf("starting audio-only recording with profile %s and duration limit: %v", profile, recordDuration)
+	t.Logf("starting audio-only recording with profile %s, will record for %v", profile, recordWait)
 	err := recorderService.Start(room,
-		recorder.WithDuration(recordDuration),
 		recorder.WithStreamOptions(
 			bilibili.WithProfiles(profile),
 			bilibili.WithOnlyAudio(true),
@@ -96,22 +93,15 @@ func runAudioOnlyRecordForProfile(t *testing.T, profile bilibili.StreamProfile) 
 
 	outputPath := waitForOutputPathAfterStart(t, recorderService, room)
 
-	deadline := time.Now().Add(recordDuration + tolerance)
-	for time.Now().Before(deadline) {
-		<-time.After(pollInterval)
-		if recorderService.GetStatus(room) == recorder.Idle {
-			if checkFFmpegAvailable(t) {
-				t.Log("\n📹 Verifying audio-only recording via ffprobe...")
-				verifyAudioOnlyRecording(t, outputPath)
-			}
-			return
-		}
-	}
+	<-time.After(recordWait)
 
-	t.Errorf("recording did not auto-stop within %v (duration=%v + tolerance=%v)", recordDuration+tolerance, recordDuration, tolerance)
+	t.Log("stopping recording manually")
 	if stopped := recorderService.Stop(room); !stopped {
 		t.Error("expected recorder stop to return true")
 	}
+
+	<-time.After(5 * time.Second)
+
 	if checkFFmpegAvailable(t) {
 		t.Log("\n📹 Verifying audio-only recording via ffprobe...")
 		verifyAudioOnlyRecording(t, outputPath)

@@ -1,6 +1,10 @@
 package hls
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/bilirec/bilirec/pkg/benchreport"
+)
 
 const (
 	testTsPacketSize = 188
@@ -99,13 +103,16 @@ func BenchmarkTsContinuityFixer_FixSegment_200Packets(b *testing.B) {
 	base := buildTSSegment(200, 16)
 	work := make([]byte, len(base))
 
+	mon := benchreport.Start(b, int64(len(base)))
 	b.ReportAllocs()
 	b.SetBytes(int64(len(base)))
 	b.ResetTimer()
+	mon.MarkTimerStart()
 
 	for i := 0; i < b.N; i++ {
 		copy(work, base)
 		_ = fixer.FixSegment(work)
+		mon.SamplePeriodically(i)
 	}
 }
 
@@ -114,12 +121,33 @@ func BenchmarkTsContinuityFixer_FixSegment_1200Packets(b *testing.B) {
 	base := buildTSSegment(1200, 64)
 	work := make([]byte, len(base))
 
+	mon := benchreport.Start(b, int64(len(base)))
 	b.ReportAllocs()
 	b.SetBytes(int64(len(base)))
 	b.ResetTimer()
+	mon.MarkTimerStart()
 
 	for i := 0; i < b.N; i++ {
 		copy(work, base)
 		_ = fixer.FixSegment(work)
+		mon.SamplePeriodically(i)
 	}
+}
+
+func BenchmarkTsContinuityFixer_FixSegment_Parallel(b *testing.B) {
+	base := buildTSSegment(600, 128)
+	mon := benchreport.Start(b, int64(len(base)))
+	b.ReportAllocs()
+	b.SetBytes(int64(len(base)))
+	b.ResetTimer()
+	mon.MarkTimerStart()
+	b.RunParallel(func(pb *testing.PB) {
+		fixer := NewTsContinuityFixer()
+		work := make([]byte, len(base))
+		for pb.Next() {
+			copy(work, base)
+			_ = fixer.FixSegment(work)
+			mon.SampleNow()
+		}
+	})
 }

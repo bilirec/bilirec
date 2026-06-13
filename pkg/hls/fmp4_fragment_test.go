@@ -3,6 +3,8 @@ package hls
 import (
 	"encoding/binary"
 	"testing"
+
+	"github.com/bilirec/bilirec/pkg/benchreport"
 )
 
 func box(typ string, payload []byte) []byte {
@@ -43,6 +45,34 @@ func makeMoof(trackID uint32, tfdtVersion byte, decodeTime uint64) []byte {
 	moof := box("moof", traf)
 	mdat := box("mdat", []byte{0x00, 0x01, 0x02, 0x03})
 	return append(moof, mdat...)
+}
+
+func makeComplexMoof(trackCount int, tfdtVersion byte, decodeTime uint64) []byte {
+	if trackCount < 1 {
+		trackCount = 1
+	}
+	moofPayload := make([]byte, 0, trackCount*64)
+	for i := 0; i < trackCount; i++ {
+		trackID := uint32(i + 1)
+		tfhdPayload := make([]byte, 4)
+		binary.BigEndian.PutUint32(tfhdPayload, trackID)
+		tfhd := box("tfhd", fullBox(0, 0, tfhdPayload))
+
+		var tfdtPayload []byte
+		if tfdtVersion == 1 {
+			tfdtPayload = make([]byte, 8)
+			binary.BigEndian.PutUint64(tfdtPayload, decodeTime+uint64(i*900))
+		} else {
+			tfdtPayload = make([]byte, 4)
+			binary.BigEndian.PutUint32(tfdtPayload, uint32(decodeTime+uint64(i*900)))
+		}
+		tfdt := box("tfdt", fullBox(tfdtVersion, 0, tfdtPayload))
+		traf := box("traf", append(tfhd, tfdt...))
+		moofPayload = append(moofPayload, traf...)
+	}
+	moof := box("moof", moofPayload)
+	mdatPayload := make([]byte, 64*1024)
+	return append(moof, box("mdat", mdatPayload)...)
 }
 
 func firstTfdtValue(segment []byte) (uint64, bool) {
@@ -149,13 +179,16 @@ func BenchmarkNormalizeFragmentTimestamps_Version1(b *testing.B) {
 	base := makeMoof(1, 1, 180000)
 	work := make([]byte, len(base))
 
+	mon := benchreport.Start(b, int64(len(base)))
 	b.ReportAllocs()
 	b.SetBytes(int64(len(base)))
 	b.ResetTimer()
+	mon.MarkTimerStart()
 
 	for i := 0; i < b.N; i++ {
 		copy(work, base)
 		_ = NormalizeFragmentTimestamps(work, bases)
+		mon.SamplePeriodically(i)
 	}
 }
 
@@ -164,12 +197,37 @@ func BenchmarkNormalizeFragmentTimestamps_Version0(b *testing.B) {
 	base := makeMoof(2, 0, 1600)
 	work := make([]byte, len(base))
 
+	mon := benchreport.Start(b, int64(len(base)))
 	b.ReportAllocs()
 	b.SetBytes(int64(len(base)))
 	b.ResetTimer()
+	mon.MarkTimerStart()
 
 	for i := 0; i < b.N; i++ {
 		copy(work, base)
 		_ = NormalizeFragmentTimestamps(work, bases)
+		mon.SamplePeriodically(i)
+	}
+}
+
+func BenchmarkNormalizeFragmentTimestamps_ComplexFragment(b *testing.B) {
+	bases := map[uint32]uint64{
+		1: 90000,
+		2: 45000,
+		3: 18000,
+	}
+	base := makeComplexMoof(3, 1, 180000)
+	work := make([]byte, len(base))
+
+	mon := benchreport.Start(b, int64(len(base)))
+	b.ReportAllocs()
+	b.SetBytes(int64(len(base)))
+	b.ResetTimer()
+	mon.MarkTimerStart()
+
+	for i := 0; i < b.N; i++ {
+		copy(work, base)
+		_ = NormalizeFragmentTimestamps(work, bases)
+		mon.SamplePeriodically(i)
 	}
 }

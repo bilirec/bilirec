@@ -3,8 +3,6 @@
 import (
 	"encoding/binary"
 	"errors"
-	"hash"
-	"hash/fnv"
 	"io"
 	"math"
 	"sync"
@@ -37,6 +35,12 @@ const (
 	// 🔥 新增: 去重相關常量
 	MaxDedupCacheSize = 1000 // 最大去重緩存大小
 	DedupWindowMs     = 5000 // 去重時間窗口 (毫秒)
+
+	// dedupCacheHighWaterNum/Den: trigger proactive cleanup at 80% capacity.
+	dedupCacheHighWaterNum = 4
+	dedupCacheHighWaterDen = 5
+	// dedupCacheHighWaterEvictDenom: after time-based clean, FIFO-evict 1/N oldest if still high.
+	dedupCacheHighWaterEvictDenom = 10
 )
 
 var (
@@ -61,24 +65,16 @@ var (
 
 	headerBytesPool = pool.NewBytesPool(TagHeaderSize)
 	smallBytesPool  = pool.NewBytesPool(PrevTagSizeBytes)
-
-	// 🔥 新增: TagData 變長切片池 (256KB ~ 16MB)
-	tagDataSlicePool = pool.NewBytesSlicePool(256*1024, 16*1024*1024)
-
-	// 🔥 新增: hash 計算器池
-	hasherPool = sync.Pool{
-		New: func() any {
-			return fnv.New64a()
-		},
-	}
 )
 
 // Tag represents a complete FLV tag
 type Tag struct {
-	Type       byte
-	DataSize   uint32
-	Timestamp  int32
-	StreamID   [3]byte
+	Type      byte
+	DataSize  uint32
+	Timestamp int32
+	StreamID  [3]byte
+	// WARNING: in RealtimeFixer hot-path this may alias internal parser buffer memory.
+	// Do not retain this slice beyond the current synchronous processing step.
 	Data       []byte
 	IsHeader   bool
 	IsKeyframe bool
@@ -150,29 +146,34 @@ func NewDedupCache(maxSize int, windowMs int32) *DedupCache {
 
 // 計算 Tag 的唯一簽名
 func (dc *DedupCache) computeSignature(tag *Tag) uint64 {
-	hasher := hasherPool.Get().(hash.Hash64)
-	defer func() {
-		hasher.Reset()
-		hasherPool.Put(hasher)
-	}()
+	// Inline FNV-1a to avoid hash interface dispatch on the hot path.
+	const (
+		fnvOffset64 = 1469598103934665603
+		fnvPrime64  = 1099511628211
+	)
 
-	// 組合:  Type + Timestamp + DataSize + Data(前32字節)
-	var tmp [9]byte
-	tmp[0] = tag.Type
-	binary.BigEndian.PutUint32(tmp[1:5], uint32(tag.Timestamp))
-	binary.BigEndian.PutUint32(tmp[5:9], tag.DataSize)
-	hasher.Write(tmp[:9])
+	hash := uint64(fnvOffset64)
 
-	// 只用前32字節數據計算hash (平衡性能和準確性)
-	dataLen := len(tag.Data)
-	if dataLen > 32 {
-		dataLen = 32
+	hash ^= uint64(tag.Type)
+	hash *= fnvPrime64
+
+	hash ^= uint64(uint32(tag.Timestamp))
+	hash *= fnvPrime64
+
+	hash ^= uint64(tag.DataSize)
+	hash *= fnvPrime64
+
+	// 只用前32字節數據計算 hash (平衡性能和準確性)
+	data := tag.Data
+	if len(data) > 32 {
+		data = data[:32]
 	}
-	if dataLen > 0 {
-		hasher.Write(tag.Data[:dataLen])
+	for _, b := range data {
+		hash ^= uint64(b)
+		hash *= fnvPrime64
 	}
 
-	return hasher.Sum64()
+	return hash
 }
 
 // 檢查是否為重複 Tag
@@ -180,6 +181,16 @@ func (dc *DedupCache) IsDuplicate(tag *Tag) bool {
 	dc.mu.Lock()
 	defer dc.mu.Unlock()
 
+	return dc.isDuplicateLocked(tag)
+}
+
+// IsDuplicateUnsafe skips locking. Caller must guarantee synchronization
+// (e.g. by holding RealtimeFixer.mu for the entire access).
+func (dc *DedupCache) IsDuplicateUnsafe(tag *Tag) bool {
+	return dc.isDuplicateLocked(tag)
+}
+
+func (dc *DedupCache) isDuplicateLocked(tag *Tag) bool {
 	hash := dc.computeSignature(tag)
 
 	// 檢查是否存在相同簽名
@@ -224,13 +235,7 @@ func (dc *DedupCache) add(hash uint64, sig *TagSignature) {
 		if removeCount < 1 {
 			removeCount = 1
 		}
-
-		for _, oldHash := range dc.order[:removeCount] {
-			delete(dc.signatures, oldHash)
-		}
-		// Keep the slice but shift remaining elements
-		copy(dc.order, dc.order[removeCount:])
-		dc.order = dc.order[:len(dc.order)-removeCount]
+		dc.evictOldestLocked(removeCount)
 	}
 
 	// 添加新記錄
@@ -243,6 +248,60 @@ func (dc *DedupCache) CleanOld(currentTimestamp int32) {
 	dc.mu.Lock()
 	defer dc.mu.Unlock()
 
+	dc.cleanOldLocked(currentTimestamp)
+}
+
+// CleanOldUnsafe skips locking. Caller must guarantee synchronization
+// (e.g. by holding RealtimeFixer.mu for the entire access).
+func (dc *DedupCache) CleanOldUnsafe(currentTimestamp int32) {
+	dc.cleanOldLocked(currentTimestamp)
+}
+
+// CleanHighWaterUnsafe runs time-based cleanup and, if still above the high-water
+// threshold, FIFO-evicts a small oldest batch. No allocations on the hot path.
+func (dc *DedupCache) CleanHighWaterUnsafe(currentTimestamp int32) {
+	dc.cleanHighWaterLocked(currentTimestamp)
+}
+
+// IsAboveHighWaterUnsafe reports whether the cache is at or above 80% capacity.
+func (dc *DedupCache) IsAboveHighWaterUnsafe() bool {
+	return len(dc.signatures) >= dc.highWaterSize()
+}
+
+func (dc *DedupCache) highWaterSize() int {
+	return dc.maxSize * dedupCacheHighWaterNum / dedupCacheHighWaterDen
+}
+
+func (dc *DedupCache) cleanHighWaterLocked(currentTimestamp int32) {
+	if len(dc.signatures) < dc.highWaterSize() {
+		return
+	}
+	dc.cleanOldLocked(currentTimestamp)
+	if len(dc.signatures) < dc.highWaterSize() {
+		return
+	}
+	removeCount := dc.maxSize / dedupCacheHighWaterEvictDenom
+	if removeCount < 1 {
+		removeCount = 1
+	}
+	dc.evictOldestLocked(removeCount)
+}
+
+func (dc *DedupCache) evictOldestLocked(removeCount int) {
+	if removeCount < 1 || len(dc.order) == 0 {
+		return
+	}
+	if removeCount > len(dc.order) {
+		removeCount = len(dc.order)
+	}
+	for _, oldHash := range dc.order[:removeCount] {
+		delete(dc.signatures, oldHash)
+	}
+	copy(dc.order, dc.order[removeCount:])
+	dc.order = dc.order[:len(dc.order)-removeCount]
+}
+
+func (dc *DedupCache) cleanOldLocked(currentTimestamp int32) {
 	// 🔥 FIX: Reuse the existing slice to avoid allocations
 	writeIdx := 0
 
@@ -279,6 +338,17 @@ func (dc *DedupCache) Reset() {
 func (dc *DedupCache) GetStats() (size int, capacity int) {
 	dc.mu.Lock()
 	defer dc.mu.Unlock()
+
+	return dc.getStatsLocked()
+}
+
+// GetStatsUnsafe skips locking. Caller must guarantee synchronization
+// (e.g. by holding RealtimeFixer.mu for the entire access).
+func (dc *DedupCache) GetStatsUnsafe() (size int, capacity int) {
+	return dc.getStatsLocked()
+}
+
+func (dc *DedupCache) getStatsLocked() (size int, capacity int) {
 	return len(dc.signatures), dc.maxSize
 }
 

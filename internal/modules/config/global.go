@@ -13,8 +13,11 @@ const (
 	defaultLiveStreamWriterSyncPeriodSecs                = 0 // Disable periodic sync to reduce SD card wear; data syncs only on Close()
 	defaultLiveStreamWriterFlushPeriodSecs               = 15
 	defaultLiveStreamWriterChanBufferSize                = 64
-	defaultLiveStreamWriterBytesPoolSize                 = 512 * 1024 // 512KB per buffer
-	defaultSkipSmallFlushThreshold                       = 1 * 1024 * 1024
+	defaultLiveStreamWriterBytesPoolSize      = 512 * 1024 // 512KB per buffer
+	defaultReadStreamBytesPoolSizeHigh       = 1024 * 1024
+	defaultReadStreamChanBufferSizeHigh      = 48
+	defaultLiveStreamWriterBytesPoolSizeHigh = 1024 * 1024
+	defaultSkipSmallFlushThreshold            = 1 * 1024 * 1024
 )
 
 // for global readonly access
@@ -64,6 +67,31 @@ func (g *GlobalReadOnly) LiveStreamWriterBytesPoolSize() int {
 		return defaultLiveStreamWriterBytesPoolSize
 	}
 	return g.config.liveStreamWriterBytesPoolSize
+}
+
+func (g *GlobalReadOnly) ReadStreamBytesPoolSizeHigh() int {
+	if g.config.readStreamBytesPoolSizeHigh <= 0 {
+		return defaultReadStreamBytesPoolSizeHigh
+	}
+	return g.config.readStreamBytesPoolSizeHigh
+}
+
+func (g *GlobalReadOnly) ReadStreamChanBufferSizeHigh() int {
+	if g.config.readStreamChanBufferSizeHigh <= 0 {
+		return defaultReadStreamChanBufferSizeHigh
+	}
+	return g.config.readStreamChanBufferSizeHigh
+}
+
+func (g *GlobalReadOnly) LiveStreamWriterBytesPoolSizeHigh() int {
+	if g.config.liveStreamWriterBytesPoolSizeHigh <= 0 {
+		return defaultLiveStreamWriterBytesPoolSizeHigh
+	}
+	return g.config.liveStreamWriterBytesPoolSizeHigh
+}
+
+func IsHighQualityQn(qn int) bool {
+	return qn >= 20000
 }
 
 func (g *GlobalReadOnly) SkipSmallFlushThreshold() int {
@@ -157,6 +185,15 @@ func (g *GlobalReadOnly) Validate() error {
 	}
 	if g.config.skipSmallFlushThreshold <= 0 {
 		logger.Warnf("SKIP_SMALL_FLUSH_THRESHOLD 无效（%d），使用默认值 %d 字节", g.config.skipSmallFlushThreshold, defaultSkipSmallFlushThreshold)
+	}
+	if g.config.readStreamBytesPoolSizeHigh <= 0 {
+		logger.Warnf("READ_STREAM_BYTES_POOL_SIZE_HIGH 无效（%d），使用默认值 %d 字节", g.config.readStreamBytesPoolSizeHigh, defaultReadStreamBytesPoolSizeHigh)
+	}
+	if g.config.readStreamChanBufferSizeHigh <= 0 {
+		logger.Warnf("READ_STREAM_CHAN_BUFFER_SIZE_HIGH 无效（%d），使用默认值 %d", g.config.readStreamChanBufferSizeHigh, defaultReadStreamChanBufferSizeHigh)
+	}
+	if g.config.liveStreamWriterBytesPoolSizeHigh <= 0 {
+		logger.Warnf("LIVE_STREAM_WRITER_BYTES_POOL_SIZE_HIGH 无效（%d），使用默认值 %d 字节", g.config.liveStreamWriterBytesPoolSizeHigh, defaultLiveStreamWriterBytesPoolSizeHigh)
 	}
 	// Reject protocol-mismatch configs between FRP backend mode and Fiber listener mode.
 	if g.config.ServerCrt != "" && g.config.ServerKey != "" && g.config.FRPEnabled && !g.config.FRPHttps {

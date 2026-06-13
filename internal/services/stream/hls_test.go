@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bilirec/bilirec/pkg/benchreport"
 	hlsutil "github.com/bilirec/bilirec/pkg/hls"
 	"github.com/go-resty/resty/v2"
 )
@@ -312,9 +313,11 @@ func TestShouldResetSequenceOnRollback(t *testing.T) {
 
 func BenchmarkParseM3u8_SmallWindow(b *testing.B) {
 	body := []byte(buildPlaylistBody(6, false))
+	mon := benchreport.Start(b, int64(len(body)))
 	b.ReportAllocs()
 	b.SetBytes(int64(len(body)))
 	b.ResetTimer()
+	mon.MarkTimerStart()
 
 	for i := 0; i < b.N; i++ {
 		pl, err := hlsutil.ParseBytes(body)
@@ -324,14 +327,17 @@ func BenchmarkParseM3u8_SmallWindow(b *testing.B) {
 		if len(pl.Segments) != 6 {
 			b.Fatalf("unexpected segment count: got=%d want=6", len(pl.Segments))
 		}
+		mon.SamplePeriodically(i)
 	}
 }
 
 func BenchmarkParseM3u8_MapWindow(b *testing.B) {
 	body := []byte(buildPlaylistBody(20, true))
+	mon := benchreport.Start(b, int64(len(body)))
 	b.ReportAllocs()
 	b.SetBytes(int64(len(body)))
 	b.ResetTimer()
+	mon.MarkTimerStart()
 
 	for i := 0; i < b.N; i++ {
 		pl, err := hlsutil.ParseBytes(body)
@@ -341,14 +347,17 @@ func BenchmarkParseM3u8_MapWindow(b *testing.B) {
 		if pl.MapURI == "" {
 			b.Fatal("expected map URI")
 		}
+		mon.SamplePeriodically(i)
 	}
 }
 
 func BenchmarkParseM3u8_FromBodyBytes(b *testing.B) {
 	bodyBytes := []byte(buildPlaylistBody(20, true))
+	mon := benchreport.Start(b, int64(len(bodyBytes)))
 	b.ReportAllocs()
 	b.SetBytes(int64(len(bodyBytes)))
 	b.ResetTimer()
+	mon.MarkTimerStart()
 
 	for i := 0; i < b.N; i++ {
 		pl, err := hlsutil.Parse(string(bodyBytes))
@@ -358,5 +367,40 @@ func BenchmarkParseM3u8_FromBodyBytes(b *testing.B) {
 		if len(pl.Segments) != 20 {
 			b.Fatalf("unexpected segment count: got=%d want=20", len(pl.Segments))
 		}
+		mon.SamplePeriodically(i)
+	}
+}
+
+func BenchmarkParseM3u8_Scalability(b *testing.B) {
+	cases := []struct {
+		name     string
+		segments int
+		withMap  bool
+	}{
+		{name: "window6_noMap", segments: 6, withMap: false},
+		{name: "window20_withMap", segments: 20, withMap: true},
+		{name: "window100_withMap", segments: 100, withMap: true},
+		{name: "window500_withMap", segments: 500, withMap: true},
+	}
+	for _, tc := range cases {
+		tc := tc
+		b.Run(tc.name, func(b *testing.B) {
+			body := []byte(buildPlaylistBody(tc.segments, tc.withMap))
+			mon := benchreport.Start(b, int64(len(body)))
+			b.ReportAllocs()
+			b.SetBytes(int64(len(body)))
+			b.ResetTimer()
+			mon.MarkTimerStart()
+			for i := 0; i < b.N; i++ {
+				pl, err := hlsutil.ParseBytes(body)
+				if err != nil {
+					b.Fatalf("parseM3u8 failed: %v", err)
+				}
+				if len(pl.Segments) != tc.segments {
+					b.Fatalf("unexpected segment count: got=%d want=%d", len(pl.Segments), tc.segments)
+				}
+				mon.SamplePeriodically(i)
+			}
+		})
 	}
 }

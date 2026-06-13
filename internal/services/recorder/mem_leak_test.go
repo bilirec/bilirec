@@ -43,6 +43,7 @@ func memLeakStartOptionsFromEnv() ([]recorder.RecordStartOption, string, error) 
 	return []recorder.RecordStartOption{
 		recorder.WithStreamOptions(
 			bilibili.WithProfiles(profile),
+			bilibili.WithQn(bilibili.QualityOriginal), // 調高畫質測試更真實
 		),
 	}, string(profile), nil
 }
