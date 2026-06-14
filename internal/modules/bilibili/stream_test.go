@@ -2,6 +2,7 @@ package bilibili
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -67,9 +68,11 @@ func TestGetStreamUrlsV2OnlyAudioManyRooms(t *testing.T) {
 		t.Run(fmt.Sprintf("room-%d", roomID), func(t *testing.T) {
 			urls, err := simulateGetStreamURLsV2(t, client, roomID, WithOnlyAudio(true))
 			if err != nil {
-				switch err {
-				case ErrRoomNotFound:
+				switch {
+				case errors.Is(err, ErrRoomNotFound):
 					t.Skip("room not found")
+				case errors.Is(err, ErrStreamGeoRestricted):
+					t.Skip("room geo restricted")
 				default:
 					t.Fatalf("failed to fetch audio-only urls for room %d: %v", roomID, err)
 				}
@@ -109,9 +112,11 @@ func TestGetStreamUrlsV2NonAudioHasNoPtype1(t *testing.T) {
 		t.Run(fmt.Sprintf("room-%d", roomID), func(t *testing.T) {
 			urls, err := simulateGetStreamURLsV2(t, client, roomID)
 			if err != nil {
-				switch err {
-				case ErrRoomNotFound:
+				switch {
+				case errors.Is(err, ErrRoomNotFound):
 					t.Skip("room not found")
+				case errors.Is(err, ErrStreamGeoRestricted):
+					t.Skip("room geo restricted")
 				default:
 					t.Fatalf("failed to fetch non-audio urls for room %d: %v", roomID, err)
 				}
@@ -338,10 +343,7 @@ func simulateGetStreamURLsV2(t *testing.T, client *Client, roomID int, opts ...G
 	if err := json.Unmarshal(resp.Body(), &sr); err != nil {
 		return nil, err
 	} else if sr.Code != 0 {
-		if sr.Code == 19002003 {
-			return nil, ErrRoomNotFound
-		}
-		return nil, fmt.Errorf("获取流 URL 失败：%s（代码 %d）", sr.Message, sr.Code)
+		return nil, mapStreamAPIError(sr.Code, sr.Message)
 	}
 
 	if sr.Data.PlayurlInfo == nil || sr.Data.PlayurlInfo.Playurl == nil {

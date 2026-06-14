@@ -109,3 +109,7 @@ func IsErrRoomNotFound(err error) bool {
 	}
 	return false
 }
+
+func IsErrStreamGeoRestricted(err error) bool {
+	return errors.Is(err, ErrStreamGeoRestricted)
+}

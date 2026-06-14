@@ -23,7 +23,8 @@ import (
 var logger = logrus.WithField("module", "bilibili")
 
 var (
-	ErrRoomNotFound = errors.New("房间不存在")
+	ErrRoomNotFound        = errors.New("房间不存在")
+	ErrStreamGeoRestricted = errors.New("该直播间在当前地区不可用")
 )
 
 const liveReferer = "https://live.bilibili.com/"

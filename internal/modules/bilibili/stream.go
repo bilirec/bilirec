@@ -107,6 +107,22 @@ var ErrInvalidStreamQuality = errors.New("无效的流画质")
 const v1StreamAPI = "https://api.live.bilibili.com/room/v1/Room/playUrl"
 const v2StreamAPI = "https://api.live.bilibili.com/xlive/web-room/v2/index/getRoomPlayInfo"
 
+const (
+	streamAPICodeRoomNotFound    = 19002003
+	streamAPICodeGeoRestricted   = 60005
+)
+
+func mapStreamAPIError(code int, message string) error {
+	switch code {
+	case streamAPICodeRoomNotFound:
+		return ErrRoomNotFound
+	case streamAPICodeGeoRestricted:
+		return ErrStreamGeoRestricted
+	default:
+		return fmt.Errorf("获取流 URL 失败：%s（代码 %d）", message, code)
+	}
+}
+
 func (c *Client) GetStreamURLs(roomID int) ([]string, error) {
 	client := c.liveClient.R()
 	client.SetQueryParams(map[string]string{
@@ -126,10 +142,7 @@ func (c *Client) GetStreamURLs(roomID int) ([]string, error) {
 	if err := json.Unmarshal(resp.Body(), &sr); err != nil {
 		return nil, err
 	} else if sr.Code != 0 {
-		if sr.Code == 19002003 {
-			return nil, ErrRoomNotFound
-		}
-		return nil, fmt.Errorf("获取流 URL 失败：%s（代码 %d）", sr.Message, sr.Code)
+		return nil, mapStreamAPIError(sr.Code, sr.Message)
 	}
 
 	return fp.Map(sr.Data.Durl, func(durl StreamURL) string {
@@ -201,10 +214,7 @@ func (c *Client) GetStreamURLsV2(roomID int, opts ...GetStreamURLsOption) ([]Str
 	if err := json.Unmarshal(resp.Body(), &sr); err != nil {
 		return nil, err
 	} else if sr.Code != 0 {
-		if sr.Code == 19002003 {
-			return nil, ErrRoomNotFound
-		}
-		return nil, fmt.Errorf("获取流 URL 失败：%s（代码 %d）", sr.Message, sr.Code)
+		return nil, mapStreamAPIError(sr.Code, sr.Message)
 	}
 
 	if sr.Data.PlayurlInfo == nil || sr.Data.PlayurlInfo.Playurl == nil {
