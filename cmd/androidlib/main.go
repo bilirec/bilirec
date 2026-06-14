@@ -124,6 +124,17 @@ func start(config StartConfig) C.int {
 		_ = os.Setenv("PASSWORD", password)
 	}
 
+	if value, ok := config.Env["SEQUENTIAL_WRITE"]; !ok || value == "" {
+		outputDir := os.Getenv("OUTPUT_DIR") // must not empty due to defaultAndroidEnv
+
+		base := filepath.Clean(config.BasePath)
+		target := filepath.Clean(outputDir)
+		// 不在 basePath 默認不在 UFS，那就需要序列化写入
+		if target != base && !strings.HasPrefix(target, base+string(filepath.Separator)) {
+			_ = os.Setenv("SEQUENTIAL_WRITE", "true")
+		}
+	}
+
 	loadEnvironmentTimeZone()
 	initResourceLimits()
 
@@ -179,21 +190,25 @@ func initResourceLimits() {
 
 func defaultAndroidEnv(basePath string) map[string]string {
 	return map[string]string{
-		"HOST":                                 "127.0.0.1",
-		"PORT":                                 "8080",
-		"FRONTEND_URL":                         "https://app.bilirec.org",
-		"OUTPUT_DIR":                           filepath.Join(basePath, "records"),
-		"SECRET_DIR":                           filepath.Join(basePath, "secrets"),
-		"DATABASE_DIR":                         filepath.Join(basePath, "database"),
-		"BILIBILI_LOGIN_MODE":                  "controller",
-		"FRP_ENABLED":                          "false",
-		"MIN_DISK_SPACE_BYTES":                 "2147483648",
-		"LIVE_STREAM_WRITER_BUFFER_SIZE":       "4194304",
-		"LIVE_STREAM_WRITER_CHAN_BUFFER_SIZE":  "32",
-		"LIVE_STREAM_WRITER_SYNC_PERIOD_SECS":  "0",
-		"LIVE_STREAM_WRITER_FLUSH_PERIOD_SECS": "10",
-		"SKIP_SMALL_FLUSH":                     "false",
-		"SILENT_ACCESS_LOG":                    "true",
+		"HOST":                                    "127.0.0.1",
+		"PORT":                                    "8080",
+		"FRONTEND_URL":                            "https://app.bilirec.org",
+		"OUTPUT_DIR":                              filepath.Join(basePath, "records"),
+		"SECRET_DIR":                              filepath.Join(basePath, "secrets"),
+		"DATABASE_DIR":                            filepath.Join(basePath, "database"),
+		"BILIBILI_LOGIN_MODE":                     "controller",
+		"FRP_ENABLED":                             "false",
+		"MIN_DISK_SPACE_BYTES":                    "2147483648", // 2GB
+		"LIVE_STREAM_WRITER_BUFFER_SIZE":          "4194304",    // 8MB -> 4MB
+		"LIVE_STREAM_WRITER_CHAN_BUFFER_SIZE":     "32",         // 64 -> 32
+		"READ_STREAM_BYTES_POOL_SIZE_HIGH":        "1048576",    // 1MB
+		"READ_STREAM_CHAN_BUFFER_SIZE_HIGH":       "32",         // 48 -> 32
+		"LIVE_STREAM_WRITER_BYTES_POOL_SIZE_HIGH": "1048576",    // 1MB
+		"LIVE_STREAM_WRITER_SYNC_PERIOD_SECS":     "0",
+		"LIVE_STREAM_WRITER_FLUSH_PERIOD_SECS":    "10",
+		"SKIP_SMALL_FLUSH":                        "false",
+		"SILENT_ACCESS_LOG":                       "true",
+		"SEQUENTIAL_WRITE":                        "false",
 	}
 }
 
