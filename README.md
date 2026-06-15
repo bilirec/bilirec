@@ -279,7 +279,7 @@ Android 模式下会先注入一组移动端默认值（如 `HOST=127.0.0.1`、`
 | `LIVE_STREAM_WRITER_BYTES_POOL_SIZE_HIGH` | 2K/4K 写侧块大小（`qn ≥ 20000` 时自动启用，见下方说明） | `1048576` (1 MB) |
 | `SKIP_SMALL_FLUSH_THRESHOLD` | 启用 `SKIP_SMALL_FLUSH` 后，延迟创建文件并缓存内存的阈值（字节）；达到阈值后才开始落盘。 | `1048576` (1 MB) |
 | `SKIP_SMALL_FLUSH` | 启用 microSD 磨损保护：在达到 `SKIP_SMALL_FLUSH_THRESHOLD` 之前仅缓存内存，不创建文件 | `true` |
-| `SEQUENTIAL_WRITE` | 启用全局 flush 锁以序列化多路录制的写入操作；仅在多路并发录制写入同一物理磁盘时建议启用，可显著降低 I/O 峰值 | `true` |
+| `SEQUENTIAL_WRITE` | 启用全局写盘锁以序列化多路录制的写入操作；多路并发时定时 flush 会自动错开（内部 round-robin），降低 I/O 峰值。多路并发写入同一物理磁盘时建议启用 | `true` |
 | `MIN_DISK_SPACE_BYTES` | 录制所需的最小磁盘空间（字节），低于此值将拒绝新录制任务 | `5368709120` (5 GB) |
 
 #### 2K/4K 双池说明
@@ -444,7 +444,7 @@ Bilirec 当前默认配置已针对树莓派 5B + microSD 场景优化，在“�
 | `LIVE_STREAM_WRITER_CHAN_BUFFER_SIZE=64` | 控制在途内存占用。以 512KB chunk 估算，单录制任务约 32MB 队列数据；比 128（约 64MB）更适合 4GB 设备。 |
 | `SKIP_SMALL_FLUSH=true` | **延迟建文件**：开播后数据先缓存在内存，累计达到 `SKIP_SMALL_FLUSH_THRESHOLD`（默认 1 MB）后才创建文件并正常写盘，减少极短直播对 SD 卡的无效写入。 |
 | `LIVE_STREAM_WRITER_BYTES_POOL_SIZE=524288` (512KB) | 与常见 stream chunk 大小一致，减少额外分配与拷贝。 |
-| `SEQUENTIAL_WRITE=true` | **启用全局 flush 锁**，序列化多路录制的写入操作，多路并发时有效降低 I/O 峰值; 默认启用以保护 microSD。 |
+| `SEQUENTIAL_WRITE=true` | **启用全局写盘锁**，序列化多路录制的写入操作，多路并发时有效降低 I/O 峰值；默认启用以保护 microSD。 |
 | `MAX_CONCURRENT_RECORDINGS=3` | 默认同时录制上限（保守值）；树莓派 5B + 1 GB 容器、1080p 默认缓冲下，生产环境可验证至 **5 路**（见效能指标），按需调大。 |
 
 容器运行时默认值也同步为树莓派 5B 取向：`GOMEMLIMIT=768MiB`、`GOGC=100`。
@@ -502,7 +502,7 @@ SSD 具备极高的随机读写性能，无需过度担忧小块文件的写入�
 # 解放 I/O 限制，优先保障数据实时性与高并发
 export LIVE_STREAM_WRITER_SYNC_PERIOD_SECS=30   # 恢复周期性 sync，降低断电导致的数据丢失风险
 export SKIP_SMALL_FLUSH=false                   # 优先保障录制完整性，不再跳过小块 flush
-export SEQUENTIAL_WRITE=false                   # 【关键】禁用全局 flush 锁，解放 SSD 多路并发 I/O 能力
+export SEQUENTIAL_WRITE=false                   # 【关键】禁用全局写盘锁，解放 SSD 多路并发 I/O 能力
 export LIVE_STREAM_WRITER_CHAN_BUFFER_SIZE=128  # 提高内存队列深度（容忍更高的网络突发流量）
 export MAX_CONCURRENT_RECORDINGS=10             # 可视设备的 CPU 与内存宽裕程度放宽限制
 
@@ -1207,6 +1207,7 @@ curl -s -b cookies.txt http://127.0.0.1:8080/auth/bilibili/status
 ├── pkg/                              # 可复用库与工具
 │   ├── backoff/                      # 重试退避策略
 │   ├── cloudconvert/                 # CloudConvert API 客户端
+│   ├── coordinator/                  # 通用信号调度
 │   ├── db/                           # 数据库抽象层
 │   ├── ds/                           # 数据结构
 │   ├── ffmpeg/                       # Android / 本地 FFmpeg 封装

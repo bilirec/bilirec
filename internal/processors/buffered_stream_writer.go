@@ -8,6 +8,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/bilirec/bilirec/pkg/coordinator"
 	"github.com/bilirec/bilirec/pkg/pipeline"
 	"github.com/bilirec/bilirec/pkg/pool"
 	"github.com/bilirec/bilirec/pkg/rw"
@@ -72,6 +73,8 @@ type BufferedStreamWriterProcessor struct {
 	stopCh       chan struct{} // Signal to stop syncWorker (only used if syncPeriod > 0)
 	wait         sync.WaitGroup
 	bytesWritten int64
+	// bufferedBytes mirrors writer.Buffered() for cross-goroutine reads (e.g. periodic ready).
+	bufferedBytes atomic.Int64
 
 	// bytesPool is used to reduce allocations when copying incoming data.
 	// When nil, fallback to direct allocation via make().
@@ -81,7 +84,14 @@ type BufferedStreamWriterProcessor struct {
 
 	lastCreateFileFailureLog time.Time
 	suppressedCreateFailures int
+
+	periodicSignalCh      <-chan struct{}
+	periodicUnregister    func()
+	minPeriodicFlushBytes int
 }
+
+// livePeriodicRoundRobin serializes periodic work across live writers when SEQUENTIAL_WRITE is on.
+var livePeriodicRoundRobin = coordinator.NewRoundRobin(defaultFlushPeriod)
 
 // globalMu is used to serialize flushes/syncs across multiple instances when sequentialWrite is enabled.
 // in MicroSD card scenarios, concurrent flushes can cause significant performance degradation,
@@ -107,6 +117,9 @@ func NewBufferedStreamWriter(path string, opts ...BufferedStreamWriterOptions) *
 	}
 	if processor.bytesPool == nil {
 		processor.bytesPool = pool.NewBucketedBytesPool(defaultChanBufferSize * 1024)
+	}
+	if processor.minPeriodicFlushBytes <= 0 {
+		processor.minPeriodicFlushBytes = max(processor.bufferSize / 4, 64 * 1024)
 	}
 	processor.locker = utils.TernaryFunc(
 		processor.sequentialWrite,
@@ -137,6 +150,15 @@ func (w *BufferedStreamWriterProcessor) Open(ctx context.Context, log *logrus.En
 
 	w.logger = log.WithField("file", w.path)
 	w.dataCh = make(chan []byte, w.chanBufferSize)
+
+	if w.sequentialWrite {
+		livePeriodicRoundRobin.SetCyclePeriod(w.flushPeriod)
+		ch, unreg := livePeriodicRoundRobin.Register(func() bool {
+			return w.bufferedBytes.Load() >= int64(w.minPeriodicFlushBytes)
+		})
+		w.periodicSignalCh = ch
+		w.periodicUnregister = unreg
+	}
 
 	// Start the periodic writer goroutine.
 	w.wait.Add(1)
@@ -172,6 +194,11 @@ func (w *BufferedStreamWriterProcessor) Process(ctx context.Context, log *logrus
 }
 
 func (w *BufferedStreamWriterProcessor) Close() error {
+	if w.periodicUnregister != nil {
+		w.periodicUnregister()
+		w.periodicUnregister = nil
+		w.periodicSignalCh = nil
+	}
 	close(w.dataCh) // Producer closes the channel
 	if w.syncPeriod > 0 {
 		close(w.stopCh) // Signal syncWorker to stop (if it's running)
@@ -205,12 +232,15 @@ func (w *BufferedStreamWriterProcessor) Close() error {
 	if w.writer != nil {
 		if err := w.writer.Flush(); err != nil {
 			w.logger.Warnf("刷新写入器失败：%v", err)
-		} else if file := w.file.Load(); file != nil {
-			w.locker.Lock()
-			if err := file.Sync(); err != nil {
-				w.logger.Warnf("同步文件失败：%v", err)
+		} else {
+			w.syncBufferedBytes()
+			if file := w.file.Load(); file != nil {
+				w.locker.Lock()
+				if err := file.Sync(); err != nil {
+					w.logger.Warnf("同步文件失败：%v", err)
+				}
+				w.locker.Unlock()
 			}
-			w.locker.Unlock()
 		}
 	}
 
@@ -229,88 +259,129 @@ func (w *BufferedStreamWriterProcessor) Close() error {
 // When dataCh is closed by Close(), it drains any remaining queued data before returning
 // so Close can perform a final flush+sync safely.
 func (w *BufferedStreamWriterProcessor) writePeriodically() {
-	flushTimer := time.NewTimer(w.flushPeriod + w.flushJitter())
 	defer w.wait.Done()
-	defer flushTimer.Stop()
+	if w.sequentialWrite && w.periodicSignalCh != nil {
+		w.writePeriodicallyCoordinated()
+		return
+	}
+	w.writePeriodicallyWithTimer()
+}
 
+func (w *BufferedStreamWriterProcessor) writePeriodicallyCoordinated() {
 	for {
 		select {
 		case data, ok := <-w.dataCh:
 			if !ok {
 				return
 			}
+			w.handleDataChunk(data)
+		case <-w.periodicSignalCh:
+			w.doPeriodicFlush()
+		}
+	}
+}
 
-			if w.sdcardProtection && w.file.Load() == nil {
-				threshold := w.skipSmallFlushThreshold
-				w.pendingChunks = append(w.pendingChunks, data)
-				w.pendingBytes += len(data)
-				if w.pendingBytes < threshold {
-					continue
-				}
-				// Buffer threshold reached; create file and flush pending data.
-				if err := w.createFileAndWriter(); err != nil {
-					if w.pendingBytes <= maxPendingBytesBeforeDrop {
-						if w.shouldLogCreateFileFailure() {
-							w.logger.Warnf(
-								"创建文件失败，暂不丢弃待写数据：pending=%dB chunks=%d limit=%dB suppressed=%d err=%v",
-								w.pendingBytes,
-								len(w.pendingChunks),
-								maxPendingBytesBeforeDrop,
-								w.suppressedCreateFailures,
-								err,
-							)
-							w.suppressedCreateFailures = 0
-						} else {
-							w.suppressedCreateFailures++
-						}
-						continue
-					}
-					if w.suppressedCreateFailures > 0 {
-						w.logger.Warnf("创建文件失败日志节流期间累计 suppressed=%d", w.suppressedCreateFailures)
-						w.suppressedCreateFailures = 0
-					}
+func (w *BufferedStreamWriterProcessor) writePeriodicallyWithTimer() {
+	flushTimer := time.NewTimer(w.flushPeriod + w.flushJitter())
+	defer flushTimer.Stop()
+	for {
+		select {
+		case data, ok := <-w.dataCh:
+			if !ok {
+				return
+			}
+			w.handleDataChunk(data)
+		case <-flushTimer.C:
+			w.doPeriodicFlush()
+			flushTimer.Reset(w.flushPeriod)
+		}
+	}
+}
+
+func (w *BufferedStreamWriterProcessor) handleDataChunk(data []byte) {
+	if w.sdcardProtection && w.file.Load() == nil {
+		threshold := w.skipSmallFlushThreshold
+		w.pendingChunks = append(w.pendingChunks, data)
+		w.pendingBytes += len(data)
+		if w.pendingBytes < threshold {
+			return
+		}
+		// Buffer threshold reached; create file and flush pending data.
+		if err := w.createFileAndWriter(); err != nil {
+			if w.pendingBytes <= maxPendingBytesBeforeDrop {
+				if w.shouldLogCreateFileFailure() {
 					w.logger.Warnf(
-						"创建文件失败且待写数据超过硬阈值，丢弃待写数据以防止内存持续增长：dropped=%dB chunks=%d limit=%dB err=%v",
+						"创建文件失败，暂不丢弃待写数据：pending=%dB chunks=%d limit=%dB suppressed=%d err=%v",
 						w.pendingBytes,
 						len(w.pendingChunks),
 						maxPendingBytesBeforeDrop,
+						w.suppressedCreateFailures,
 						err,
 					)
-					w.releasePendingChunks()
-					continue
+					w.suppressedCreateFailures = 0
+				} else {
+					w.suppressedCreateFailures++
 				}
-				// Reset throttling state after file creation recovers.
-				w.lastCreateFileFailureLog = time.Time{}
+				return
+			}
+			if w.suppressedCreateFailures > 0 {
+				w.logger.Warnf("创建文件失败日志节流期间累计 suppressed=%d", w.suppressedCreateFailures)
 				w.suppressedCreateFailures = 0
-				w.writePendingChunksToWriter()
-				continue
 			}
-
-			if w.writer != nil {
-				n, err := w.writer.Write(data)
-				if n != len(data) {
-					w.logger.Warnf("写入数据长度不完整：%d/%d", n, len(data))
-				}
-				if err != nil {
-					w.logger.Warnf("写入数据失败：%v", err)
-				}
-				w.bytesWritten += int64(n)
-				w.bytesPool.Put(data)
-			}
-		case <-flushTimer.C:
-			if w.writer == nil {
-				flushTimer.Reset(w.flushPeriod)
-				continue
-			}
-			flushStart := time.Now()
-			if err := w.writer.Flush(); err != nil {
-				w.logger.Warnf("刷新写入器失败：%v", err)
-			}
-			if flushCost := time.Since(flushStart); flushCost > defaultSlowFlushWarnThreshold {
-				w.logger.Warnf("周期性 flush 较慢：耗时=%s", flushCost)
-			}
-			flushTimer.Reset(w.flushPeriod)
+			w.logger.Warnf(
+				"创建文件失败且待写数据超过硬阈值，丢弃待写数据以防止内存持续增长：dropped=%dB chunks=%d limit=%dB err=%v",
+				w.pendingBytes,
+				len(w.pendingChunks),
+				maxPendingBytesBeforeDrop,
+				err,
+			)
+			w.releasePendingChunks()
+			return
 		}
+		// Reset throttling state after file creation recovers.
+		w.lastCreateFileFailureLog = time.Time{}
+		w.suppressedCreateFailures = 0
+		w.writePendingChunksToWriter()
+		return
+	}
+
+	if w.writer != nil {
+		n, err := w.writer.Write(data)
+		if n != len(data) {
+			w.logger.Warnf("写入数据长度不完整：%d/%d", n, len(data))
+		}
+		if err != nil {
+			w.logger.Warnf("写入数据失败：%v", err)
+		}
+		w.bytesWritten += int64(n)
+		w.syncBufferedBytes()
+		w.bytesPool.Put(data)
+	}
+}
+
+func (w *BufferedStreamWriterProcessor) syncBufferedBytes() {
+	if w.writer == nil {
+		w.bufferedBytes.Store(0)
+		return
+	}
+	w.bufferedBytes.Store(int64(w.writer.Buffered()))
+}
+
+func (w *BufferedStreamWriterProcessor) doPeriodicFlush() {
+	if w.writer == nil {
+		return
+	}
+	if w.writer.Buffered() < w.minPeriodicFlushBytes {
+		return
+	}
+	flushStart := time.Now()
+	if err := w.writer.Flush(); err != nil {
+		w.logger.Warnf("刷新写入器失败：%v", err)
+		return
+	}
+	w.syncBufferedBytes()
+	if flushCost := time.Since(flushStart); flushCost > defaultSlowFlushWarnThreshold {
+		w.logger.Warnf("周期性 flush 较慢：耗时=%s", flushCost)
 	}
 }
 
@@ -464,6 +535,7 @@ func (w *BufferedStreamWriterProcessor) writePendingChunksToWriter() {
 	}
 	w.pendingChunks = w.pendingChunks[:0]
 	w.pendingBytes = 0
+	w.syncBufferedBytes()
 }
 
 func (w *BufferedStreamWriterProcessor) shouldLogCreateFileFailure() bool {
@@ -482,5 +554,15 @@ func (w *BufferedStreamWriterProcessor) shouldLogCreateFileFailure() bool {
 func WithSequentialWrite(enabled bool) BufferedStreamWriterOptions {
 	return func(p *BufferedStreamWriterProcessor) {
 		p.sequentialWrite = enabled
+	}
+}
+
+// WithMinPeriodicFlushBytes sets the minimum buffered bytes required before a
+// coordinated periodic flush runs. Defaults to bufferSize/4 (minimum 64KB).
+func WithMinPeriodicFlushBytes(n int) BufferedStreamWriterOptions {
+	return func(p *BufferedStreamWriterProcessor) {
+		if n > 0 {
+			p.minPeriodicFlushBytes = n
+		}
 	}
 }
