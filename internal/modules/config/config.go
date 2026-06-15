@@ -69,9 +69,11 @@ type Config struct {
 
 	MinDiskSpaceBytes int64
 
-	CloudConvertCheckIntervalSecs                 int
-	CloudConvertMaxConcurrentDownloads            int
-	FFmpegCheckIntervalSecs                       int
+	CloudConvertCheckIntervalSecs                          int
+	CloudConvertMaxConcurrentDownloads                     int
+	CloudConvertAllowDuringRecording                       bool
+	CloudConvertAllowDuringRecordingMaxActiveRecordings    int
+	FFmpegCheckIntervalSecs                                int
 	FFmpegMaxConcurrentTasks                      int
 	FFmpegAllowDuringRecording                    bool
 	FFmpegAllowDuringRecordingMaxActiveRecordings int
@@ -177,8 +179,10 @@ func provider(lc fx.Lifecycle) (*Config, error) {
 		ProductionMode:                     os.Getenv("PRODUCTION_MODE") == "true",
 		SilentAccessLog:                    os.Getenv("SILENT_ACCESS_LOG") == "true",
 		MinDiskSpaceBytes:                  utils.MustAtoi64(utils.EmptyOrElse(os.Getenv("MIN_DISK_SPACE_BYTES"), "5368709120")), // 5GB
-		CloudConvertCheckIntervalSecs:      utils.MustAtoi(utils.EmptyOrElse(os.Getenv("CLOUDCONVERT_CHECK_INTERVAL_SECS"), "180")),
-		CloudConvertMaxConcurrentDownloads: utils.MustAtoi(utils.EmptyOrElse(os.Getenv("CLOUDCONVERT_MAX_CONCURRENT_DOWNLOADS"), "1")),
+		CloudConvertCheckIntervalSecs:               utils.MustAtoi(utils.EmptyOrElse(os.Getenv("CLOUDCONVERT_CHECK_INTERVAL_SECS"), "180")),
+		CloudConvertMaxConcurrentDownloads:          utils.MustAtoi(utils.EmptyOrElse(os.Getenv("CLOUDCONVERT_MAX_CONCURRENT_DOWNLOADS"), "1")),
+		CloudConvertAllowDuringRecording:            os.Getenv("CLOUDCONVERT_ALLOW_DURING_RECORDING") == "true",
+		CloudConvertAllowDuringRecordingMaxActiveRecordings: utils.MustAtoi(utils.EmptyOrElse(os.Getenv("CLOUDCONVERT_ALLOW_DURING_RECORDING_MAX_ACTIVE_RECORDINGS"), "1")), // <1 = no limit; when >=1, cloudconvert during recording runs only if active recordings <= this value
 		FFmpegCheckIntervalSecs:            utils.MustAtoi(utils.EmptyOrElse(os.Getenv("FFMPEG_CHECK_INTERVAL_SECS"), "60")),
 		FFmpegMaxConcurrentTasks:           utils.MustAtoi(utils.EmptyOrElse(os.Getenv("FFMPEG_MAX_CONCURRENT_TASKS"), "1")),
 		FFmpegAllowDuringRecording:         os.Getenv("FFMPEG_ALLOW_DURING_RECORDING") == "true",

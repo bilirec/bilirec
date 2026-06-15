@@ -34,6 +34,7 @@ type Service struct {
 	db             *db.Client
 
 	noConvertIfInvalid bool
+	getActives         GetActiveRecordings
 	wg                 sync.WaitGroup
 }
 
@@ -55,9 +56,16 @@ func NewService(ls fx.Lifecycle, cfg *config.Config, pathSvc *path.Service) *Ser
 				cloudconvert.WithUploadBufferSize(config.ReadOnly.UploadBufferSize()),
 			),
 			pathSvc,
+			svc.activeRecordings,
 		)
 	} else {
 		logger.Info("未提供 CloudConvert API Key，CloudConvert 已禁用")
+	}
+
+	if ffmpeg.Available() {
+		svc.managers["ffmpeg"] = newFFmpegConvertManager(svc.activeRecordings)
+	} else {
+		logger.Warn("ffmpeg 不可用，ffmpeg 转码管理器未初始化")
 	}
 
 	stop := func() error {
@@ -169,13 +177,7 @@ func (s *Service) InProgressSize() int {
 }
 
 func (s *Service) SetActiveRecordingsGetter(getter GetActiveRecordings) {
-	if _, ok := s.managers["ffmpeg"]; ok {
-		return
-	} else if ffmpeg.Available() {
-		s.managers["ffmpeg"] = newFFmpegConvertManager(getter)
-	} else {
-		logger.Warn("ffmpeg 不可用，ffmpeg 转码管理器未初始化")
-	}
+	s.getActives = getter
 }
 
 func (s *Service) shoulduseCloudConvert(fileSize int64) bool {
@@ -197,4 +199,23 @@ func fileSize(path string) *int64 {
 		return nil
 	}
 	return utils.Ptr(info.Size())
+}
+
+func (s *Service) activeRecordings() int {
+	if s.getActives == nil {
+		return 0
+	}
+	return s.getActives()
+}
+
+// allowConvertDuringRecording reports whether convert work may run while
+// recordings are in progress. maxActives < 1 disables the active-recordings cap.
+func allowConvertDuringRecording(actives int, allow bool, maxActives int) bool {
+	if actives <= 0 {
+		return true
+	}
+	if !allow {
+		return false
+	}
+	return maxActives < 1 || actives <= maxActives
 }

@@ -38,6 +38,7 @@ type cloudConvertManager struct {
 	logger     *logrus.Entry
 	client     *cloudconvert.Client
 	serializer *pool.Serializer
+	getActives GetActiveRecordings
 
 	processing   ds.AtomicSet[string]
 	downloadPool *pool.BytesPool
@@ -48,17 +49,35 @@ type cloudConvertManager struct {
 	pathSvc *path.Service
 }
 
-func newCloudConvertManager(client *cloudconvert.Client, pathSvc *path.Service) ConvertManager {
+func newCloudConvertManager(client *cloudconvert.Client, pathSvc *path.Service, getActives GetActiveRecordings) ConvertManager {
 	return &cloudConvertManager{
 		logger:           logger.WithField("manager", "cloudconvert"),
 		client:           client,
 		serializer:       pool.NewSerializer(),
+		getActives:       getActives,
 		processing:       ds.NewSyncedSet[string](),
 		downloadPool:     pool.NewBytesPool(config.ReadOnly.DownloadBufferSize()),
 		concurrent:       semaphore.NewWeighted(int64(config.ReadOnly.CloudConvertMaxConcurrentDownloads())),
 		presignedUrlPool: xsync.NewMap[string, string](),
 		pathSvc:          pathSvc,
 	}
+}
+
+func (c *cloudConvertManager) allowDuringRecording(actives int) bool {
+	return allowConvertDuringRecording(
+		actives,
+		config.ReadOnly.CloudConvertAllowDuringRecording(),
+		config.ReadOnly.CloudConvertAllowDuringRecordingMaxActiveRecordings(),
+	)
+}
+
+func (c *cloudConvertManager) logSkipDuringRecording(actives int) {
+	if !config.ReadOnly.CloudConvertAllowDuringRecording() {
+		c.logger.Debugf("active recordings detected (%d), skipping cloudconvert tasks", actives)
+		return
+	}
+	maxActives := config.ReadOnly.CloudConvertAllowDuringRecordingMaxActiveRecordings()
+	c.logger.Debugf("active recordings detected (%d), require <= %d to run cloudconvert during recording, skipping tasks", actives, maxActives)
 }
 
 func (c *cloudConvertManager) StartWorker(ctx context.Context, wg *sync.WaitGroup, db *db.Client) error {
@@ -76,45 +95,16 @@ func (c *cloudConvertManager) StartWorker(ctx context.Context, wg *sync.WaitGrou
 }
 
 func (c *cloudConvertManager) Enqueue(inputPath, outputPath, format string, deleteSource bool) (*TaskQueue, error) {
-	url, err := c.getOrCreatePresignedURL(inputPath)
+	uuid, err := utils.NewUUIDv4()
 	if err != nil {
 		return nil, err
 	}
 
-	originalFormat := filepath.Ext(inputPath)[1:]
-
-	job, err := c.client.NewJobBuilder().
-		AddTask(cloudconvert.NewImportURLTask(importTaskName, &cloudconvert.ImportURLRequest{
-			URL:      url,
-			Filename: filepath.Base(inputPath),
-		})).
-		AddTask(cloudconvert.NewCommandTask(commandTaskName, &cloudconvert.CommandPayload{
-			Input:         importTaskName,
-			Engine:        "ffmpeg",
-			Command:       "ffmpeg",
-			EngineVersion: "8.0.1",
-			Arguments: fmt.Sprintf(
-				"-i \"/input/%s/%s\" -map 0:v? -map 0:a? -movflags +faststart -c copy \"/output/%s\"",
-				importTaskName,
-				filepath.Base(inputPath),
-				filepath.Base(outputPath),
-			),
-		})).
-		AddTask(cloudconvert.NewExportURLTask(exportTaskName, &cloudconvert.ExportURLRequest{
-			Input: commandTaskName,
-		})).
-		Submit()
-	if err != nil {
-		return nil, err
-	}
-
-	convertTaskID := job.TaskID(commandTaskName)
-	exportTaskID := job.TaskID(exportTaskName)
+	originalFormat := utils.GetPathFormat(inputPath)
 
 	queue := &TaskQueue{
 		Provider:      ProviderCloudConvert,
-		TaskID:        exportTaskID,
-		ConvertTaskID: convertTaskID,
+		TaskID:        uuid,
 		InputPath:     inputPath,
 		InputFileSize: fileSize(inputPath),
 		OutputPath:    outputPath,
@@ -128,8 +118,68 @@ func (c *cloudConvertManager) Enqueue(inputPath, outputPath, format string, dele
 		return nil, err
 	}
 
-	err = c.bucket.Put([]byte(queue.TaskID), data)
+	err = c.bucket.Put([]byte(uuid), data)
 	return queue, err
+}
+
+func (c *cloudConvertManager) submitTask(queue *TaskQueue) error {
+	url, err := c.getOrCreatePresignedURL(queue.InputPath)
+	if err != nil {
+		return err
+	}
+
+	job, err := c.client.NewJobBuilder().
+		AddTask(cloudconvert.NewImportURLTask(importTaskName, &cloudconvert.ImportURLRequest{
+			URL:      url,
+			Filename: filepath.Base(queue.InputPath),
+		})).
+		AddTask(cloudconvert.NewCommandTask(commandTaskName, &cloudconvert.CommandPayload{
+			Input:         importTaskName,
+			Engine:        "ffmpeg",
+			Command:       "ffmpeg",
+			EngineVersion: "8.0.1",
+			Arguments: fmt.Sprintf(
+				"-i \"/input/%s/%s\" -map 0:v? -map 0:a? -movflags +faststart -c copy \"/output/%s\"",
+				importTaskName,
+				filepath.Base(queue.InputPath),
+				filepath.Base(queue.OutputPath),
+			),
+		})).
+		AddTask(cloudconvert.NewExportURLTask(exportTaskName, &cloudconvert.ExportURLRequest{
+			Input: commandTaskName,
+		})).
+		Submit()
+	if err != nil {
+		return err
+	}
+
+	convertTaskID := job.TaskID(commandTaskName)
+	exportTaskID := job.TaskID(exportTaskName)
+	oldID := queue.TaskID
+
+	queue.TaskID = exportTaskID
+	queue.ConvertTaskID = convertTaskID
+
+	data, err := c.serializer.Serialize(queue)
+	if err != nil {
+		return err
+	}
+
+	err = c.bucket.Update(func(bucket *bbolt.Bucket) error {
+		if err := bucket.Delete([]byte(oldID)); err != nil {
+			return err
+		}
+		return bucket.Put([]byte(exportTaskID), data)
+	})
+
+	if err != nil {
+		if cancelErr := c.client.CancelTask(utils.EmptyOrElse(convertTaskID, exportTaskID)); cancelErr != nil {
+			return errors.Join(err, cancelErr)
+		}
+		return err
+	}
+
+	return nil
 }
 
 func (c *cloudConvertManager) Cancel(taskID string) error {
@@ -148,8 +198,10 @@ func (c *cloudConvertManager) Cancel(taskID string) error {
 	}); err != nil {
 		return err
 	}
-	if err := c.client.CancelTask(utils.EmptyOrElse(convertTaskID, taskID)); err != nil {
-		return err
+	if convertTaskID != "" {
+		if err := c.client.CancelTask(utils.EmptyOrElse(convertTaskID, taskID)); err != nil {
+			return err
+		}
 	}
 	return c.bucket.Delete([]byte(taskID))
 }
@@ -184,10 +236,24 @@ func (c *cloudConvertManager) checkTaskStatusPeriodically(ctx context.Context, w
 		select {
 		case <-ticker.C:
 			c.logger.Debugf("checking task queue...")
+			actives := c.getActives()
 			if list, err := c.ListInProgress(); err != nil {
 				c.logger.Errorf("列出进行中的任务失败：%v", err)
 			} else {
 				for _, queue := range list {
+					if queue.ConvertTaskID == "" {
+						if actives > 0 && !c.allowDuringRecording(actives) {
+							c.logSkipDuringRecording(actives)
+							continue
+						}
+						taskLog := c.logger.WithField("task_id", queue.TaskID)
+						taskLog.Infof("正在提交 cloudconvert 任务 input=%s output=%s", queue.InputPath, queue.OutputPath)
+						if err := c.submitTask(queue); err != nil {
+							taskLog.Errorf("提交 cloudconvert 任务失败：%v", err)
+						}
+						continue
+					}
+
 					id := queue.TaskID
 					if c.processing.Add(id) {
 						c.logger.Debugf("task id=%v is being handled, skip status check", id)
@@ -213,6 +279,11 @@ func (c *cloudConvertManager) checkTaskStatusPeriodically(ctx context.Context, w
 
 					switch info.Data.Status {
 					case cloudconvert.TaskStatusFinished:
+						if actives > 0 && !c.allowDuringRecording(actives) {
+							c.logSkipDuringRecording(actives)
+							c.processing.Remove(id)
+							continue
+						}
 						swg.Go(func() {
 							c.asyncOnFinished(ctx, queue, info.Data)
 						})

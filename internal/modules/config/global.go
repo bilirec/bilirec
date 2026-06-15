@@ -13,11 +13,11 @@ const (
 	defaultLiveStreamWriterSyncPeriodSecs                = 0 // Disable periodic sync to reduce SD card wear; data syncs only on Close()
 	defaultLiveStreamWriterFlushPeriodSecs               = 15
 	defaultLiveStreamWriterChanBufferSize                = 64
-	defaultLiveStreamWriterBytesPoolSize      = 512 * 1024 // 512KB per buffer
-	defaultReadStreamBytesPoolSizeHigh       = 1024 * 1024
-	defaultReadStreamChanBufferSizeHigh      = 48
-	defaultLiveStreamWriterBytesPoolSizeHigh = 1024 * 1024
-	defaultSkipSmallFlushThreshold            = 1 * 1024 * 1024
+	defaultLiveStreamWriterBytesPoolSize                 = 512 * 1024 // 512KB per buffer
+	defaultReadStreamBytesPoolSizeHigh                   = 1024 * 1024
+	defaultReadStreamChanBufferSizeHigh                  = 48
+	defaultLiveStreamWriterBytesPoolSizeHigh             = 1024 * 1024
+	defaultSkipSmallFlushThreshold                       = 1 * 1024 * 1024
 )
 
 // for global readonly access
@@ -131,6 +131,17 @@ func (g *GlobalReadOnly) CloudConvertMaxConcurrentDownloads() int {
 	return g.config.CloudConvertMaxConcurrentDownloads
 }
 
+func (g *GlobalReadOnly) CloudConvertAllowDuringRecording() bool {
+	return g.config.CloudConvertAllowDuringRecording
+}
+
+// CloudConvertAllowDuringRecordingMaxActiveRecordings controls when cloudconvert is allowed
+// during active recording, but only when CLOUDCONVERT_ALLOW_DURING_RECORDING=true.
+// Returns <1 when threshold is disabled (no active-recordings limit).
+func (g *GlobalReadOnly) CloudConvertAllowDuringRecordingMaxActiveRecordings() int {
+	return g.config.CloudConvertAllowDuringRecordingMaxActiveRecordings
+}
+
 func (g *GlobalReadOnly) FFmpegCheckIntervalSecs() int {
 	if g.config.FFmpegCheckIntervalSecs <= 0 {
 		return defaultFFmpegCheckIntervalSecs
@@ -167,6 +178,9 @@ func (g *GlobalReadOnly) Validate() error {
 	}
 	if g.config.CloudConvertMaxConcurrentDownloads <= 0 {
 		logger.Warnf("CLOUDCONVERT_MAX_CONCURRENT_DOWNLOADS 无效（%d），使用默认值 %d", g.config.CloudConvertMaxConcurrentDownloads, defaultCloudConvertMaxConcurrentDownloads)
+	}
+	if g.config.CloudConvertAllowDuringRecordingMaxActiveRecordings < 1 {
+		logger.Debugf("CLOUDCONVERT_ALLOW_DURING_RECORDING_MAX_ACTIVE_RECORDINGS is %d, threshold disabled (no active-recordings limit)", g.config.CloudConvertAllowDuringRecordingMaxActiveRecordings)
 	}
 	if g.config.FFmpegCheckIntervalSecs <= 0 {
 		logger.Warnf("FFMPEG_CHECK_INTERVAL_SECS 无效（%d），使用默认值 %d 秒", g.config.FFmpegCheckIntervalSecs, defaultFFmpegCheckIntervalSecs)
