@@ -42,11 +42,17 @@ const (
 	createFileFailureLogInterval = 5 * time.Second
 )
 
+type tryLocker interface {
+	sync.Locker
+	TryLock() bool
+}
+
 // noOpLocker is a dummy locker that does nothing. Used when sequential write is disabled.
 type noOpLocker struct{}
 
-func (n *noOpLocker) Lock()   {}
-func (n *noOpLocker) Unlock() {}
+func (n *noOpLocker) Lock()         {}
+func (n *noOpLocker) Unlock()       {}
+func (n *noOpLocker) TryLock() bool { return true }
 
 type BufferedStreamWriterProcessor struct {
 	file                    atomic.Pointer[os.File]
@@ -60,6 +66,7 @@ type BufferedStreamWriterProcessor struct {
 	sequentialWrite         bool
 	writer                  *rw.FlushLockedBufferedWriter
 	logger                  *logrus.Entry
+	locker                  tryLocker
 
 	dataCh       chan []byte
 	stopCh       chan struct{} // Signal to stop syncWorker (only used if syncPeriod > 0)
@@ -76,10 +83,10 @@ type BufferedStreamWriterProcessor struct {
 	suppressedCreateFailures int
 }
 
-// globalFlushMu is used to serialize flushes across multiple instances when sequentialWrite is enabled.
+// globalMu is used to serialize flushes/syncs across multiple instances when sequentialWrite is enabled.
 // in MicroSD card scenarios, concurrent flushes can cause significant performance degradation,
 // so this global lock ensures that only one flush/write operation happens at a time across all BufferedStreamWriterProcessor instances.
-var globalFlushMu sync.Mutex
+var globalMu sync.Mutex
 
 type BufferedStreamWriterOptions = func(*BufferedStreamWriterProcessor)
 
@@ -101,6 +108,11 @@ func NewBufferedStreamWriter(path string, opts ...BufferedStreamWriterOptions) *
 	if processor.bytesPool == nil {
 		processor.bytesPool = pool.NewBucketedBytesPool(defaultChanBufferSize * 1024)
 	}
+	processor.locker = utils.TernaryFunc(
+		processor.sequentialWrite,
+		func() tryLocker { return &globalMu },
+		func() tryLocker { return &noOpLocker{} },
+	)
 	return pipeline.NewProcessorInfo(
 		"buffered-writer",
 		processor,
@@ -109,12 +121,6 @@ func NewBufferedStreamWriter(path string, opts ...BufferedStreamWriterOptions) *
 }
 
 func (w *BufferedStreamWriterProcessor) Open(ctx context.Context, log *logrus.Entry) error {
-	flushLocker := utils.TernaryFunc(
-		w.sequentialWrite,
-		func() sync.Locker { return &globalFlushMu },
-		func() sync.Locker { return &noOpLocker{} },
-	)
-
 	// File creation is delayed when SD card protection is enabled. We keep
 	// small writes in memory until the total queued bytes reach skipSmallFlushThreshold.
 	if !w.sdcardProtection {
@@ -123,7 +129,7 @@ func (w *BufferedStreamWriterProcessor) Open(ctx context.Context, log *logrus.En
 			return err
 		}
 		w.file.Store(file)
-		w.writer = rw.NewFlushLockedBufferedWriter(file, w.bufferSize, flushLocker)
+		w.writer = rw.NewFlushLockedBufferedWriter(file, w.bufferSize, w.locker)
 	} else {
 		w.pendingChunks = make([][]byte, 0, 16)
 		w.pendingBytes = 0
@@ -200,9 +206,11 @@ func (w *BufferedStreamWriterProcessor) Close() error {
 		if err := w.writer.Flush(); err != nil {
 			w.logger.Warnf("刷新写入器失败：%v", err)
 		} else if file := w.file.Load(); file != nil {
+			w.locker.Lock()
 			if err := file.Sync(); err != nil {
 				w.logger.Warnf("同步文件失败：%v", err)
 			}
+			w.locker.Unlock()
 		}
 	}
 
@@ -331,12 +339,7 @@ func (w *BufferedStreamWriterProcessor) createFileAndWriter() error {
 		return err
 	}
 	w.file.Store(file)
-	flushLocker := utils.TernaryFunc(
-		w.sequentialWrite,
-		func() sync.Locker { return &globalFlushMu },
-		func() sync.Locker { return &noOpLocker{} },
-	)
-	w.writer = rw.NewFlushLockedBufferedWriter(file, w.bufferSize, flushLocker)
+	w.writer = rw.NewFlushLockedBufferedWriter(file, w.bufferSize, w.locker)
 	return nil
 }
 
@@ -358,9 +361,13 @@ func (w *BufferedStreamWriterProcessor) syncWorker() {
 			}
 			// Perform the actual sync to disk (can be slow on SD cards).
 			syncStart := time.Now()
+			if !w.locker.TryLock() {
+				continue
+			}
 			if err := file.Sync(); err != nil {
 				w.logger.Warnf("同步文件失败：%v", err)
 			}
+			w.locker.Unlock()
 			if syncCost := time.Since(syncStart); syncCost > slowSyncWarnThreshold {
 				w.logger.Warnf("周期性 sync 较慢：耗时=%s", syncCost)
 			}
