@@ -33,7 +33,7 @@ jobs:
       - name: Prepare Go and swagger docs
         uses: ./.github/actions/setup-go-swagger
         with:
-          go-version: '1.25'
+          go-version: '1.26.3'
 
       - name: Build Linux
         run: |
@@ -60,7 +60,7 @@ jobs:
       - name: Prepare Go and swagger docs
         uses: ./.github/actions/setup-go-swagger
         with:
-          go-version: '1.25'
+          go-version: '1.26.3'
 
       - name: Build Windows
         run: |
@@ -96,7 +96,7 @@ jobs:
       - name: Prepare Go and swagger docs
         uses: ./.github/actions/setup-go-swagger
         with:
-          go-version: '1.25'
+          go-version: '1.26.3'
 
       - name: Setup Android NDK
         id: setup-ndk

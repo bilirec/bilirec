@@ -1,6 +1,6 @@
 module github.com/bilirec/bilirec
 
-go 1.25.0
+go 1.26.3
 
 require (
 	github.com/CuteReimu/bilibili/v2 v2.5.1
