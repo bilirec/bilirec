@@ -5,16 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bilirec/bilirec/internal/modules/bilibili"
-	"github.com/bilirec/bilirec/internal/modules/config"
-	"github.com/bilirec/bilirec/internal/services/convert"
-	"github.com/bilirec/bilirec/internal/services/notify"
-	"github.com/bilirec/bilirec/internal/services/path"
 	"github.com/bilirec/bilirec/internal/services/recorder"
-	"github.com/bilirec/bilirec/internal/services/room"
-	"github.com/bilirec/bilirec/internal/services/stream"
-	"go.uber.org/fx"
-	"go.uber.org/fx/fxtest"
 )
 
 // TestRecorder_MaxConcurrentRecordingsRace_Guard ensures concurrent starts never
@@ -26,25 +17,8 @@ func TestRecorder_MaxConcurrentRecordingsRace_Guard(t *testing.T) {
 
 	t.Setenv("MAX_CONCURRENT_RECORDINGS", "3")
 
-	var recorderService *recorder.Service
-	var roomService *room.Service
-
-	app := fxtest.New(t,
-		config.Module,
-		bilibili.Module,
-		fx.Provide(path.NewService),
-		fx.Provide(stream.NewService),
-		fx.Provide(room.NewService),
-		fx.Provide(convert.NewService),
-		fx.Provide(notify.NewService),
-		fx.Provide(recorder.NewService),
-		fx.Populate(&recorderService, &roomService),
-	)
-
-	app.RequireStart()
-	defer app.RequireStop()
-
-	rooms := resolveLiveTestRoomIDs(t, roomService, 4)
+	sess := newRecorderTestSession(t)
+	rooms := resolveLiveTestRoomIDs(t, sess.Room, 4)
 	rounds := 20
 	const (
 		settleDelay    = 200 * time.Millisecond
@@ -52,7 +26,12 @@ func TestRecorder_MaxConcurrentRecordingsRace_Guard(t *testing.T) {
 	)
 
 	for round := 1; round <= rounds; round++ {
-		roomService.InvalidateRooms(rooms...)
+		sess.Room.InvalidateRooms(rooms...)
+
+		roundPhase, err := sess.Monitor.beginPhase("concurrent_race_round")
+		if err != nil {
+			t.Fatalf("round %d begin phase: %v", round, err)
+		}
 
 		startGate := make(chan struct{})
 		resultCh := make(chan error, len(rooms))
@@ -62,7 +41,7 @@ func TestRecorder_MaxConcurrentRecordingsRace_Guard(t *testing.T) {
 			rid := roomID
 			wg.Go(func() {
 				<-startGate
-				err := recorderService.Start(rid)
+				err := sess.Recorder.Start(rid)
 				if err == nil {
 					t.Logf("%v 房間錄製啓動開始", rid)
 				} else {
@@ -91,19 +70,23 @@ func TestRecorder_MaxConcurrentRecordingsRace_Guard(t *testing.T) {
 		}
 
 		time.Sleep(settleDelay)
-		active := recorderService.ListRecordingSize()
+		active := sess.Recorder.ListRecordingSize()
+		roundReport := roundPhase.end(t)
+		logCPUPhase(t, roundReport)
+		sess.Monitor.snapshotGoroutines(t, "after_round")
 
 		if active == 4 {
 			t.Fatalf("round %d overflow detected: success=%d active=%d max_limit_err=%d other_err=%d", round, success, active, maxLimitErr, otherErr)
-		} else {
-			t.Logf("round %d: success=%d active=%d max_limit_err=%d other_err=%d", round, success, active, maxLimitErr, otherErr)
 		}
+		t.Logf("round %d: success=%d active=%d max_limit_err=%d other_err=%d", round, success, active, maxLimitErr, otherErr)
 
 		for _, roomID := range rooms {
-			recorderService.Stop(roomID)
+			sess.Recorder.Stop(roomID)
 		}
-		waitUntilNoActiveRecordings(t, recorderService, cleanupTimeout)
+		waitUntilNoActiveRecordings(t, sess.Recorder, cleanupTimeout)
 	}
+
+	sess.Monitor.logAnalysisHints(t)
 }
 
 func waitUntilNoActiveRecordings(t *testing.T, recorderService *recorder.Service, timeout time.Duration) {

@@ -9,16 +9,8 @@ import (
 	"time"
 
 	"github.com/bilirec/bilirec/internal/modules/bilibili"
-	"github.com/bilirec/bilirec/internal/modules/config"
-	"github.com/bilirec/bilirec/internal/services/convert"
-	"github.com/bilirec/bilirec/internal/services/notify"
-	"github.com/bilirec/bilirec/internal/services/path"
 	"github.com/bilirec/bilirec/internal/services/recorder"
-	"github.com/bilirec/bilirec/internal/services/room"
-	"github.com/bilirec/bilirec/internal/services/stream"
 	"github.com/bilirec/bilirec/utils"
-	"go.uber.org/fx"
-	"go.uber.org/fx/fxtest"
 )
 
 type ffprobeAudioOnlyOutput struct {
@@ -29,12 +21,10 @@ func TestAudioOnlyFlvRecord(t *testing.T) {
 	runAudioOnlyRecordForProfile(t, bilibili.ProfileHTTPFLV)
 }
 
-// TS 在 audio only 的情況下依然會錄製到視頻，這貌似是B站的行為，暫時不清楚有什麼好的解決方案，因此改用 WARN
 func TestAudioOnlyTsRecord(t *testing.T) {
 	runAudioOnlyRecordForProfile(t, bilibili.ProfileHLSTS)
 }
 
-// FMP4 在 audio only 的情況下依然會錄製到視頻，這貌似是B站的行為，暫時不清楚有什麼好的解決方案，因此改用 WARN
 func TestAudioOnlyFmp4Record(t *testing.T) {
 	runAudioOnlyRecordForProfile(t, bilibili.ProfileHLSFMP4)
 }
@@ -44,63 +34,48 @@ func runAudioOnlyRecordForProfile(t *testing.T, profile bilibili.StreamProfile) 
 		t.Skip("skipping audio-only recording in short mode")
 	}
 
-	_ = os.Setenv("SKIP_SMALL_FLUSH", "false") // audio only recording may produce small writes, disable skip-small-flush for testing
+	_ = os.Setenv("SKIP_SMALL_FLUSH", "false")
 
 	recordWait := time.Duration(utils.Ternary(os.Getenv("CI") != "", 2, 1)) * time.Minute
 
-	var recorderService *recorder.Service
-	var roomService *room.Service
+	sess := newRecorderTestSession(t)
+	room := resolveLiveTestRoomID(t, sess.Room)
 
-	app := fxtest.New(t,
-		config.Module,
-		bilibili.Module,
-		fx.Provide(path.NewService),
-		fx.Provide(stream.NewService),
-		fx.Provide(room.NewService),
-		fx.Provide(convert.NewService),
-		fx.Provide(notify.NewService),
-		fx.Provide(recorder.NewService),
-		fx.Populate(&recorderService, &roomService),
-	)
-
-	app.RequireStart()
-	defer app.RequireStop()
-
-	room := resolveLiveTestRoomID(t, roomService)
+	baseline := sess.Monitor.snapshotMemory(t, "baseline", true)
 
 	t.Logf("starting audio-only recording with profile %s, will record for %v", profile, recordWait)
-	err := recorderService.Start(room,
+	startPhase, err := sess.Monitor.beginPhase("audio_only_start")
+	if err != nil {
+		t.Fatalf("begin start phase: %v", err)
+	}
+	startErr := sess.Recorder.Start(room,
 		recorder.WithStreamOptions(
 			bilibili.WithProfiles(profile),
 			bilibili.WithOnlyAudio(true),
 		),
 	)
-	if err != nil {
-		switch err {
-		case recorder.ErrStreamNotLive:
-			t.Skip("stream not live")
-		case recorder.ErrEmptyStreamURLs:
-			t.Skip("no stream URLs available")
-		case recorder.ErrStreamURLsUnreachable:
-			t.Skip("stream URLs unreachable")
-		}
-		t.Fatal(err)
-	}
+	startReport := startPhase.end(t)
+	handleRecordingStartErr(t, startErr)
+	logCPUPhase(t, startReport)
 
-	if status := recorderService.GetStatus(room); status != recorder.Recording {
+	if status := sess.Recorder.GetStatus(room); status != recorder.Recording {
 		t.Fatalf("expected status %q immediately after start, got %q", recorder.Recording, status)
 	}
 
-	outputPath := waitForOutputPathAfterStart(t, recorderService, room)
+	outputPath := waitForOutputPathAfterStart(t, sess.Recorder, room)
 
-	<-time.After(recordWait)
+	_ = sess.Monitor.runRecordingProfiledWait(t, "audio_only_recording", recordWait)
+	during := sess.Monitor.snapshotMemory(t, "during_recording", false)
+	logMemoryDelta(t, baseline, during)
 
 	t.Log("stopping recording manually")
-	if stopped := recorderService.Stop(room); !stopped {
+	if stopped := sess.Recorder.Stop(room); !stopped {
 		t.Error("expected recorder stop to return true")
 	}
 
-	<-time.After(5 * time.Second)
+	time.Sleep(recorderTestSettleAfterStop)
+	sess.Monitor.snapshotMemory(t, "after_stop", false)
+	sess.Monitor.logAnalysisHints(t)
 
 	if checkFFmpegAvailable(t) {
 		t.Log("\n📹 Verifying audio-only recording via ffprobe...")
@@ -160,5 +135,4 @@ func verifyAudioOnlyRecording(t *testing.T, filePath string) {
 	} else {
 		t.Log("✓ ffprobe verified audio-only recording")
 	}
-
 }

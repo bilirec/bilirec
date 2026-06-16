@@ -6,230 +6,135 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"runtime"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/bilirec/bilirec/internal/modules/bilibili"
-	"github.com/bilirec/bilirec/internal/modules/config"
-	"github.com/bilirec/bilirec/internal/services/convert"
-	"github.com/bilirec/bilirec/internal/services/notify"
-	"github.com/bilirec/bilirec/internal/services/path"
 	"github.com/bilirec/bilirec/internal/services/recorder"
-	"github.com/bilirec/bilirec/internal/services/room"
-	"github.com/bilirec/bilirec/internal/services/stream"
 	"github.com/bilirec/bilirec/utils"
 	"github.com/sirupsen/logrus"
-	"go.uber.org/fx"
-	"go.uber.org/fx/fxtest"
 )
 
 func TestFlvRecord(t *testing.T) {
-
-	if testing.Short() {
-		t.Skip("skipping TestFlvRecord in short mode")
-	}
-
-	var recorderService *recorder.Service
-	var roomService *room.Service
-
-	app := fxtest.New(t,
-		config.Module,
-		bilibili.Module,
-		fx.Provide(path.NewService),
-		fx.Provide(stream.NewService),
-		fx.Provide(room.NewService),
-		fx.Provide(convert.NewService),
-		fx.Provide(notify.NewService),
-		fx.Provide(recorder.NewService),
-		fx.Populate(&recorderService, &roomService),
-	)
-
-	app.RequireStart()
-	defer app.RequireStop()
-	room := resolveLiveTestRoomID(t, roomService)
-
-	var m1, m2, m3 runtime.MemStats
-	runtime.GC()
-	runtime.ReadMemStats(&m1)
-
-	t.Log("start it manually")
-	err := recorderService.Start(room, recorder.WithStreamOptions(
-		bilibili.WithProfiles(bilibili.ProfileHTTPFLV),
-	))
-	if err != nil {
-		switch err {
-		case recorder.ErrStreamNotLive:
-			t.Skip("Stream not live")
-		case recorder.ErrEmptyStreamURLs:
-			t.Skip("No stream URLs available")
-		case recorder.ErrStreamURLsUnreachable:
-			t.Skip("Stream URLs unreachable")
-		}
-		t.Fatal(err)
-	}
-	outputPath := waitForOutputPathAfterStart(t, recorderService, room)
-
-	<-time.After(time.Duration(utils.Ternary(os.Getenv("CI") != "", 15, 3)) * time.Minute)
-
-	runtime.ReadMemStats(&m2)
-
-	t.Log("stop it manually")
-	t.Logf("stop success: %v", recorderService.Stop(room))
-
-	<-time.After(5 * time.Second)
-	runtime.ReadMemStats(&m3)
-
-	t.Logf("memory before start: %.2f MB", float64(m1.Alloc/1024/1024))
-	t.Logf("memory before stop: %.2f MB", float64(m2.Alloc/1024/1024))
-	t.Logf("memory after stop: %.2f MB", float64(m3.Alloc/1024/1024))
-	t.Logf("growth during recording: %.2f MB", memAllocDiffMB(m2.Alloc, m1.Alloc))
-	t.Logf("growth after stop: %.2f MB", memAllocDiffMB(m3.Alloc, m2.Alloc))
-
-	// Verify recorded file playability
-	if checkFFmpegAvailable(t) {
-		t.Log("\n📹 Verifying FLV recording playability...")
-		verifyRecordingPlayability(t, outputPath, "flv")
-	}
+	runFormatRecordTest(t, bilibili.ProfileHTTPFLV, "flv")
 }
 
 func TestTsRecord(t *testing.T) {
-
-	if testing.Short() {
-		t.Skip("skipping TestTsRecord in short mode")
-	}
-
-	var recorderService *recorder.Service
-	var roomService *room.Service
-
-	app := fxtest.New(t,
-		config.Module,
-		bilibili.Module,
-		fx.Provide(path.NewService),
-		fx.Provide(stream.NewService),
-		fx.Provide(room.NewService),
-		fx.Provide(convert.NewService),
-		fx.Provide(notify.NewService),
-		fx.Provide(recorder.NewService),
-		fx.Populate(&recorderService, &roomService),
-	)
-
-	app.RequireStart()
-	defer app.RequireStop()
-	room := resolveLiveTestRoomID(t, roomService)
-
-	var m1, m2, m3 runtime.MemStats
-	runtime.GC()
-	runtime.ReadMemStats(&m1)
-
-	t.Log("start it manually")
-	err := recorderService.Start(room, recorder.WithStreamOptions(
-		bilibili.WithProfiles(bilibili.ProfileHLSTS),
-	))
-	if err != nil {
-		switch err {
-		case recorder.ErrStreamNotLive:
-			t.Skip("Stream not live")
-		case recorder.ErrEmptyStreamURLs:
-			t.Skip("No stream URLs available")
-		case recorder.ErrStreamURLsUnreachable:
-			t.Skip("Stream URLs unreachable")
-		}
-		t.Fatal(err)
-	}
-	outputPath := waitForOutputPathAfterStart(t, recorderService, room)
-
-	<-time.After(time.Duration(utils.Ternary(os.Getenv("CI") != "", 15, 3)) * time.Minute)
-
-	runtime.ReadMemStats(&m2)
-
-	t.Log("stop it manually")
-	t.Logf("stop success: %v", recorderService.Stop(room))
-
-	<-time.After(5 * time.Second)
-	runtime.ReadMemStats(&m3)
-
-	t.Logf("memory before start: %.2f MB", float64(m1.Alloc/1024/1024))
-	t.Logf("memory before stop: %.2f MB", float64(m2.Alloc/1024/1024))
-	t.Logf("memory after stop: %.2f MB", float64(m3.Alloc/1024/1024))
-	t.Logf("growth during recording: %.2f MB", memAllocDiffMB(m2.Alloc, m1.Alloc))
-	t.Logf("growth after stop: %.2f MB", memAllocDiffMB(m3.Alloc, m2.Alloc))
-
-	// Verify recorded file playability
-	if checkFFmpegAvailable(t) {
-		t.Log("\n📹 Verifying TS recording playability...")
-		verifyRecordingPlayability(t, outputPath, "ts")
-	}
+	runFormatRecordTest(t, bilibili.ProfileHLSTS, "ts")
 }
 
 func TestFmp4Record(t *testing.T) {
+	runFormatRecordTest(t, bilibili.ProfileHLSFMP4, "fmp4")
+}
 
+// TestZZZ_Final_Concurrent3WayRecord is intentionally named with a ZZZ prefix so
+// go test runs it last within this package (lexicographic order), after other
+// recorder integration tests have released pools and goroutines.
+//
+// Run manually:
+//
+//	go test ./internal/services/recorder -run TestZZZ_Final_Concurrent3WayRecord -count=1 -timeout 30m
+//
+// Optional: RECORDER_RECORD_PROFILE_INTERVAL_SECS=60s
+func TestZZZ_Final_Concurrent3WayRecord(t *testing.T) {
 	if testing.Short() {
-		t.Skip("skipping TestFmp4Record in short mode")
+		t.Skip("skipping final concurrent 3-way record test in short mode")
 	}
 
-	var recorderService *recorder.Service
-	var roomService *room.Service
+	t.Setenv("MAX_CONCURRENT_RECORDINGS", "3")
 
-	app := fxtest.New(t,
-		config.Module,
-		bilibili.Module,
-		fx.Provide(path.NewService),
-		fx.Provide(stream.NewService),
-		fx.Provide(room.NewService),
-		fx.Provide(convert.NewService),
-		fx.Provide(notify.NewService),
-		fx.Provide(recorder.NewService),
-		fx.Populate(&recorderService, &roomService),
-	)
+	const wantConcurrent = 3
+	sess := newRecorderTestSession(t)
+	rooms := resolveLiveTestRoomIDs(t, sess.Room, wantConcurrent)
+	if len(rooms) < wantConcurrent {
+		t.Skipf("need %d live rooms, got %d", wantConcurrent, len(rooms))
+	}
+	rooms = rooms[:wantConcurrent]
 
-	app.RequireStart()
-	defer app.RequireStop()
-	room := resolveLiveTestRoomID(t, roomService)
+	startOpts := []recorder.RecordStartOption{
+		recorder.WithStreamOptions(
+			bilibili.WithProfiles(bilibili.ProfileHTTPFLV),
+			bilibili.WithQn(bilibili.QualityOriginal),
+		),
+	}
 
-	var m1, m2, m3 runtime.MemStats
-	runtime.GC()
-	runtime.ReadMemStats(&m1)
+	baseline := sess.Monitor.snapshotMemory(t, "concurrent3_baseline", true)
+	sess.Room.InvalidateRooms(rooms...)
 
-	t.Log("start it manually")
-	err := recorderService.Start(room, recorder.WithStreamOptions(
-		bilibili.WithProfiles(bilibili.ProfileHLSFMP4),
-	))
+	recordDuration := integrationRecordDuration()
+	t.Logf("final concurrent test: rooms=%v record_duration=%s", rooms, recordDuration)
+
+	type startResult struct {
+		room int
+		err  error
+	}
+
+	startPhase, err := sess.Monitor.beginPhase("concurrent3_start_burst")
 	if err != nil {
-		switch err {
-		case recorder.ErrStreamNotLive:
-			t.Skip("Stream not live")
-		case recorder.ErrEmptyStreamURLs:
-			t.Skip("No stream URLs available")
-		case recorder.ErrStreamURLsUnreachable:
-			t.Skip("Stream URLs unreachable")
+		t.Fatalf("begin concurrent start phase: %v", err)
+	}
+
+	startGate := make(chan struct{})
+	resultCh := make(chan startResult, wantConcurrent)
+	var wg sync.WaitGroup
+	for _, roomID := range rooms {
+		rid := roomID
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-startGate
+			err := sess.Recorder.Start(rid, startOpts...)
+			resultCh <- startResult{room: rid, err: err}
+		}()
+	}
+	close(startGate)
+	wg.Wait()
+	close(resultCh)
+
+	startReport := startPhase.end(t)
+	logCPUPhase(t, startReport)
+
+	started := make([]int, 0, wantConcurrent)
+	for r := range resultCh {
+		if r.err == nil {
+			started = append(started, r.room)
+			t.Logf("concurrent start ok: room=%d", r.room)
+			continue
 		}
-		t.Fatal(err)
+		for _, rid := range started {
+			_ = sess.Recorder.Stop(rid)
+		}
+		waitUntilNoActiveRecordings(t, sess.Recorder, 30*time.Second)
+		handleRecordingStartErr(t, r.err)
 	}
-	outputPath := waitForOutputPathAfterStart(t, recorderService, room)
 
-	<-time.After(time.Duration(utils.Ternary(os.Getenv("CI") != "", 15, 3)) * time.Minute)
-
-	runtime.ReadMemStats(&m2)
-
-	t.Log("stop it manually")
-	t.Logf("stop success: %v", recorderService.Stop(room))
-
-	<-time.After(5 * time.Second)
-	runtime.ReadMemStats(&m3)
-
-	t.Logf("memory before start: %.2f MB", float64(m1.Alloc/1024/1024))
-	t.Logf("memory before stop: %.2f MB", float64(m2.Alloc/1024/1024))
-	t.Logf("memory after stop: %.2f MB", float64(m3.Alloc/1024/1024))
-	t.Logf("growth during recording: %.2f MB", memAllocDiffMB(m2.Alloc, m1.Alloc))
-	t.Logf("growth after stop: %.2f MB", memAllocDiffMB(m3.Alloc, m2.Alloc))
-
-	// Verify recorded file playability
-	if checkFFmpegAvailable(t) {
-		t.Log("\n📹 Verifying FMP4 recording playability...")
-		verifyRecordingPlayability(t, outputPath, "fmp4")
+	if len(started) != wantConcurrent {
+		t.Fatalf("expected %d successful starts, got %d", wantConcurrent, len(started))
 	}
+	if active := sess.Recorder.ListRecordingSize(); active != wantConcurrent {
+		t.Fatalf("expected %d active recordings, got %d", wantConcurrent, active)
+	}
+
+	recordReport := sess.Monitor.runRecordingProfiledWait(t, "concurrent3_recording", recordDuration)
+	during := sess.Monitor.snapshotMemory(t, "concurrent3_during", false)
+	sess.Monitor.snapshotGoroutines(t, "concurrent3_during")
+	logCPUPhase(t, recordReport)
+	logMemoryDelta(t, baseline, during)
+
+	t.Log("stopping all concurrent recordings")
+	for _, rid := range started {
+		if !sess.Recorder.Stop(rid) {
+			t.Logf("stop returned false for room=%d", rid)
+		}
+	}
+	waitUntilNoActiveRecordings(t, sess.Recorder, 30*time.Second)
+
+	time.Sleep(recorderTestSettleAfterStop)
+	after := sess.Monitor.snapshotMemory(t, "concurrent3_after_stop", true)
+	sess.Monitor.snapshotGoroutines(t, "concurrent3_after_stop")
+	logMemoryDelta(t, during, after)
+	sess.Monitor.logAnalysisHints(t)
 }
 
 func TestFlvRecord_AutoStopAfterDuration(t *testing.T) {
@@ -239,42 +144,22 @@ func TestFlvRecord_AutoStopAfterDuration(t *testing.T) {
 
 	const recordDuration = 60 * time.Second
 	const pollInterval = 2 * time.Second
-	const tolerance = 20 * time.Second // allow extra time for stop to propagate
+	const tolerance = 20 * time.Second
 
-	var recorderService *recorder.Service
-	var roomService *room.Service
-
-	app := fxtest.New(t,
-		config.Module,
-		bilibili.Module,
-		fx.Provide(path.NewService),
-		fx.Provide(stream.NewService),
-		fx.Provide(room.NewService),
-		fx.Provide(convert.NewService),
-		fx.Provide(notify.NewService),
-		fx.Provide(recorder.NewService),
-		fx.Populate(&recorderService, &roomService),
-	)
-
-	app.RequireStart()
-	defer app.RequireStop()
-	room := resolveLiveTestRoomID(t, roomService)
+	sess := newRecorderTestSession(t)
+	room := resolveLiveTestRoomID(t, sess.Room)
 
 	t.Logf("starting recording with duration limit: %v", recordDuration)
-	err := recorderService.Start(room, recorder.WithDuration(recordDuration))
+	startPhase, err := sess.Monitor.beginPhase("auto_stop_start")
 	if err != nil {
-		switch err {
-		case recorder.ErrStreamNotLive:
-			t.Skip("Stream not live")
-		case recorder.ErrEmptyStreamURLs:
-			t.Skip("No stream URLs available")
-		case recorder.ErrStreamURLsUnreachable:
-			t.Skip("Stream URLs unreachable")
-		}
-		t.Fatal(err)
+		t.Fatalf("begin start phase: %v", err)
 	}
+	startErr := sess.Recorder.Start(room, recorder.WithDuration(recordDuration))
+	startReport := startPhase.end(t)
+	handleRecordingStartErr(t, startErr)
+	logCPUPhase(t, startReport)
 
-	if status := recorderService.GetStatus(room); status != recorder.Recording {
+	if status := sess.Recorder.GetStatus(room); status != recorder.Recording {
 		t.Fatalf("expected status %q immediately after start, got %q", recorder.Recording, status)
 	}
 
@@ -282,21 +167,23 @@ func TestFlvRecord_AutoStopAfterDuration(t *testing.T) {
 	startTime := time.Now()
 	for time.Now().Before(deadline) {
 		<-time.After(pollInterval)
-		status := recorderService.GetStatus(room)
+		status := sess.Recorder.GetStatus(room)
 		t.Logf("elapsed: %v, status: %s", time.Since(startTime).Round(time.Second), status)
 		if status == recorder.Idle {
+			sess.Monitor.snapshotMemory(t, "after_auto_stop", false)
+			sess.Monitor.snapshotGoroutines(t, "after_auto_stop")
+			sess.Monitor.logAnalysisHints(t)
 			t.Logf("recording auto-stopped after ~%v as expected", recordDuration)
 			return
 		}
 	}
 
 	t.Errorf("recording did not auto-stop within %v (duration=%v + tolerance=%v)", recordDuration+tolerance, recordDuration, tolerance)
-	recorderService.Stop(room)
+	sess.Recorder.Stop(room)
 }
 
 func TestChannelRangeReturnedWhileStreaming(t *testing.T) {
 	ch := make(chan int, 10)
-	// give some random elements keep sending to channel
 	send := func() {
 		for i := 0; i < 10; i++ {
 			ch <- i
@@ -305,7 +192,6 @@ func TestChannelRangeReturnedWhileStreaming(t *testing.T) {
 		close(ch)
 	}
 	go send()
-	// range over channel and print elements
 	for v := range ch {
 		t.Logf("received: %d", v)
 		if v == 5 {
@@ -403,16 +289,8 @@ func waitForOutputPathAfterStart(t *testing.T, recorderService *recorder.Service
 	return outputPath
 }
 
-func memAllocDiffMB(after uint64, before uint64) float64 {
-	if after >= before {
-		return float64(after-before) / 1024 / 1024
-	}
-	return -float64(before-after) / 1024 / 1024
-}
-
 // checkFFmpegAvailable checks if ffmpeg and ffprobe are available in the system PATH
 func checkFFmpegAvailable(t *testing.T) bool {
-	// Check for ffprobe
 	_, err := exec.LookPath("ffprobe")
 	if err != nil {
 		t.Logf("⚠️ ffprobe not found in PATH, skipping playability verification: %v", err)
@@ -422,15 +300,12 @@ func checkFFmpegAvailable(t *testing.T) bool {
 	return true
 }
 
-// parseFloatDuration converts a string duration (e.g., "30.123456") to float64
 func parseFloatDuration(durationStr string) (float64, error) {
-	// Simple float parsing to convert duration string to seconds
 	var result float64
 	_, err := fmt.Sscanf(durationStr, "%f", &result)
 	return result, err
 }
 
-// ffprobeStreamInfo represents stream information from ffprobe
 type ffprobeStreamInfo struct {
 	CodecType  string `json:"codec_type"`
 	CodecName  string `json:"codec_name"`
@@ -443,7 +318,6 @@ type ffprobeStreamInfo struct {
 	Channels   int    `json:"channels,omitempty"`
 }
 
-// ffprobeOutput represents the output structure from ffprobe
 type ffprobeOutput struct {
 	Format struct {
 		Duration string `json:"duration"`
@@ -451,17 +325,14 @@ type ffprobeOutput struct {
 	Streams []ffprobeStreamInfo `json:"streams"`
 }
 
-// verifyRecordingPlayability verifies the recorded file's playability using ffprobe
 func verifyRecordingPlayability(t *testing.T, filePath string, expectedFormat string) {
 	if filePath == "" {
 		t.Error("❌ Output file path is empty")
 		return
 	}
 
-	// Wait a moment to ensure file finalization
 	time.Sleep(500 * time.Millisecond)
 
-	// Check file exists and has content
 	fileInfo, err := os.Stat(filePath)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -479,7 +350,6 @@ func verifyRecordingPlayability(t *testing.T, filePath string, expectedFormat st
 
 	t.Logf("✓ Recorded file exists: %s (size: %.2f MB)", filePath, float64(fileInfo.Size())/1024/1024)
 
-	// Use ffprobe to verify file integrity and get stream information
 	cmd := exec.Command("ffprobe",
 		"-v", "error",
 		"-show_format",
@@ -498,7 +368,6 @@ func verifyRecordingPlayability(t *testing.T, filePath string, expectedFormat st
 		return
 	}
 
-	// Parse ffprobe JSON output
 	var probe ffprobeOutput
 	if err := json.Unmarshal(stdout.Bytes(), &probe); err != nil {
 		t.Logf("⚠️ Failed to parse ffprobe JSON: %v, output: %s", err, stdout.String())
@@ -537,7 +406,6 @@ func verifyRecordingPlayability(t *testing.T, filePath string, expectedFormat st
 		t.Log("✓ Audio stream verified - file should be playable")
 	}
 
-	// Format-specific notes
 	switch expectedFormat {
 	case "flv":
 		t.Log("  Note: FLV files may have minor header inconsistencies due to streaming nature, but should be playable without seeking")
