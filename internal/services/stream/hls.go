@@ -4,11 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net"
 	"strings"
 	"time"
 
 	hlsutil "github.com/bilirec/bilirec/pkg/hls"
+	"github.com/bilirec/bilirec/pkg/backoff"
 	"github.com/go-resty/resty/v2"
 	"github.com/sirupsen/logrus"
 )
@@ -28,11 +28,12 @@ var (
 	ErrNoM3u8URL          = errors.New("hls：没有可用的 m3u8 URL")
 	playlistRetryDelay    = 250 * time.Millisecond
 	playlistRetryAttempts = 2
-	segmentRetryDelay     = 500 * time.Millisecond
-	segmentRetryAttempts  = 3
-	manifestSyncWaitRate  = 0.10
-	segmentPrefetchAhead  = 2
-	segmentFetchWorkers   = 4
+	segmentRetryDelay            = 500 * time.Millisecond
+	segmentRetryAttempts         = 3
+	manifestSyncWaitRate         = 0.10
+	segmentPrefetchAhead       = 2
+	segmentFetchWorkers        = 4
+	segmentFailureRefreshEvery = 3
 )
 
 type playlistStatusError struct {
@@ -53,27 +54,6 @@ func isRetryablePlaylistStatusErr(err error) bool {
 		return false
 	}
 	return statusErr.status >= 500 && statusErr.status < 600
-}
-
-func isRetryablePlaylistFetchErr(err error) bool {
-	if err == nil {
-		return false
-	}
-	if errors.Is(err, context.Canceled) {
-		return false
-	}
-
-	var netErr net.Error
-	if errors.As(err, &netErr) {
-		return netErr.Timeout() || netErr.Temporary()
-	}
-
-	errText := strings.ToLower(err.Error())
-	return strings.Contains(errText, "timeout") ||
-		strings.Contains(errText, "connection reset") ||
-		strings.Contains(errText, "broken pipe") ||
-		strings.Contains(errText, "goaway") ||
-		strings.Contains(errText, "eof")
 }
 
 // ReadHlsStream polls an HLS m3u8 playlist and delivers each new segment as a
@@ -145,7 +125,7 @@ func (r *Service) ReadHlsStream(fetchM3u8URL func() (string, error), playlistCli
 			}
 			resp, err := req.Get(m3u8URL)
 			if err != nil {
-				if attempt < playlistRetryAttempts && isRetryablePlaylistFetchErr(err) && !isCanceled(err, ctx) {
+				if attempt < playlistRetryAttempts && hlsutil.IsRetryableFetchErr(err) && !isCanceled(err, ctx) {
 					logger.Warnf("hls：获取 m3u8 失败，正在进行第 %d/%d 次重试：%v", attempt+1, playlistRetryAttempts, err)
 					timer := time.NewTimer(playlistRetryDelay)
 					select {
@@ -260,6 +240,8 @@ func (r *Service) ReadHlsStream(fetchM3u8URL func() (string, error), playlistCli
 		}
 		defer syncWaitTimer.Stop()
 		consecutivePlaylistFailures := 0
+		consecutiveSegmentFailures := 0
+		segmentFailureBackoff := backoff.NewExpotential(2*time.Second, 2, 30*time.Second)
 		prevBaseSeq := mediaSeq
 		lastSyncWaitBaseSeq := int64(-1)
 		traceEnabled := logger.Logger.IsLevelEnabled(logrus.TraceLevel)
@@ -307,6 +289,39 @@ func (r *Service) ReadHlsStream(fetchM3u8URL func() (string, error), playlistCli
 					logger.Infof("hls：在 %d 次失败后拉取/解析播放列表已恢复", consecutivePlaylistFailures)
 				}
 				consecutivePlaylistFailures = 0
+
+				if consecutiveSegmentFailures > 0 {
+					waitFor := segmentFailureBackoff.Next()
+					logger.Debugf("hls: segment failure backoff wait=%v failures=%d", waitFor, consecutiveSegmentFailures)
+					backoffTimer := time.NewTimer(waitFor)
+					select {
+					case <-backoffTimer.C:
+					case <-ctx.Done():
+						backoffTimer.Stop()
+						return
+					}
+
+					if consecutiveSegmentFailures%segmentFailureRefreshEvery == 0 {
+						logger.Warnf("hls：连续 %d 轮分片拉取失败，正在刷新 m3u8 URL", consecutiveSegmentFailures)
+						if refreshErr := refreshM3u8URL("segment failures"); refreshErr != nil {
+							logger.Warnf("hls：刷新 m3u8 URL 失败：%v", refreshErr)
+						} else {
+							refreshedPl, refreshFetchErr := fetchPlaylistWithRefresh()
+							if refreshFetchErr != nil {
+								if errors.Is(refreshFetchErr, ErrNoM3u8URL) {
+									logger.Infof("hls：已无可用 m3u8 URL，直播可能已结束")
+									return
+								}
+								if isCanceled(refreshFetchErr, ctx) || ctx.Err() == context.Canceled {
+									return
+								}
+								logger.Warnf("hls：刷新 m3u8 后拉取播放列表失败：%v", refreshFetchErr)
+							} else {
+								pl = refreshedPl
+							}
+						}
+					}
+				}
 
 				updatedPollInterval := hlsutil.DerivePollInterval(pl)
 				if updatedPollInterval != pollInterval {
@@ -361,8 +376,12 @@ func (r *Service) ReadHlsStream(fetchM3u8URL func() (string, error), playlistCli
 					}
 				}
 				maxSeqInWindow := baseSeq + int64(len(segs)) - 1
+				prefetchAhead := segmentPrefetchAhead
+				if consecutiveSegmentFailures > 0 {
+					prefetchAhead = 0
+				}
 				if nextSeq <= maxSeqInWindow {
-					primeEndSeq := nextSeq + int64(segmentPrefetchAhead)
+					primeEndSeq := nextSeq + int64(prefetchAhead)
 					if primeEndSeq > maxSeqInWindow {
 						primeEndSeq = maxSeqInWindow
 					}
@@ -371,8 +390,9 @@ func (r *Service) ReadHlsStream(fetchM3u8URL func() (string, error), playlistCli
 						prefetcher.Start(seq, segs[idx].URI)
 					}
 				}
-				nextPrefetchSeq := nextSeq + int64(segmentPrefetchAhead) + 1
+				nextPrefetchSeq := nextSeq + int64(prefetchAhead) + 1
 
+				segmentDelivered := false
 				for i, seg := range segs {
 					segSeq := baseSeq + int64(i)
 					if segSeq < nextSeq {
@@ -424,20 +444,27 @@ func (r *Service) ReadHlsStream(fetchM3u8URL func() (string, error), playlistCli
 						if isCanceled(err, ctx) || ctx.Err() == context.Canceled {
 							return
 						}
-						logger.Warnf("hls：拉取分片失败（seq=%d）：%v", segSeq, err)
-						continue
+						consecutiveSegmentFailures++
+						logger.Warnf("hls：拉取分片失败（seq=%d，连续第 %d 轮）：%v", segSeq, consecutiveSegmentFailures, err)
+						break
 					}
 					if traceEnabled {
 						logger.Tracef("hls: segment ready seq=%d bytes=%d wait=%v", segSeq, len(data), time.Since(waitStart))
 					}
 
 					nextSeq = segSeq + 1
+					segmentDelivered = true
 
 					select {
 					case ch <- data:
 					case <-ctx.Done():
 						return
 					}
+				}
+
+				if segmentDelivered {
+					consecutiveSegmentFailures = 0
+					segmentFailureBackoff.Reset()
 				}
 
 				prevBaseSeq = baseSeq

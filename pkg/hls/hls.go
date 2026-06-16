@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"net"
+	"strings"
 	"time"
 
 	"github.com/go-resty/resty/v2"
@@ -153,6 +155,37 @@ func CountPendingSegments(baseSeq int64, segs []Segment, nextSeq int64) int {
 	return pending
 }
 
+// IsRetryableFetchErr reports whether a transient HTTP fetch error should be retried.
+func IsRetryableFetchErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, context.Canceled) {
+		return false
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+
+	var netErr net.Error
+	if errors.As(err, &netErr) {
+		return netErr.Timeout() || netErr.Temporary()
+	}
+
+	errText := strings.ToLower(err.Error())
+	return strings.Contains(errText, "timeout") ||
+		strings.Contains(errText, "deadline exceeded") ||
+		strings.Contains(errText, "connection reset") ||
+		strings.Contains(errText, "broken pipe") ||
+		strings.Contains(errText, "goaway") ||
+		strings.Contains(errText, "eof")
+}
+
+// IsRetryableSegmentFetchErr is an alias kept for call-site clarity.
+func IsRetryableSegmentFetchErr(err error) bool {
+	return IsRetryableFetchErr(err)
+}
+
 // IsRetryableSegmentStatus reports whether a segment HTTP status should be retried.
 func IsRetryableSegmentStatus(status int) bool {
 	switch status {
@@ -174,6 +207,16 @@ func FetchSegmentWithRetry(ctx context.Context, client *resty.Client, segmentURL
 		if err != nil {
 			if errors.Is(err, context.Canceled) || ctx.Err() == context.Canceled {
 				return nil, err
+			}
+			if attempt < attempts && IsRetryableFetchErr(err) {
+				timer := time.NewTimer(delay)
+				select {
+				case <-timer.C:
+				case <-ctx.Done():
+					timer.Stop()
+					return nil, ctx.Err()
+				}
+				continue
 			}
 			return nil, fmt.Errorf("拉取分片失败：%w", err)
 		}
