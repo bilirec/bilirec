@@ -8,7 +8,10 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-var ErrNotFlvFile = flv.ErrNotFlvFile
+var (
+	ErrNotFlvFile  = flv.ErrNotFlvFile
+	ErrInvalidTag  = flv.ErrInvalidTag
+)
 
 type FlvStreamFixerProcessor struct {
 	fixer *flv.RealtimeFixer

@@ -114,6 +114,82 @@ func TestRealtimeFixer_MidStream_NoHeaderInInput(t *testing.T) {
 	}
 }
 
+func TestRealtimeFixer_InvalidTagType_Aborts(t *testing.T) {
+	fixer := flv.NewRealtimeFixer()
+	defer fixer.Close()
+
+	if _, err := fixer.Fix(flv.FlvHeader); err != nil {
+		t.Fatalf("unexpected header error: %v", err)
+	}
+
+	badTag := flv.NewTagBytes(0xFF, []byte{1, 2, 3})
+	in := tagWithLeadingPrevSize(badTag)
+	_, err := fixer.Fix(in)
+	if !errors.Is(err, flv.ErrInvalidTag) {
+		t.Fatalf("expected ErrInvalidTag, got %v", err)
+	}
+}
+
+func TestRealtimeFixer_OversizedTagData_Aborts(t *testing.T) {
+	fixer := flv.NewRealtimeFixer(flv.WithMaxTagDataSize(4))
+	defer fixer.Close()
+
+	if _, err := fixer.Fix(flv.FlvHeader); err != nil {
+		t.Fatalf("unexpected header error: %v", err)
+	}
+
+	largeTag := flv.NewTagBytes(flv.TagTypeAudio, []byte{1, 2, 3, 4, 5})
+	in := tagWithLeadingPrevSize(largeTag)
+	_, err := fixer.Fix(in)
+	if !errors.Is(err, flv.ErrInvalidTag) {
+		t.Fatalf("expected ErrInvalidTag for oversized tag body, got %v", err)
+	}
+}
+
+func TestRealtimeFixer_AcceptsScriptTag(t *testing.T) {
+	fixer := flv.NewRealtimeFixer()
+	defer fixer.Close()
+
+	if _, err := fixer.Fix(flv.FlvHeader); err != nil {
+		t.Fatalf("unexpected header error: %v", err)
+	}
+
+	scriptTag := flv.NewTagBytes(flv.TagTypeScript, []byte{0x02, 0x00, 0x07, 'o', 'n', 'M', 'e', 't', 'a'})
+	in := tagWithLeadingPrevSize(scriptTag)
+	out, err := fixer.Fix(in)
+	if err != nil {
+		t.Fatalf("script tag should be accepted, got %v", err)
+	}
+	if len(out) == 0 {
+		t.Fatal("expected output for script tag")
+	}
+}
+
+func TestRealtimeFixer_WaitsForPartialTagBeforeValidation(t *testing.T) {
+	fixer := flv.NewRealtimeFixer()
+	defer fixer.Close()
+
+	if _, err := fixer.Fix(flv.FlvHeader); err != nil {
+		t.Fatalf("unexpected header error: %v", err)
+	}
+
+	partial := make([]byte, flv.PrevTagSizeBytes+10)
+	partial[4] = 0xFF
+	out, err := fixer.Fix(partial)
+	if err != nil {
+		t.Fatalf("partial tag should wait without error, got %v", err)
+	}
+	if len(out) != 0 {
+		t.Fatalf("expected no output while waiting for complete tag, got %d bytes", len(out))
+	}
+}
+
+func tagWithLeadingPrevSize(tag []byte) []byte {
+	in := make([]byte, 0, flv.PrevTagSizeBytes+len(tag))
+	in = append(in, 0, 0, 0, 0)
+	return append(in, tag...)
+}
+
 func TestRealtimeFixer_ClampsNegativeTimestampAfterReset(t *testing.T) {
 	fixer := flv.NewRealtimeFixer()
 	defer fixer.Close()

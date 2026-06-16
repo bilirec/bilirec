@@ -14,6 +14,7 @@ const (
 	defaultLiveStreamWriterFlushPeriodSecs               = 15
 	defaultLiveStreamWriterChanBufferSize                = 64
 	defaultLiveStreamWriterBytesPoolSize                 = 512 * 1024 // 512KB per buffer
+	defaultReadStreamBytesPoolSize                       = 512 * 1024
 	defaultReadStreamBytesPoolSizeHigh                   = 1024 * 1024
 	defaultReadStreamChanBufferSizeHigh                  = 48
 	defaultLiveStreamWriterBytesPoolSizeHigh             = 1024 * 1024
@@ -69,6 +70,13 @@ func (g *GlobalReadOnly) LiveStreamWriterBytesPoolSize() int {
 	return g.config.liveStreamWriterBytesPoolSize
 }
 
+func (g *GlobalReadOnly) ReadStreamBytesPoolSize() int {
+	if g.config.ReadStreamBytesPoolSize <= 0 {
+		return defaultReadStreamBytesPoolSize
+	}
+	return g.config.ReadStreamBytesPoolSize
+}
+
 func (g *GlobalReadOnly) ReadStreamBytesPoolSizeHigh() int {
 	if g.config.readStreamBytesPoolSizeHigh <= 0 {
 		return defaultReadStreamBytesPoolSizeHigh
@@ -88,10 +96,6 @@ func (g *GlobalReadOnly) LiveStreamWriterBytesPoolSizeHigh() int {
 		return defaultLiveStreamWriterBytesPoolSizeHigh
 	}
 	return g.config.liveStreamWriterBytesPoolSizeHigh
-}
-
-func IsHighQualityQn(qn int) bool {
-	return qn >= 20000
 }
 
 func (g *GlobalReadOnly) SkipSmallFlushThreshold() int {

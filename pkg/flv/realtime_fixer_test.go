@@ -433,6 +433,31 @@ func TestRealtimeFixer_TagPoolLeak(t *testing.T) {
 	}
 }
 
+func BenchmarkRealtimeFixer_Fix_1MBChunk(b *testing.B) {
+	fixer := flv.NewRealtimeFixer(
+		flv.WithBufferSizes(1024*1024, 1024*1024),
+		flv.WithMaxTagDataSize(4*1024*1024),
+	)
+	defer fixer.Close()
+
+	chunk := generateFLVChunk(1024 * 1024)
+	if _, err := fixer.Fix(flv.FlvHeader); err != nil {
+		b.Fatalf("flv header: %v", err)
+	}
+
+	var sink []byte
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		out, err := fixer.Fix(chunk)
+		if err != nil {
+			b.Fatalf("fix chunk: %v", err)
+		}
+		sink = out
+	}
+	_ = sink
+}
+
 // ✅ Helper to write heap profile
 func writeHeapProfile(t *testing.T, filename string) {
 	f, err := os.Create(filename)
@@ -489,12 +514,7 @@ func generateFLVChunk(size int) []byte {
 		}
 	}
 
-	// Fill remaining with random data
-	if offset < size {
-		rand.Read(chunk[offset:])
-	}
-
-	return chunk
+	return chunk[:offset]
 }
 
 func average(values []float64) float64 {

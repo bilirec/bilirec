@@ -27,8 +27,12 @@ type FlvStrategy struct {
 
 func NewFlvStrategy(qn int) *FlvStrategy {
 	writerPool, releaseWriterPool := acquireWriterPool(qn)
+	readBufSize := config.ReadStreamBytesPoolSizeForQn(qn)
 	return &FlvStrategy{
-		sharedFixer:       flv.NewRealtimeFixer(),
+		sharedFixer: flv.NewRealtimeFixer(
+			flv.WithBufferSizes(readBufSize, readBufSize),
+			flv.WithMaxTagDataSize(config.ReadStreamMaxTagDataSizeForQn(qn)),
+		),
 		writerPool:        writerPool,
 		releaseWriterPool: releaseWriterPool,
 	}
@@ -76,7 +80,7 @@ func (s *FlvStrategy) HandleErr(err error) ErrHandleResult {
 		return ErrHandleResult{Action: ErrActionRotate, State: state}
 	}
 
-	if errors.Is(err, processors.ErrNotFlvFile) {
+	if errors.Is(err, processors.ErrNotFlvFile) || errors.Is(err, processors.ErrInvalidTag) {
 		return ErrHandleResult{Action: ErrActionAbort, AbortDelay: 5 * time.Second}
 	}
 

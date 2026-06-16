@@ -41,6 +41,9 @@ const (
 	dedupCacheHighWaterDen = 5
 	// dedupCacheHighWaterEvictDenom: after time-based clean, FIFO-evict 1/N oldest if still high.
 	dedupCacheHighWaterEvictDenom = 10
+
+	// MaxTagDataSizeMultiplier scales read-buffer size into the largest allowed FLV tag body.
+	MaxTagDataSizeMultiplier = 4
 )
 
 var (
@@ -52,8 +55,6 @@ var (
 
 	// Dedicated pool for AccumulateFixer batch processing.
 	accumulateBufferPool = pool.NewBufferPool(DefaultBufferSize, MaxBufferSize)
-	// Dedicated pool for RealtimeFixer to isolate frequent live-room start/stop churn.
-	realtimeBufferPool = pool.NewBufferPool(DefaultBufferSize, MaxBufferSize)
 	// Dedicated pool for HeaderChangeDetector to isolate parser scratch usage.
 	headerDetectorBufferPool = pool.NewBufferPool(DefaultBufferSize, MaxBufferSize)
 
@@ -89,6 +90,28 @@ func (t *Tag) Reset() {
 	t.Data = nil
 	t.IsHeader = false
 	t.IsKeyframe = false
+}
+
+// IsValidTagType reports whether tagType is a known FLV live-stream tag.
+func IsValidTagType(tagType byte) bool {
+	switch tagType {
+	case TagTypeAudio, TagTypeVideo, TagTypeScript:
+		return true
+	default:
+		return false
+	}
+}
+
+// validateCompleteTagHeader checks a fully-received tag header before consumption.
+// Call only when PrevTagSize + TagHeader + dataSize bytes are present in the buffer.
+func validateCompleteTagHeader(tagType byte, dataSize uint32, maxTagDataSize int) error {
+	if !IsValidTagType(tagType) {
+		return ErrInvalidTag
+	}
+	if maxTagDataSize > 0 && int(dataSize) > maxTagDataSize {
+		return ErrInvalidTag
+	}
+	return nil
 }
 
 // TimestampStore tracks timestamp fixing state (session-based)
