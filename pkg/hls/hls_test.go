@@ -98,3 +98,81 @@ func TestFetchSegmentWithRetry_TimeoutThenSuccess(t *testing.T) {
 		t.Fatalf("unexpected attempt count: got=%d want=2", got)
 	}
 }
+
+func TestFetchSegmentWithRetry_LargeSegmentWithContentLength(t *testing.T) {
+	const segmentSize = 1024 * 1024
+	payload := make([]byte, segmentSize)
+	for i := range payload {
+		payload[i] = byte(i % 251)
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Length", fmt.Sprintf("%d", segmentSize))
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(payload)
+	}))
+	defer server.Close()
+
+	client := resty.New()
+	ctx := t.Context()
+
+	data, err := FetchSegmentWithRetry(ctx, client, server.URL, 1, 0)
+	if err != nil {
+		t.Fatalf("FetchSegmentWithRetry returned error: %v", err)
+	}
+	if len(data) != segmentSize {
+		t.Fatalf("unexpected data length: got=%d want=%d", len(data), segmentSize)
+	}
+	if data[0] != payload[0] || data[segmentSize-1] != payload[segmentSize-1] {
+		t.Fatal("segment payload mismatch at boundaries")
+	}
+}
+
+func TestFetchSegmentWithRetry_ChunkedWithoutContentLength(t *testing.T) {
+	payload := []byte("chunked-segment-payload")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Del("Content-Length")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(payload)
+	}))
+	defer server.Close()
+
+	client := resty.New()
+	ctx := t.Context()
+
+	data, err := FetchSegmentWithRetry(ctx, client, server.URL, 1, 0)
+	if err != nil {
+		t.Fatalf("FetchSegmentWithRetry returned error: %v", err)
+	}
+	if string(data) != string(payload) {
+		t.Fatalf("unexpected data: %q", string(data))
+	}
+}
+
+func TestFetchSegmentWithRetry_StatusRetryThenSuccess(t *testing.T) {
+	var attempts int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		n := atomic.AddInt32(&attempts, 1)
+		if n < 3 {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("segment-after-retry"))
+	}))
+	defer server.Close()
+
+	client := resty.New()
+	ctx := t.Context()
+
+	data, err := FetchSegmentWithRetry(ctx, client, server.URL, 3, 10*time.Millisecond)
+	if err != nil {
+		t.Fatalf("FetchSegmentWithRetry returned error: %v", err)
+	}
+	if string(data) != "segment-after-retry" {
+		t.Fatalf("unexpected data: %q", string(data))
+	}
+	if got := atomic.LoadInt32(&attempts); got != 3 {
+		t.Fatalf("unexpected attempt count: got=%d want=3", got)
+	}
+}

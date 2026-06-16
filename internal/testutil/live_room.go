@@ -18,7 +18,7 @@ const (
 	broadcastsEndpoint     = "https://workers.vrp.moe/laplace/ranking?type=danmakus"
 	envLiveRoomID          = "BILIBILI_TEST_ROOM_ID"
 	envLiveRoomIDs         = "BILIBILI_TEST_ROOM_IDS"
-	broadcastsFetchTimeout = 10 * time.Second
+	broadcastsFetchTimeout = 90 * time.Second
 )
 
 type broadcastEntry struct {

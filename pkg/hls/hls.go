@@ -5,13 +5,26 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"math"
 	"net"
 	"strings"
 	"time"
 
+	"github.com/bilirec/bilirec/pkg/pool"
 	"github.com/go-resty/resty/v2"
 	m3u8 "github.com/grafov/m3u8"
+)
+
+const (
+	segmentScratchSize    = 32 * 1024
+	segmentBodyInitialCap = 256 * 1024
+	segmentBodyMaxCap     = 4 * 1024 * 1024
+)
+
+var (
+	segmentBodyPool    = pool.NewBufferPool(segmentBodyInitialCap, segmentBodyMaxCap)
+	segmentScratchPool = pool.NewBytesPool(segmentScratchSize)
 )
 
 // Parse decodes a media playlist body.
@@ -196,6 +209,56 @@ func IsRetryableSegmentStatus(status int) bool {
 	}
 }
 
+func closeSegmentResponseBody(resp *resty.Response) {
+	if resp == nil {
+		return
+	}
+	body := resp.RawBody()
+	if body == nil {
+		return
+	}
+	_, _ = io.Copy(io.Discard, body)
+	_ = body.Close()
+}
+
+func readSegmentBody(resp *resty.Response) ([]byte, error) {
+	body := resp.RawBody()
+	if body == nil {
+		return nil, fmt.Errorf("拉取分片失败：响应体为空")
+	}
+	defer body.Close()
+
+	buf := segmentBodyPool.Get()
+	defer segmentBodyPool.Put(buf)
+	buf.Reset()
+
+	if resp.RawResponse != nil && resp.RawResponse.ContentLength > 0 {
+		buf.Grow(int(resp.RawResponse.ContentLength))
+	}
+
+	scratch := segmentScratchPool.GetBytes()
+	defer segmentScratchPool.PutBytes(scratch)
+
+	if _, err := io.CopyBuffer(buf, body, scratch); err != nil {
+		return nil, fmt.Errorf("读取分片失败：%w", err)
+	}
+
+	out := make([]byte, buf.Len())
+	copy(out, buf.Bytes())
+	return out, nil
+}
+
+func waitBeforeSegmentRetry(ctx context.Context, delay time.Duration) error {
+	timer := time.NewTimer(delay)
+	select {
+	case <-timer.C:
+		return nil
+	case <-ctx.Done():
+		timer.Stop()
+		return ctx.Err()
+	}
+}
+
 // FetchSegmentWithRetry fetches a segment with a fixed short retry policy.
 func FetchSegmentWithRetry(ctx context.Context, client *resty.Client, segmentURL string, attempts int, delay time.Duration) ([]byte, error) {
 	if attempts <= 0 {
@@ -203,36 +266,49 @@ func FetchSegmentWithRetry(ctx context.Context, client *resty.Client, segmentURL
 	}
 
 	for attempt := 1; attempt <= attempts; attempt++ {
-		resp, err := client.R().SetContext(ctx).Get(segmentURL)
+		resp, err := client.R().
+			SetContext(ctx).
+			SetDoNotParseResponse(true).
+			Get(segmentURL)
 		if err != nil {
 			if errors.Is(err, context.Canceled) || ctx.Err() == context.Canceled {
 				return nil, err
 			}
 			if attempt < attempts && IsRetryableFetchErr(err) {
-				timer := time.NewTimer(delay)
-				select {
-				case <-timer.C:
-				case <-ctx.Done():
-					timer.Stop()
-					return nil, ctx.Err()
+				if waitErr := waitBeforeSegmentRetry(ctx, delay); waitErr != nil {
+					return nil, waitErr
 				}
 				continue
 			}
 			return nil, fmt.Errorf("拉取分片失败：%w", err)
 		}
+
 		if resp.StatusCode() == 200 {
-			return resp.Body(), nil
-		}
-		if !IsRetryableSegmentStatus(resp.StatusCode()) || attempt == attempts {
-			return nil, fmt.Errorf("分片状态码 %d", resp.StatusCode())
+			data, readErr := readSegmentBody(resp)
+			if readErr == nil {
+				return data, nil
+			}
+			if errors.Is(readErr, context.Canceled) || ctx.Err() == context.Canceled {
+				return nil, readErr
+			}
+			if attempt < attempts && IsRetryableFetchErr(readErr) {
+				if waitErr := waitBeforeSegmentRetry(ctx, delay); waitErr != nil {
+					return nil, waitErr
+				}
+				continue
+			}
+			return nil, readErr
 		}
 
-		timer := time.NewTimer(delay)
-		select {
-		case <-timer.C:
-		case <-ctx.Done():
-			timer.Stop()
-			return nil, ctx.Err()
+		status := resp.StatusCode()
+		closeSegmentResponseBody(resp)
+
+		if !IsRetryableSegmentStatus(status) || attempt == attempts {
+			return nil, fmt.Errorf("分片状态码 %d", status)
+		}
+
+		if waitErr := waitBeforeSegmentRetry(ctx, delay); waitErr != nil {
+			return nil, waitErr
 		}
 	}
 
