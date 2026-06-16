@@ -392,7 +392,8 @@ func handleRecordingStartErr(t *testing.T, err error) {
 
 func recorderTestProfileDir(t *testing.T) string {
 	t.Helper()
-	if dir := os.Getenv(recorderTestProfileDirEnv); dir != "" {
+	if base := os.Getenv(recorderTestProfileDirEnv); base != "" {
+		dir := filepath.Join(base, sanitizeProfileLabel(t.Name()))
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			t.Fatalf("create profile dir %q: %v", dir, err)
 		}
