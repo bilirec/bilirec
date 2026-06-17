@@ -96,10 +96,11 @@ func (s *Service) performCleanup() {
 
 	var m runtime.MemStats
 	runtime.ReadMemStats(&m)
-	logger.Debugf("Before cleanup: Alloc=%d MB, Sys=%d MB, NumGC=%d",
+	logger.Infof("清理前: Alloc=%d MB, Sys=%d MB, NumGC=%d",
 		m.Alloc/1024/1024, m.Sys/1024/1024, m.NumGC)
 
 	runtime.GC()
+	runtime.GC() // 再执行一次GC，确保所有对象都被回收
 	debug.FreeOSMemory()
 
 	runtime.ReadMemStats(&m)
