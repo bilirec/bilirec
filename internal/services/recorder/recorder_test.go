@@ -28,13 +28,14 @@ func TestFmp4Record(t *testing.T) {
 	runFormatRecordTest(t, bilibili.ProfileHLSFMP4, "fmp4")
 }
 
-// TestZZZ_Final_Concurrent3WayRecord is intentionally named with a ZZZ prefix so
-// go test runs it last within this package (lexicographic order), after other
-// recorder integration tests have released pools and goroutines.
-//
-// Run manually:
+// TestZZZ_Final_Concurrent3WayRecord exercises three concurrent FLV recordings in an
+// isolated go test process so heap/cpu pprof are not polluted by other integration
+// tests. CI runs it in a separate workflow step; locally, run it alone:
 //
 //	go test ./internal/services/recorder -run TestZZZ_Final_Concurrent3WayRecord -count=1 -timeout 30m
+//
+// The ZZZ prefix keeps lexicographic order last when the full recorder package is
+// run in one invocation (e.g. go test ./internal/services/recorder without -run).
 //
 // Optional: RECORDER_RECORD_PROFILE_INTERVAL_SECS=60s
 func TestZZZ_Final_Concurrent3WayRecord(t *testing.T) {
