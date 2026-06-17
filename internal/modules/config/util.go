@@ -14,9 +14,3 @@ func ReadStreamBytesPoolSizeForQn(qn int) int {
 	}
 	return ReadOnly.ReadStreamBytesPoolSize()
 }
-
-// ReadStreamMaxTagDataSizeForQn returns the largest allowed FLV tag body for the
-// given quality tier (read-buffer size * 4).
-func ReadStreamMaxTagDataSizeForQn(qn int) int {
-	return ReadStreamBytesPoolSizeForQn(qn) * 4
-}

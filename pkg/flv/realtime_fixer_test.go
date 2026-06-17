@@ -437,7 +437,6 @@ func TestRealtimeFixer_TagPoolLeak(t *testing.T) {
 func BenchmarkRealtimeFixer_Fix_1MBChunk(b *testing.B) {
 	fixer := flv.NewRealtimeFixer(
 		flv.WithBufferSizes(1024*1024, 1024*1024),
-		flv.WithMaxTagDataSize(4*1024*1024),
 	)
 	defer fixer.Close()
 
@@ -495,7 +494,6 @@ func TestRealtimeFixer_SharedPoolReleasesAfterClose(t *testing.T) {
 		fixer := flv.NewRealtimeFixer(
 			flv.WithBufferPool(sharedPool),
 			flv.WithBufferSizes(chunkSize, chunkSize),
-			flv.WithMaxTagDataSize(chunkSize*4),
 		)
 		if _, err := fixer.Fix(header); err != nil {
 			t.Fatalf("session %d header: %v", session, err)

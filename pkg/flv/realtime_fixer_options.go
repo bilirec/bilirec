@@ -9,14 +9,12 @@ type realtimeFixerConfig struct {
 	bufferPool        *pool.BufferPool
 	initialBufferSize int
 	maxBufferSize     int
-	maxTagDataSize    int
 }
 
 func defaultRealtimeFixerConfig() realtimeFixerConfig {
 	return realtimeFixerConfig{
 		initialBufferSize: DefaultBufferSize,
 		maxBufferSize:     MaxBufferSize,
-		maxTagDataSize:    0,
 	}
 }
 
@@ -40,9 +38,6 @@ func normalizeRealtimeFixerConfig(cfg realtimeFixerConfig) realtimeFixerConfig {
 	}
 	if cfg.initialBufferSize > cfg.maxBufferSize {
 		cfg.initialBufferSize = cfg.maxBufferSize
-	}
-	if cfg.maxTagDataSize <= 0 {
-		cfg.maxTagDataSize = cfg.maxBufferSize * MaxTagDataSizeMultiplier
 	}
 	return cfg
 }
@@ -78,12 +73,3 @@ func WithBufferSizes(initial, max int) RealtimeFixerOption {
 	}
 }
 
-// WithMaxTagDataSize sets the largest allowed FLV tag body (bytes). When unset,
-// defaults to maxBufferSize * MaxTagDataSizeMultiplier.
-func WithMaxTagDataSize(size int) RealtimeFixerOption {
-	return func(c *realtimeFixerConfig) {
-		if size > 0 {
-			c.maxTagDataSize = size
-		}
-	}
-}

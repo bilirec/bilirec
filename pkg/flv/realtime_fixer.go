@@ -18,7 +18,6 @@ type RealtimeFixer struct {
 	bufferPool        *pool.BufferPool
 	ownBufferPool     bool
 	maxBufferSize     int
-	maxTagDataSize    int
 	outputBuf         bytes.Buffer // reused across Fix calls (scheme B)
 	sourceHeaderOK    bool
 	isRotationSegment bool // set by ResetTimestampStore; rotation segments have no FLV file header
@@ -50,7 +49,6 @@ func NewRealtimeFixer(opts ...RealtimeFixerOption) *RealtimeFixer {
 		bufferPool:     bufPool,
 		ownBufferPool:  ownPool,
 		maxBufferSize:  cfg.maxBufferSize,
-		maxTagDataSize: cfg.maxTagDataSize,
 		sourceHeaderOK: false,
 		dedupCache:     NewDedupCache(MaxDedupCacheSize, DedupWindowMs),
 		dupCount:       0,
@@ -133,10 +131,6 @@ func (rf *RealtimeFixer) Fix(input []byte) ([]byte, error) {
 			break
 		}
 
-		if err := validateCompleteTagHeader(tagType, dataSize, rf.maxTagDataSize); err != nil {
-			return nil, err
-		}
-
 		payloadStart := PrevTagSizeBytes + TagHeaderSize
 		payloadEnd := payloadStart + int(dataSize)
 		// WARNING: tagData aliases rf.buffer's underlying bytes; keep usage synchronous.
@@ -197,7 +191,7 @@ func (rf *RealtimeFixer) Fix(input []byte) ([]byte, error) {
 		}
 	}
 
-	if parsedTags == 0 && rf.buffer.Len() > rf.maxBufferSize {
+	if parsedTags == 0 && !isWaitingForPartialTag(rf.buffer.Bytes()) && rf.buffer.Len() > rf.maxBufferSize {
 		rf.trimParseBufferToTail(rf.maxBufferSize)
 	}
 

@@ -114,35 +114,29 @@ func TestRealtimeFixer_MidStream_NoHeaderInInput(t *testing.T) {
 	}
 }
 
-func TestRealtimeFixer_InvalidTagType_Aborts(t *testing.T) {
-	fixer := flv.NewRealtimeFixer()
+func TestRealtimeFixer_LargePartialTag_NotTrimmed(t *testing.T) {
+	const chunkSize = 512 * 1024
+	const payloadSize = 600 * 1024
+
+	fixer := flv.NewRealtimeFixer(flv.WithBufferSizes(chunkSize, chunkSize))
 	defer fixer.Close()
 
 	if _, err := fixer.Fix(flv.FlvHeader); err != nil {
 		t.Fatalf("unexpected header error: %v", err)
 	}
 
-	badTag := flv.NewTagBytes(0xFF, []byte{1, 2, 3})
-	in := tagWithLeadingPrevSize(badTag)
-	_, err := fixer.Fix(in)
-	if !errors.Is(err, flv.ErrInvalidTag) {
-		t.Fatalf("expected ErrInvalidTag, got %v", err)
-	}
-}
-
-func TestRealtimeFixer_OversizedTagData_Aborts(t *testing.T) {
-	fixer := flv.NewRealtimeFixer(flv.WithMaxTagDataSize(4))
-	defer fixer.Close()
-
-	if _, err := fixer.Fix(flv.FlvHeader); err != nil {
-		t.Fatalf("unexpected header error: %v", err)
+	largeTag := flv.NewTagBytes(flv.TagTypeVideo, make([]byte, payloadSize))
+	firstChunk := tagWithLeadingPrevSize(largeTag[:chunkSize])
+	if _, err := fixer.Fix(firstChunk); err != nil {
+		t.Fatalf("first partial chunk should wait, got %v", err)
 	}
 
-	largeTag := flv.NewTagBytes(flv.TagTypeAudio, []byte{1, 2, 3, 4, 5})
-	in := tagWithLeadingPrevSize(largeTag)
-	_, err := fixer.Fix(in)
-	if !errors.Is(err, flv.ErrInvalidTag) {
-		t.Fatalf("expected ErrInvalidTag for oversized tag body, got %v", err)
+	out, err := fixer.Fix(largeTag[chunkSize:])
+	if err != nil {
+		t.Fatalf("second chunk should complete large tag, got %v", err)
+	}
+	if len(out) == 0 {
+		t.Fatal("expected output for completed large tag")
 	}
 }
 
@@ -165,7 +159,7 @@ func TestRealtimeFixer_AcceptsScriptTag(t *testing.T) {
 	}
 }
 
-func TestRealtimeFixer_WaitsForPartialTagBeforeValidation(t *testing.T) {
+func TestRealtimeFixer_WaitsForPartialTag(t *testing.T) {
 	fixer := flv.NewRealtimeFixer()
 	defer fixer.Close()
 

@@ -41,16 +41,12 @@ const (
 	dedupCacheHighWaterDen = 5
 	// dedupCacheHighWaterEvictDenom: after time-based clean, FIFO-evict 1/N oldest if still high.
 	dedupCacheHighWaterEvictDenom = 10
-
-	// MaxTagDataSizeMultiplier scales read-buffer size into the largest allowed FLV tag body.
-	MaxTagDataSizeMultiplier = 4
 )
 
 var (
 	FlvHeader = []byte{'F', 'L', 'V', 0x01, 0x05, 0x00, 0x00, 0x00, 0x09}
 
 	ErrNotFlvFile      = errors.New("不是有效的 FLV 文件")
-	ErrInvalidTag      = errors.New("无效的 FLV 标签")
 	ErrBufferCorrupted = errors.New("检测到缓冲区损坏")
 
 	// Dedicated pool for AccumulateFixer batch processing.
@@ -92,26 +88,17 @@ func (t *Tag) Reset() {
 	t.IsKeyframe = false
 }
 
-// IsValidTagType reports whether tagType is a known FLV live-stream tag.
-func IsValidTagType(tagType byte) bool {
-	switch tagType {
-	case TagTypeAudio, TagTypeVideo, TagTypeScript:
-		return true
-	default:
+// isWaitingForPartialTag reports whether available bytes begin a tag whose body
+// has not fully arrived yet.
+func isWaitingForPartialTag(available []byte) bool {
+	if len(available) < PrevTagSizeBytes+TagHeaderSize {
 		return false
 	}
-}
-
-// validateCompleteTagHeader checks a fully-received tag header before consumption.
-// Call only when PrevTagSize + TagHeader + dataSize bytes are present in the buffer.
-func validateCompleteTagHeader(tagType byte, dataSize uint32, maxTagDataSize int) error {
-	if !IsValidTagType(tagType) {
-		return ErrInvalidTag
-	}
-	if maxTagDataSize > 0 && int(dataSize) > maxTagDataSize {
-		return ErrInvalidTag
-	}
-	return nil
+	dataSize := uint32(available[PrevTagSizeBytes+1])<<16 |
+		uint32(available[PrevTagSizeBytes+2])<<8 |
+		uint32(available[PrevTagSizeBytes+3])
+	total := PrevTagSizeBytes + TagHeaderSize + int(dataSize)
+	return len(available) < total
 }
 
 // TimestampStore tracks timestamp fixing state (session-based)

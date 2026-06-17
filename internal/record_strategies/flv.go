@@ -34,7 +34,6 @@ func NewFlvStrategy(qn int) *FlvStrategy {
 		sharedFixer: flv.NewRealtimeFixer(
 			flv.WithBufferPool(parsePool),
 			flv.WithBufferSizes(readBufSize, readBufSize),
-			flv.WithMaxTagDataSize(config.ReadStreamMaxTagDataSizeForQn(qn)),
 		),
 		writerPool:             writerPool,
 		releaseWriterPool:      releaseWriterPool,
@@ -84,7 +83,7 @@ func (s *FlvStrategy) HandleErr(err error) ErrHandleResult {
 		return ErrHandleResult{Action: ErrActionRotate, State: state}
 	}
 
-	if errors.Is(err, processors.ErrNotFlvFile) || errors.Is(err, processors.ErrInvalidTag) {
+	if errors.Is(err, processors.ErrNotFlvFile) {
 		return ErrHandleResult{Action: ErrActionAbort, AbortDelay: 5 * time.Second}
 	}
 

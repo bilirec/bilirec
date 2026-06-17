@@ -9,8 +9,7 @@ import (
 )
 
 var (
-	ErrNotFlvFile  = flv.ErrNotFlvFile
-	ErrInvalidTag  = flv.ErrInvalidTag
+	ErrNotFlvFile = flv.ErrNotFlvFile
 )
 
 type FlvStreamFixerProcessor struct {
