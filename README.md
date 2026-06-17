@@ -264,6 +264,8 @@ Android 模式下会先注入一组移动端默认值（如 `HOST=127.0.0.1`、`
 | `FFMPEG_MAX_CONCURRENT_TASKS` | 本地 FFmpeg 最大并发转换任务数 | `1` |
 | `FFMPEG_ALLOW_DURING_RECORDING` | 是否允许在录制进行中时执行 FFmpeg 转换任务 | `false` |
 | `FFMPEG_ALLOW_DURING_RECORDING_MAX_ACTIVE_RECORDINGS` | 仅当活跃录制数 `<=` 此值时，才允许在录制中执行 FFmpeg；`<1` 表示不设门槛（仍可通过 `FFMPEG_ALLOW_DURING_RECORDING` 控制） | `1` |
+| `SUBCHECK_CHECK_INTERVAL_SECS` | 订阅房间自动录制检查的完整轮询周期（秒）；K 个分片在该周期内轮流触发，用于摊平 CPU 峰值 | `60` |
+| `SUBCHECK_SHARD_COUNT` | 订阅检查分片数（K）；房间按 `roomID % K` 分配，约每 `SUBCHECK_CHECK_INTERVAL_SECS / K` 秒处理一个分片。订阅房间较多时可增大以降低单次 tick 的 CPU 峰值 | `6` |
 | `UPLOAD_BUFFER_SIZE` | 上传时或向外部服务（如 CloudConvert）传输文件使用的缓冲区大小（字节） | `5242880` (5 MB) |
 | `DOWNLOAD_BUFFER_SIZE` | 文件下载 / 导出时使用的缓冲区大小（字节） | `5242880` (5 MB) |
 | `STREAM_WRITER_BUFFER_SIZE` | 流写入器（写入文件）缓冲区大小（字节） | `1048576` (1 MB) |
@@ -393,6 +395,8 @@ export FFMPEG_CHECK_INTERVAL_SECS=60
 export FFMPEG_MAX_CONCURRENT_TASKS=1
 export FFMPEG_ALLOW_DURING_RECORDING=false
 export FFMPEG_ALLOW_DURING_RECORDING_MAX_ACTIVE_RECORDINGS=1
+export SUBCHECK_CHECK_INTERVAL_SECS=60
+export SUBCHECK_SHARD_COUNT=6
 export PUBLIC_BASE_URL=http://localhost:8080
 export FRONTEND_URL=http://localhost:8080
 export WEBPUSH_SUBSCRIBER=mailto:webpush@example.com

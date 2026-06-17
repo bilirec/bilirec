@@ -77,6 +77,8 @@ type Config struct {
 	FFmpegMaxConcurrentTasks                      int
 	FFmpegAllowDuringRecording                    bool
 	FFmpegAllowDuringRecordingMaxActiveRecordings int
+	SubcheckCheckIntervalSecs                     int
+	SubcheckShardCount                            int
 
 	// configurable performances
 	ReadStreamBytesPoolSize      int
@@ -187,6 +189,8 @@ func provider(lc fx.Lifecycle) (*Config, error) {
 		FFmpegMaxConcurrentTasks:           utils.MustAtoi(utils.EmptyOrElse(os.Getenv("FFMPEG_MAX_CONCURRENT_TASKS"), "1")),
 		FFmpegAllowDuringRecording:         os.Getenv("FFMPEG_ALLOW_DURING_RECORDING") == "true",
 		FFmpegAllowDuringRecordingMaxActiveRecordings: utils.MustAtoi(ffmpegAllowDuringRecordingMaxActives), // <1 = no limit; when >=1, ffmpeg during recording runs only if active recordings <= this value
+		SubcheckCheckIntervalSecs:          utils.MustAtoi(utils.EmptyOrElse(os.Getenv("SUBCHECK_CHECK_INTERVAL_SECS"), "60")),
+		SubcheckShardCount:                 utils.MustAtoi(utils.EmptyOrElse(os.Getenv("SUBCHECK_SHARD_COUNT"), "6")),
 
 		// stream performance configs
 		ReadStreamBytesPoolSize:     utils.MustAtoi(utils.EmptyOrElse(os.Getenv("READ_STREAM_BYTES_POOL_SIZE"), "524288")),       // default 512KB

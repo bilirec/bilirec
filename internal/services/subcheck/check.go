@@ -15,6 +15,7 @@ import (
 	"github.com/bilirec/bilirec/internal/services/recorder"
 	"github.com/bilirec/bilirec/internal/services/room"
 	"github.com/bilirec/bilirec/internal/services/subscribe"
+	"github.com/bilirec/bilirec/pkg/coordinator"
 	"github.com/bilirec/bilirec/pkg/db"
 	"github.com/bilirec/bilirec/pkg/fp"
 	"github.com/puzpuzpuz/xsync/v4"
@@ -26,6 +27,7 @@ var logger = logrus.WithField("service", "subcheck")
 
 const (
 	checkInterval         = 1 * time.Minute
+	defaultShardCount     = 6
 	sessionKeysBucketName = "SubCheck_LiveStates"
 )
 
@@ -36,6 +38,9 @@ type Service struct {
 	notifySvc   *notify.Service
 	bucket      *db.Bucket
 	sessionKeys *xsync.Map[int, string]
+	coordinator *coordinator.RoundRobin
+	shardCount  int
+	shardStops  []func()
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -90,6 +95,19 @@ func (s *Service) start(cfg *config.Config) error {
 		return err
 	}
 
+	interval := time.Duration(cfg.SubcheckCheckIntervalSecs) * time.Second
+	if interval <= 0 {
+		interval = checkInterval
+	}
+	shardCount := cfg.SubcheckShardCount
+	if shardCount <= 0 {
+		shardCount = defaultShardCount
+	}
+	s.shardCount = shardCount
+	s.coordinator = coordinator.NewRoundRobin(interval)
+	// Keep one shard tick responsive when shard count is large.
+	s.coordinator.SetMinTick(time.Second)
+
 	s.wg.Add(1)
 	go s.loop()
 	return nil
@@ -103,13 +121,31 @@ func (s *Service) stop() error {
 
 func (s *Service) loop() {
 	defer s.wg.Done()
-	ticker := time.NewTicker(checkInterval)
-	defer ticker.Stop()
+
+	// Run one full check cycle at startup so behavior matches previous implementation.
 	s.tryStartAllAutoRecordRooms()
+
+	s.shardStops = make([]func(), 0, s.shardCount)
+	for shard := 0; shard < s.shardCount; shard++ {
+		ch, unregister := s.coordinator.Register(nil)
+		s.shardStops = append(s.shardStops, unregister)
+		s.wg.Add(1)
+		go s.shardLoop(shard, ch)
+	}
+
+	<-s.ctx.Done()
+	for _, stop := range s.shardStops {
+		stop()
+	}
+	s.shardStops = nil
+}
+
+func (s *Service) shardLoop(shard int, ch <-chan struct{}) {
+	defer s.wg.Done()
 	for {
 		select {
-		case <-ticker.C:
-			s.tryStartAllAutoRecordRooms()
+		case <-ch:
+			s.tryStartShardAutoRecordRooms(shard, s.shardCount)
 		case <-s.ctx.Done():
 			return
 		}
@@ -117,6 +153,14 @@ func (s *Service) loop() {
 }
 
 func (s *Service) tryStartAllAutoRecordRooms() {
+	s.tryStartShardAutoRecordRooms(0, 1)
+}
+
+func (s *Service) tryStartShardAutoRecordRooms(shardIndex, shardCount int) {
+	if shardCount <= 0 {
+		shardCount = 1
+	}
+
 	rooms, err := s.subSvc.ListSubscribedRoomsWithConfig()
 	if err != nil {
 		logger.Warnf("列出房间订阅失败：%v", err)
@@ -126,12 +170,19 @@ func (s *Service) tryStartAllAutoRecordRooms() {
 	liveCheckRooms := fp.FilterByValue(rooms, func(cfg *subscribe.RoomConfig) bool {
 		return cfg != nil && (cfg.Notify || cfg.AutoRecord)
 	})
+	if shardCount > 1 {
+		liveCheckRooms = fp.FilterByKey(liveCheckRooms, func(roomID int) bool {
+			return roomID%shardCount == shardIndex
+		})
+	}
 
 	liveCheckRoomIDs := slices.Collect(maps.Keys(liveCheckRooms))
-	s.roomSvc.InvalidateRooms(liveCheckRoomIDs...)
 	notifyRoomInfos := s.getNotifyRoomInfos(liveCheckRoomIDs)
 
-	s.invalidateStaleRooms(rooms)
+	// Stale room cleanup only needs one shard per cycle.
+	if shardIndex == 0 {
+		s.invalidateStaleRooms(rooms)
+	}
 
 	for roomID, cfg := range liveCheckRooms {
 		info, ok := notifyRoomInfos[roomID]
@@ -221,16 +272,18 @@ func (s *Service) getNotifyRoomInfos(liveCheckRoomIDs []int) map[int]*bilibili.L
 	notifyRoomInfos := make(map[int]*bilibili.LiveRoomInfoDetail)
 
 	if len(liveCheckRoomIDs) > 0 {
-		infos, err := s.roomSvc.GetMultipleRoomInfos(liveCheckRoomIDs...)
+		infos, err := s.roomSvc.RefreshRoomInfos(liveCheckRoomIDs...)
 		if err != nil {
-			logger.Warnf("批量获取房间信息失败：%v，回退到逐房间检查", err)
+			logger.Warnf("强制刷新房间信息失败：%v，回退到逐房间检查", err)
 			for _, roomID := range liveCheckRoomIDs {
-				info, checkErr := s.roomSvc.GetLiveRoomInfo(roomID)
+				one, checkErr := s.roomSvc.RefreshRoomInfos(roomID)
 				if checkErr != nil {
 					logger.Warnf("获取房间 %d 信息失败：%v", roomID, checkErr)
 					continue
 				}
-				notifyRoomInfos[roomID] = info
+				if info, ok := one[strconv.Itoa(roomID)]; ok {
+					notifyRoomInfos[roomID] = info
+				}
 			}
 		} else {
 			for _, roomID := range liveCheckRoomIDs {

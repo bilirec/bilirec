@@ -16,6 +16,11 @@ dist
 *.exe
 *.log
 *.so
+*.pprof
+*.json
+*.jsonl
+*.yaml
+*.db
 
 .vscode/
 

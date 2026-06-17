@@ -37,6 +37,28 @@ func (r *Service) InvalidateRooms(roomIDs ...int) {
 	}
 }
 
+// RefreshRoomInfos force-refreshes the specified room infos from upstream
+// and updates cache in-place without invalidating entries first.
+func (r *Service) RefreshRoomInfos(roomIDs ...int) (map[string]*bilibili.LiveRoomInfoDetail, error) {
+	infos := make(map[string]*bilibili.LiveRoomInfoDetail, len(roomIDs))
+	if len(roomIDs) == 0 {
+		return infos, nil
+	}
+
+	if err := r.fetchAndStoreRoomInfos(roomIDs); err != nil {
+		return nil, err
+	}
+
+	for _, id := range roomIDs {
+		idStr := strconv.Itoa(id)
+		info, ok, _ := r.cache.Get(idStr)
+		if ok && info != roomtNotFoundMarker {
+			infos[idStr] = info
+		}
+	}
+	return infos, nil
+}
+
 func (r *Service) IsRoomLive(roomID int) (bool, error) {
 	info, err := r.GetLiveRoomInfo(roomID)
 	if err != nil {
