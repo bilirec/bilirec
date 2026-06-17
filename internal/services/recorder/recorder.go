@@ -444,7 +444,7 @@ func (r *Service) rotate(roomId int, ch <-chan []byte, strategy rs.StreamRecordS
 			handle := strategy.HandleErr(err)
 			switch handle.Action {
 			case rs.ErrActionRotate:
-				l.Debugf("收到策略要求轮转文件的信号，开始分割录制文件: %v", err)
+				l.Infof("收到策略要求轮转文件的信号，开始分割录制文件: %v", err)
 				if handle.State == nil {
 					state = &rs.RotationState{Data: map[string][]byte{}}
 				} else {
@@ -453,7 +453,7 @@ func (r *Service) rotate(roomId int, ch <-chan []byte, strategy rs.StreamRecordS
 				segment++
 				continue
 			case rs.ErrActionAbort:
-				l.Debugf("收到录制停止信号：%v", err)
+				l.Infof("收到录制停止信号：%v", err)
 				if handle.AbortDelay > 0 {
 					timer := time.NewTimer(handle.AbortDelay)
 					select {
