@@ -1,9 +1,12 @@
 package flv
 
+import "github.com/bilirec/bilirec/pkg/pool"
+
 // RealtimeFixerOption configures buffer sizes for a RealtimeFixer instance.
 type RealtimeFixerOption func(*realtimeFixerConfig)
 
 type realtimeFixerConfig struct {
+	bufferPool        *pool.BufferPool
 	initialBufferSize int
 	maxBufferSize     int
 	maxTagDataSize    int
@@ -50,6 +53,15 @@ func normalizeRealtimeFixerBufferSizes(initial, max int) realtimeFixerConfig {
 		initialBufferSize: initial,
 		maxBufferSize:     max,
 	})
+}
+
+// WithBufferPool reuses a shared parse-buffer pool instead of creating a per-fixer pool.
+func WithBufferPool(bp *pool.BufferPool) RealtimeFixerOption {
+	return func(c *realtimeFixerConfig) {
+		if bp != nil {
+			c.bufferPool = bp
+		}
+	}
 }
 
 // WithBufferSizes sets the parse-buffer pool initial and max capacity.

@@ -59,10 +59,22 @@ type StreamRecordStrategy interface {
 var (
 	writerPoolOnce sync.Once
 	writerPools    *pool.LazyDualPool[*pool.BucketedBytesPool]
+
+	parsePoolOnce sync.Once
+	parsePools    *pool.LazyDualPool[*pool.BufferPool]
 )
 
 func newWriterPool(size int) *pool.BucketedBytesPool {
 	return pool.NewBucketedBytesPool(size)
+}
+
+func newParseBufferPool(size int) *pool.BufferPool {
+	return pool.NewBufferPool(
+		size,
+		size,
+		pool.WithBoundedMode(true),
+		pool.WithBoundedCapacity(2),
+	)
 }
 
 func getWriterPools() *pool.LazyDualPool[*pool.BucketedBytesPool] {
@@ -76,6 +88,21 @@ func getWriterPools() *pool.LazyDualPool[*pool.BucketedBytesPool] {
 	return writerPools
 }
 
+func getParseBufferPools() *pool.LazyDualPool[*pool.BufferPool] {
+	parsePoolOnce.Do(func() {
+		parsePools = pool.NewLazyDualPool(
+			15*time.Minute,
+			func() *pool.BufferPool { return newParseBufferPool(config.ReadOnly.ReadStreamBytesPoolSize()) },
+			func() *pool.BufferPool { return newParseBufferPool(config.ReadOnly.ReadStreamBytesPoolSizeHigh()) },
+		)
+	})
+	return parsePools
+}
+
 func acquireWriterPool(qn int) (*pool.BucketedBytesPool, func()) {
 	return getWriterPools().Acquire(config.IsHighQualityQn(qn))
+}
+
+func acquireParseBufferPool(qn int) (*pool.BufferPool, func()) {
+	return getParseBufferPools().Acquire(config.IsHighQualityQn(qn))
 }

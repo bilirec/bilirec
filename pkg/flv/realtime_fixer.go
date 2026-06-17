@@ -16,6 +16,7 @@ type RealtimeFixer struct {
 	tsStore           *TimestampStore
 	buffer            *bytes.Buffer
 	bufferPool        *pool.BufferPool
+	ownBufferPool     bool
 	maxBufferSize     int
 	maxTagDataSize    int
 	outputBuf         bytes.Buffer // reused across Fix calls (scheme B)
@@ -30,11 +31,24 @@ type RealtimeFixer struct {
 
 func NewRealtimeFixer(opts ...RealtimeFixerOption) *RealtimeFixer {
 	cfg := applyRealtimeFixerOptions(opts...)
-	bufPool := pool.NewBufferPool(cfg.initialBufferSize, cfg.maxBufferSize)
+	var bufPool *pool.BufferPool
+	ownPool := false
+	if cfg.bufferPool != nil {
+		bufPool = cfg.bufferPool
+	} else {
+		bufPool = pool.NewBufferPool(
+			cfg.initialBufferSize,
+			cfg.maxBufferSize,
+			pool.WithBoundedMode(true),
+			pool.WithBoundedCapacity(2),
+		)
+		ownPool = true
+	}
 	return &RealtimeFixer{
 		tsStore:        &TimestampStore{FirstChunk: true},
 		buffer:         bufPool.Get(),
 		bufferPool:     bufPool,
+		ownBufferPool:  ownPool,
 		maxBufferSize:  cfg.maxBufferSize,
 		maxTagDataSize: cfg.maxTagDataSize,
 		sourceHeaderOK: false,
@@ -57,11 +71,15 @@ func (rf *RealtimeFixer) GetDedupStats() (duplicates int64, cacheSize int, cache
 	return rf.dupCount, size, capacity
 }
 
-// prepareOutput resets the persistent output buffer and pre-grows capacity (scheme C).
-func (rf *RealtimeFixer) prepareOutput(minCap int) {
+// prepareOutput resets the persistent output buffer for the next Fix call.
+func (rf *RealtimeFixer) prepareOutput() {
 	rf.outputBuf.Reset()
-	if minCap > 0 && rf.outputBuf.Cap() < minCap {
-		rf.outputBuf.Grow(minCap - rf.outputBuf.Cap())
+}
+
+// shrinkOutputBuffer releases an oversized output buffer after a large chunk is processed.
+func (rf *RealtimeFixer) shrinkOutputBuffer() {
+	if rf.outputBuf.Cap() > rf.maxBufferSize {
+		rf.outputBuf = bytes.Buffer{}
 	}
 }
 
@@ -76,7 +94,7 @@ func (rf *RealtimeFixer) Fix(input []byte) ([]byte, error) {
 	rf.buffer.Write(input)
 	parsedTags := 0
 
-	rf.prepareOutput(len(input))
+	rf.prepareOutput()
 	output := &rf.outputBuf
 
 	// Consume the FLV file header once.
@@ -209,11 +227,13 @@ func (rf *RealtimeFixer) Fix(input []byte) ([]byte, error) {
 	}
 
 	if output.Len() == 0 {
+		rf.shrinkOutputBuffer()
 		return nil, nil
 	}
 
 	result := make([]byte, output.Len())
 	copy(result, output.Bytes())
+	rf.shrinkOutputBuffer()
 
 	return result, nil
 }
@@ -248,15 +268,15 @@ func (rf *RealtimeFixer) Close() {
 	defer rf.mu.Unlock()
 
 	if rf.buffer != nil {
-		rf.buffer.Reset()
-		if rf.bufferPool != nil {
-			rf.bufferPool.Put(rf.buffer)
-		}
+		buf := rf.buffer
 		rf.buffer = nil
+		if rf.bufferPool != nil && buf.Cap() <= rf.maxBufferSize {
+			buf.Reset()
+			rf.bufferPool.Put(buf)
+		}
 	}
 
-	rf.outputBuf.Reset()
-	rf.outputBuf = bytes.Buffer{} // release large output capacity on close
+	rf.outputBuf = bytes.Buffer{}
 
 	if rf.dedupCache != nil {
 		rf.dedupCache.Reset()
@@ -264,6 +284,10 @@ func (rf *RealtimeFixer) Close() {
 
 	if rf.tsStore != nil {
 		rf.tsStore.Reset()
+	}
+
+	if rf.ownBufferPool {
+		rf.bufferPool = nil
 	}
 	rf.sourceHeaderOK = false
 }

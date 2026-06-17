@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/bilirec/bilirec/pkg/flv"
+	"github.com/bilirec/bilirec/pkg/pool"
 	"github.com/bilirec/bilirec/utils"
 )
 
@@ -470,6 +471,52 @@ func writeHeapProfile(t *testing.T, filename string) {
 	runtime.GC() // Force GC before taking snapshot
 	if err := pprof.WriteHeapProfile(f); err != nil {
 		t.Logf("⚠️  Could not write heap profile %s: %v", filename, err)
+	}
+}
+
+func TestRealtimeFixer_SharedPoolReleasesAfterClose(t *testing.T) {
+	const chunkSize = 512 * 1024
+	sharedPool := pool.NewBufferPool(
+		chunkSize,
+		chunkSize,
+		pool.WithBoundedMode(true),
+		pool.WithBoundedCapacity(2),
+	)
+
+	var m1, m2 runtime.MemStats
+	runtime.GC()
+	time.Sleep(100 * time.Millisecond)
+	runtime.ReadMemStats(&m1)
+
+	header := []byte{'F', 'L', 'V', 0x01, 0x05, 0x00, 0x00, 0x00, 0x09}
+	chunk := generateFLVChunk(chunkSize)
+
+	for session := 0; session < 3; session++ {
+		fixer := flv.NewRealtimeFixer(
+			flv.WithBufferPool(sharedPool),
+			flv.WithBufferSizes(chunkSize, chunkSize),
+			flv.WithMaxTagDataSize(chunkSize*4),
+		)
+		if _, err := fixer.Fix(header); err != nil {
+			t.Fatalf("session %d header: %v", session, err)
+		}
+		for i := 0; i < 200; i++ {
+			if _, err := fixer.Fix(chunk); err != nil {
+				t.Fatalf("session %d chunk %d: %v", session, i, err)
+			}
+		}
+		fixer.Close()
+	}
+
+	runtime.GC()
+	runtime.GC()
+	time.Sleep(300 * time.Millisecond)
+	runtime.ReadMemStats(&m2)
+
+	growthMB := float64(int64(m2.Alloc)-int64(m1.Alloc)) / (1024 * 1024)
+	t.Logf("shared pool 3-session growth: %.2f MB", growthMB)
+	if growthMB > 8.0 {
+		t.Errorf("shared pool retained %.2f MB after 3 sessions (threshold 8 MB)", growthMB)
 	}
 }
 

@@ -20,21 +20,25 @@ const (
 // FlvStrategy handles HTTP-FLV byte streams.
 // It is a zero-invasion extraction of the logic previously inlined in rotate().
 type FlvStrategy struct {
-	sharedFixer       *flv.RealtimeFixer
-	writerPool        *pool.BucketedBytesPool
-	releaseWriterPool func()
+	sharedFixer            *flv.RealtimeFixer
+	writerPool             *pool.BucketedBytesPool
+	releaseWriterPool      func()
+	releaseParseBufferPool func()
 }
 
 func NewFlvStrategy(qn int) *FlvStrategy {
 	writerPool, releaseWriterPool := acquireWriterPool(qn)
+	parsePool, releaseParsePool := acquireParseBufferPool(qn)
 	readBufSize := config.ReadStreamBytesPoolSizeForQn(qn)
 	return &FlvStrategy{
 		sharedFixer: flv.NewRealtimeFixer(
+			flv.WithBufferPool(parsePool),
 			flv.WithBufferSizes(readBufSize, readBufSize),
 			flv.WithMaxTagDataSize(config.ReadStreamMaxTagDataSizeForQn(qn)),
 		),
-		writerPool:        writerPool,
-		releaseWriterPool: releaseWriterPool,
+		writerPool:             writerPool,
+		releaseWriterPool:      releaseWriterPool,
+		releaseParseBufferPool: releaseParsePool,
 	}
 }
 
@@ -88,11 +92,15 @@ func (s *FlvStrategy) HandleErr(err error) ErrHandleResult {
 }
 
 func (s *FlvStrategy) Close() error {
+	s.sharedFixer.Close()
+	if s.releaseParseBufferPool != nil {
+		s.releaseParseBufferPool()
+		s.releaseParseBufferPool = nil
+	}
 	if s.releaseWriterPool != nil {
 		s.releaseWriterPool()
 		s.releaseWriterPool = nil
 		s.writerPool = nil
 	}
-	s.sharedFixer.Close()
 	return nil
 }
