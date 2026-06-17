@@ -520,45 +520,27 @@ func TestRealtimeFixer_SharedPoolReleasesAfterClose(t *testing.T) {
 	}
 }
 
-// Helper function to generate FLV-like chunk data
+// Helper function to generate FLV-like chunk data with only complete tags.
+// Each tag is PrevTagSize + TagHeader + payload; partial tags at the end are omitted
+// so repeated Fix() calls stay aligned.
 func generateFLVChunk(size int) []byte {
-	// Generate a chunk that looks like FLV tags
+	const tagPayloadSize = 100
+	tagTotal := flv.PrevTagSizeBytes + flv.TagHeaderSize + tagPayloadSize
+
 	chunk := make([]byte, size)
 	offset := 0
 
-	for offset+15 < size {
-		// PreviousTagSize (4 bytes)
-		chunk[offset] = 0x00
-		chunk[offset+1] = 0x00
-		chunk[offset+2] = 0x00
-		chunk[offset+3] = 0x00
-		offset += 4
+	for offset+tagTotal <= size {
+		offset += flv.PrevTagSizeBytes // PreviousTagSize (zero is fine for test data)
 
-		// Tag header (11 bytes)
-		chunk[offset] = 0x08 // Audio tag
-		// DataSize (3 bytes) - make it small
-		tagSize := 100
-		chunk[offset+1] = byte(tagSize >> 16)
-		chunk[offset+2] = byte(tagSize >> 8)
-		chunk[offset+3] = byte(tagSize)
-		// Timestamp (4 bytes)
-		chunk[offset+4] = 0x00
-		chunk[offset+5] = 0x00
-		chunk[offset+6] = 0x00
-		chunk[offset+7] = 0x00
-		// StreamID (3 bytes)
-		chunk[offset+8] = 0x00
-		chunk[offset+9] = 0x00
-		chunk[offset+10] = 0x00
-		offset += 11
+		chunk[offset] = flv.TagTypeAudio
+		chunk[offset+1] = byte(tagPayloadSize >> 16)
+		chunk[offset+2] = byte(tagPayloadSize >> 8)
+		chunk[offset+3] = byte(tagPayloadSize)
+		offset += flv.TagHeaderSize
 
-		// Tag data
-		if offset+tagSize <= size {
-			rand.Read(chunk[offset : offset+tagSize])
-			offset += tagSize
-		} else {
-			break
-		}
+		rand.Read(chunk[offset : offset+tagPayloadSize])
+		offset += tagPayloadSize
 	}
 
 	return chunk[:offset]
