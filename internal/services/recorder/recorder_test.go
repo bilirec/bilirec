@@ -131,9 +131,13 @@ func TestZZZ_Final_Concurrent3WayRecord(t *testing.T) {
 	waitUntilNoActiveRecordings(t, sess.Recorder, 30*time.Second)
 
 	time.Sleep(recorderTestSettleAfterStop)
-	after := sess.Monitor.snapshotMemory(t, "concurrent3_after_stop", true)
+	afterStop := sess.Monitor.snapshotMemory(t, "concurrent3_after_stop", false)
 	sess.Monitor.snapshotGoroutines(t, "concurrent3_after_stop")
-	logMemoryDelta(t, during, after)
+	logMemoryDelta(t, during, afterStop)
+
+	afterCleanup := sess.Monitor.snapshotMemoryReleased(t, "concurrent3_after_cleanup")
+	assertRecordingMemoryReleased(t, baseline, afterCleanup, recordingMemoryBudgetForSessions(wantConcurrent, "concurrent3_flv"))
+
 	sess.Monitor.logAnalysisHints(t)
 }
 

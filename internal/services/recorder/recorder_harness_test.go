@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"runtime/debug"
 	"runtime/pprof"
 	"sort"
 	"strconv"
@@ -38,8 +39,12 @@ const (
 	recorderCPUSteadySampleMin       = 1 * time.Second
 	recorderTestSettleAfterStop      = 5 * time.Second
 	pprofLogTopN                     = 10
-	recorderRecordProfileIntervalEnv = "RECORDER_RECORD_PROFILE_INTERVAL_SECS"
-	recorderProfileLogTopEnv         = "RECORDER_PROFILE_LOG_TOP" // default false: save only during test
+	recorderRecordProfileIntervalEnv      = "RECORDER_RECORD_PROFILE_INTERVAL_SECS"
+	recorderProfileLogTopEnv              = "RECORDER_PROFILE_LOG_TOP" // default false: save only during test
+	recorderTestMaxRetainedAllocMBEnv     = "RECORDER_TEST_MAX_RETAINED_ALLOC_MB"
+	recorderTestMaxRetainedSysMBEnv       = "RECORDER_TEST_MAX_RETAINED_SYS_MB"
+	recorderTestMaxRetainedAllocPerRoomEnv = "RECORDER_TEST_MAX_RETAINED_ALLOC_MB_PER_ROOM"
+	recorderTestMaxRetainedSysPerRoomEnv   = "RECORDER_TEST_MAX_RETAINED_SYS_MB_PER_ROOM"
 )
 
 // recorderTestSession wires fx app lifecycle with cross-platform profiling:
@@ -626,6 +631,90 @@ func memAllocDiffMB(after, before memorySnapshot) float64 {
 	return after.AllocMB - before.AllocMB
 }
 
+func memSysDiffMB(after, before memorySnapshot) float64 {
+	return after.SysMB - before.SysMB
+}
+
+// recordingMemoryBudget caps heap and runtime Sys growth retained after a full
+// record/stop/cleanup cycle relative to the pre-record baseline.
+type recordingMemoryBudget struct {
+	label              string
+	maxRetainedAllocMB float64
+	maxRetainedSysMB   float64
+}
+
+func recordingMemoryBudgetForSessions(concurrentSessions int, label string) recordingMemoryBudget {
+	const (
+		baseAllocMB     = 18.0
+		perSessionAlloc = 12.0
+		baseSysMB       = 50.0
+		perSessionSys   = 20.0
+	)
+
+	budget := recordingMemoryBudget{
+		label:              label,
+		maxRetainedAllocMB: baseAllocMB + float64(concurrentSessions)*perSessionAlloc,
+		maxRetainedSysMB:   baseSysMB + float64(concurrentSessions)*perSessionSys,
+	}
+
+	if v := strings.TrimSpace(os.Getenv(recorderTestMaxRetainedAllocMBEnv)); v != "" {
+		if f, err := strconv.ParseFloat(v, 64); err == nil {
+			budget.maxRetainedAllocMB = f
+		}
+	}
+	if v := strings.TrimSpace(os.Getenv(recorderTestMaxRetainedSysMBEnv)); v != "" {
+		if f, err := strconv.ParseFloat(v, 64); err == nil {
+			budget.maxRetainedSysMB = f
+		}
+	}
+	if v := strings.TrimSpace(os.Getenv(recorderTestMaxRetainedAllocPerRoomEnv)); v != "" {
+		if f, err := strconv.ParseFloat(v, 64); err == nil {
+			budget.maxRetainedAllocMB = baseAllocMB + float64(concurrentSessions)*f
+		}
+	}
+	if v := strings.TrimSpace(os.Getenv(recorderTestMaxRetainedSysPerRoomEnv)); v != "" {
+		if f, err := strconv.ParseFloat(v, 64); err == nil {
+			budget.maxRetainedSysMB = baseSysMB + float64(concurrentSessions)*f
+		}
+	}
+	return budget
+}
+
+// snapshotMemoryReleased mirrors production idle cleanup: GC plus returning unused
+// pages to the OS (janitor uses the same FreeOSMemory path).
+func (m *recorderTestMonitor) snapshotMemoryReleased(t *testing.T, label string) memorySnapshot {
+	t.Helper()
+	runtime.GC()
+	runtime.GC()
+	debug.FreeOSMemory()
+	time.Sleep(100 * time.Millisecond)
+	return m.snapshotMemory(t, label, false)
+}
+
+func assertRecordingMemoryReleased(t *testing.T, baseline, after memorySnapshot, budget recordingMemoryBudget) {
+	t.Helper()
+
+	retainedAlloc := memAllocDiffMB(after, baseline)
+	retainedSys := memSysDiffMB(after, baseline)
+
+	t.Logf("memory retention [%s]: alloc %+.2f MB (limit %.2f) heap_inuse %+.2f MB sys %+.2f MB (limit %.2f) goroutines %+d",
+		budget.label,
+		retainedAlloc, budget.maxRetainedAllocMB,
+		after.HeapInuseMB-baseline.HeapInuseMB,
+		retainedSys, budget.maxRetainedSysMB,
+		after.Goroutines-baseline.Goroutines,
+	)
+
+	if retainedAlloc > budget.maxRetainedAllocMB {
+		t.Errorf("memory not released after %s: alloc retained %+.2f MB exceeds %.2f MB (baseline=%.2f after=%.2f)",
+			budget.label, retainedAlloc, budget.maxRetainedAllocMB, baseline.AllocMB, after.AllocMB)
+	}
+	if retainedSys > budget.maxRetainedSysMB {
+		t.Errorf("runtime Sys not released after %s: sys retained %+.2f MB exceeds %.2f MB (baseline=%.2f after=%.2f)",
+			budget.label, retainedSys, budget.maxRetainedSysMB, baseline.SysMB, after.SysMB)
+	}
+}
+
 // runFormatRecordTest exercises a full record/stop cycle with profiling hooks.
 func runFormatRecordTest(t *testing.T, profile bilibili.StreamProfile, format string) {
 	t.Helper()
@@ -655,9 +744,14 @@ func runFormatRecordTest(t *testing.T, profile bilibili.StreamProfile, format st
 
 	t.Log("stopping recording")
 	t.Logf("stop success: %v", sess.Recorder.Stop(roomID))
+	waitUntilNoActiveRecordings(t, sess.Recorder, 30*time.Second)
 	time.Sleep(recorderTestSettleAfterStop)
-	after := sess.Monitor.snapshotMemory(t, "after_stop", false)
-	logMemoryDelta(t, during, after)
+
+	afterStop := sess.Monitor.snapshotMemory(t, "after_stop", false)
+	logMemoryDelta(t, during, afterStop)
+
+	afterCleanup := sess.Monitor.snapshotMemoryReleased(t, format+"_after_cleanup")
+	assertRecordingMemoryReleased(t, baseline, afterCleanup, recordingMemoryBudgetForSessions(1, format))
 
 	sess.Monitor.logAnalysisHints(t)
 
