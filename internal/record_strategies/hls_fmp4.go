@@ -11,6 +11,8 @@ import (
 	"github.com/bilirec/bilirec/pkg/pool"
 )
 
+const fmp4StatePendingInit = "pendingInit"
+
 // HlsFmp4Strategy handles HLS fragmented MP4 byte streams.
 // Each []byte received from ReadHlsStream is a complete fMP4 segment:
 //   - First segment: ftyp+moov (init segment, box type at bytes[4:8] == "ftyp")
@@ -20,6 +22,7 @@ import (
 // (.fmp4), which can then be remuxed to seek-friendly .mp4 in finalize flow.
 type HlsFmp4Strategy struct {
 	bases             map[uint32]uint64
+	lastInit          []byte
 	writerPool        *pool.BucketedBytesPool
 	releaseWriterPool func()
 }
@@ -36,10 +39,12 @@ func NewHlsFmp4Strategy(qn int) *HlsFmp4Strategy {
 func (s *HlsFmp4Strategy) FileExtension() string { return ".fmp4" }
 
 func (s *HlsFmp4Strategy) BuildPipeline(ctx context.Context, outputPath string, state *RotationState) (*pipeline.Pipe[[]byte], error) {
+	pendingInit := state.Data[fmp4StatePendingInit]
 	pipe := pipeline.New(
 		processors.NewSegmentDedup(),
-		processors.NewFmp4BoxGuard(&s.bases),
+		processors.NewFmp4BoxGuard(&s.bases, &s.lastInit),
 		processors.NewFmp4TimestampNormalizer(&s.bases),
+		processors.NewFmp4InitWriter(pendingInit),
 		processors.NewBufferedStreamWriter(
 			outputPath,
 			processors.WithBufferSize(config.ReadOnly.LiveStreamWriterBufferSize()),
@@ -56,13 +61,17 @@ func (s *HlsFmp4Strategy) BuildPipeline(ctx context.Context, outputPath string, 
 }
 
 func (s *HlsFmp4Strategy) HandleErr(err error) ErrHandleResult {
-	// Handle stream discontinuity: when a new init segment (ftyp) appears
-	// after media segments, we need to rotate to a new file to maintain
-	// valid fmp4 file structure (each file should have exactly one init segment)
-	if errors.Is(err, processors.ErrFmp4Discontinuity) {
-		// Reset timestamp bases for the new segment
+	var disc *processors.Fmp4DiscontinuityError
+	if errors.As(err, &disc) {
 		s.bases = make(map[uint32]uint64)
-		return ErrHandleResult{Action: ErrActionRotate}
+		return ErrHandleResult{
+			Action: ErrActionRotate,
+			State: &RotationState{
+				Data: map[string][]byte{
+					fmp4StatePendingInit: disc.InitSegment,
+				},
+			},
+		}
 	}
 
 	return ErrHandleResult{Action: ErrActionAbort}

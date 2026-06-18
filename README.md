@@ -1240,7 +1240,7 @@ curl -s -b cookies.txt http://127.0.0.1:8080/auth/bilibili/status
 
 - **HTTP-FLV 格式**： 当检测到直播 PK 等 FLV 文件头变更时（分辨率切换）录制器会自动轮转到新的分段文件；
 
-- **HLS-fMP4 格式**: 当检测到 init segment 重置（流不连续/服务器切换）时，自动轮转到新的分段文件，确保每个文件包含完整的 fMP4 结构；
+- **HLS-fMP4 格式**: 默认将 init segment 与媒体分片顺序追加到同一文件；若播放列表重发**内容相同**的 init（如 CDN 序列回退），会自动跳过并继续写入同一文件；仅当 init **内容变更**（PK、换源、编解码参数变化）时才轮转到新分段，且新文件会以完整 init 开头，可正常 `CONVERT_TO_MP4`；
 
 - **HLS-TS 格式**: 不执行文件轮转，直播 PK 等不连续性由 HLS 播放列表层自然处理，录制器仅在流中断时重连并继续写入同一文件。
 
@@ -1251,7 +1251,7 @@ curl -s -b cookies.txt http://127.0.0.1:8080/auth/bilibili/status
 - **自动恢复**: 当流中断时自动重连，详见 [`recorder.Service`](internal/services/recorder/recorder.go)
 - **自动分段轮转（HTTP-FLV / HLS-fMP4）**: 
   - **HTTP-FLV**: 当检测到 FLV 文件头变更（直播 PK 等分辨率切换）时，自动轮转到新的分段文件并重写文件头，降低画质切换导致输出异常的风险
-  - **HLS-fMP4**: 当检测到 init segment 重置（流不连续/服务器切换）时自动分段，确保每个文件结构完整，避免 ffprobe 解析失败
+  - **HLS-fMP4**: 相同 init 重发时继续写入同一文件；init 内容变更时自动分段，新文件带完整 init，避免 ffprobe/FFmpeg 解析失败
 - **自动录制**: 为订阅的直播间配置自动开播录制，后台定期检查直播间状态并自动启动录制，详见 [`subcheck.Service`](internal/services/subcheck/check.go)
 - **实时通知**: 支持 Web Push 与 SSE 两种通知方式，推送直播开播通知和自动录制状态，详见 [`notify.Service`](internal/services/notify/notify.go)
 - **Android 嵌入支持**: 提供 `cmd/androidlib` 以生成 Android c-shared 库，支持 `ffmpeg.so` / `ffmpeg-kit` 本机库以及 Android 端的本地转码执行
