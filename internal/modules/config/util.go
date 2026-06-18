@@ -14,3 +14,29 @@ func ReadStreamBytesPoolSizeForQn(qn int) int {
 	}
 	return ReadOnly.ReadStreamBytesPoolSize()
 }
+
+func clampInt(v, minV, maxV int) int {
+	if v < minV {
+		return minV
+	}
+	if v > maxV {
+		return maxV
+	}
+	return v
+}
+
+// ReadStreamBytesPoolBoundedCapacity derives idle read-pool capacity from channel depth.
+func ReadStreamBytesPoolBoundedCapacity(chanBufferSize int) int {
+	if chanBufferSize <= 0 {
+		chanBufferSize = 16
+	}
+	return clampInt(chanBufferSize/4, 2, 16)
+}
+
+// LiveStreamWriterBytesPoolBoundedCapacityPerBucket derives per-bucket idle writer-pool capacity.
+func LiveStreamWriterBytesPoolBoundedCapacityPerBucket(chanBufferSize int) int {
+	if chanBufferSize <= 0 {
+		chanBufferSize = 64
+	}
+	return clampInt(chanBufferSize/8, 2, 8)
+}

@@ -65,7 +65,13 @@ var (
 )
 
 func newWriterPool(size int) *pool.BucketedBytesPool {
-	return pool.NewBucketedBytesPool(size)
+	chanBuf := config.ReadOnly.LiveStreamWriterChanBufferSize()
+	return pool.NewBucketedBytesPool(size,
+		pool.WithPoolBoundedMode(true),
+		pool.WithPoolBoundedCapacity(
+			config.LiveStreamWriterBytesPoolBoundedCapacityPerBucket(chanBuf),
+		),
+	)
 }
 
 func newParseBufferPool(size int) *pool.BufferPool {

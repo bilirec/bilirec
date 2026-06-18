@@ -2,7 +2,6 @@ package pool
 
 import (
 	"sort"
-	"sync"
 	"sync/atomic"
 )
 
@@ -16,7 +15,7 @@ const (
 
 type BucketedBytesPool struct {
 	bucketSizes []int
-	pools       []sync.Pool
+	slots       []*boundablePool[[]byte]
 
 	hits      atomic.Uint64
 	misses    atomic.Uint64
@@ -29,19 +28,28 @@ type BucketedBytesPoolStats struct {
 	Oversized uint64
 }
 
-func NewBucketedBytesPool(baseSize int) *BucketedBytesPool {
+func NewBucketedBytesPool(baseSize int, opts ...BucketedBytesPoolOption) *BucketedBytesPool {
+	cfg := applyPoolOptions(opts, PoolBoundedConfig{
+		Mode:     BufferPoolModeSoft,
+		Capacity: 4,
+	})
 	buckets := computeBucketSizes(baseSize)
 	p := &BucketedBytesPool{
 		bucketSizes: buckets,
-		pools:       make([]sync.Pool, len(buckets)),
+		slots:       make([]*boundablePool[[]byte], len(buckets)),
 	}
 	for i, bucketSize := range buckets {
 		size := bucketSize
-		p.pools[i] = sync.Pool{
-			New: func() any {
-				return make([]byte, size)
+		p.slots[i] = newBoundablePool(cfg,
+			func() []byte { return make([]byte, size) },
+			func(b []byte) []byte { return b },
+			func(b []byte) ([]byte, bool) {
+				if cap(b) != size {
+					return b, false
+				}
+				return b[:size], true
 			},
-		}
+		)
 	}
 	return p
 }
@@ -56,7 +64,7 @@ func (p *BucketedBytesPool) GetSized(size int) []byte {
 		return make([]byte, size)
 	}
 	p.hits.Add(1)
-	return p.pools[idx].Get().([]byte)[:size]
+	return p.slots[idx].get()[:size]
 }
 
 func (p *BucketedBytesPool) Put(buf []byte) {
@@ -66,7 +74,7 @@ func (p *BucketedBytesPool) Put(buf []byte) {
 	c := cap(buf)
 	for i, size := range p.bucketSizes {
 		if c == size {
-			p.pools[i].Put(buf[:size])
+			p.slots[i].put(buf[:size])
 			return
 		}
 	}

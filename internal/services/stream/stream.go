@@ -24,12 +24,26 @@ func NewService(cfg *config.Config) *Service {
 	return &Service{
 		readPools: pool.NewLazyDualPool(
 			15*time.Minute,
-			func() *pool.BytesPool { return pool.NewBytesPool(cfg.ReadStreamBytesPoolSize) },
-			func() *pool.BytesPool { return pool.NewBytesPool(config.ReadOnly.ReadStreamBytesPoolSizeHigh()) },
+			func() *pool.BytesPool {
+				return newReadBytesPool(cfg.ReadStreamBytesPoolSize, cfg.ReadStreamChanBufferSize)
+			},
+			func() *pool.BytesPool {
+				return newReadBytesPool(
+					config.ReadOnly.ReadStreamBytesPoolSizeHigh(),
+					config.ReadOnly.ReadStreamChanBufferSizeHigh(),
+				)
+			},
 		),
 		chanBufferSize:     cfg.ReadStreamChanBufferSize,
 		highChanBufferSize: highChanBufferSize,
 	}
+}
+
+func newReadBytesPool(size, chanBuf int) *pool.BytesPool {
+	return pool.NewBytesPool(size,
+		pool.WithPoolBoundedMode(true),
+		pool.WithPoolBoundedCapacity(config.ReadStreamBytesPoolBoundedCapacity(chanBuf)),
+	)
 }
 
 func (r *Service) Flush(buf []byte) {

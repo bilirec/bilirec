@@ -1,34 +1,37 @@
 package pool
 
-import (
-	"sync"
-)
-
 const DefaultBufferSize = 5 * 1024 * 1024 // 5MB
 
 type BytesPool struct {
-	*sync.Pool
 	BufferSize int
+	slot       *boundablePool[[]byte]
 }
 
-func NewBytesPool(bufferSize int) *BytesPool {
+func NewBytesPool(bufferSize int, opts ...BytesPoolOption) *BytesPool {
+	cfg := applyPoolOptions(opts, PoolBoundedConfig{
+		Mode:     BufferPoolModeSoft,
+		Capacity: 4,
+	})
+	size := bufferSize
 	return &BytesPool{
-		BufferSize: bufferSize,
-		Pool: &sync.Pool{
-			New: func() any {
-				return make([]byte, bufferSize)
+		BufferSize: size,
+		slot: newBoundablePool(cfg,
+			func() []byte { return make([]byte, size) },
+			func(b []byte) []byte { return b[:size] },
+			func(b []byte) ([]byte, bool) {
+				if cap(b) != size {
+					return b, false
+				}
+				return b[:cap(b)], true
 			},
-		},
+		),
 	}
 }
 
 func (p *BytesPool) GetBytes() []byte {
-	return p.Get().([]byte)
+	return p.slot.get()
 }
 
 func (p *BytesPool) PutBytes(buf []byte) {
-	if buf == nil || cap(buf) != p.BufferSize {
-		return
-	}
-	p.Pool.Put(buf[:cap(buf)])
+	p.slot.put(buf)
 }

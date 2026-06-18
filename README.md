@@ -596,6 +596,7 @@ HLS 读进来的是**一整段分片**（大小由 m3u8 决定，常见 2–6 MB
 
 - **容器总内存虚高**：写入磁盘后，系统可能额外缓存一份文件，容器监控显示的总用量会远高于上表，规划时以上表为准即可。
 - **停录后仍偏高**：内存池会保留部分已用过的块（见效能指标「恢复闲置 ~54 MB」），属正常。
+- **读/写 bytes pool 保温上限**：空闲复用块数量由 `READ_STREAM_CHAN_BUFFER_SIZE`、`READ_STREAM_CHAN_BUFFER_SIZE_HIGH`、`LIVE_STREAM_WRITER_CHAN_BUFFER_SIZE` 推导（约为 channel 深度的 1/4 与 1/8）；**在途内存公式不变**。
 
 #### 想省内存，优先改哪几个
 
