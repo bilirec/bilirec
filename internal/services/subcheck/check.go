@@ -219,7 +219,7 @@ func (s *Service) tryStartShardAutoRecordRooms(shardIndex, shardCount int) {
 
 				err := s.recSvc.Start(roomID, autoRecordArgs...)
 				switch err {
-				case nil, recorder.ErrRecordingStarted:
+				case nil, recorder.ErrRecordingStarted, recorder.ErrRecordRecovering, recorder.ErrRecordingPending:
 					state = notify.LiveStateAutoRecordStarted
 					logger.Infof("已开始录制房间 %d（%s）", roomID, info.Uname)
 				default:

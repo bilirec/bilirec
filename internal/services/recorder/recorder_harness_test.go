@@ -390,6 +390,10 @@ func handleRecordingStartErr(t *testing.T, err error) {
 		t.Skip("no stream URLs available")
 	case recorder.ErrStreamURLsUnreachable:
 		t.Skip("stream URLs unreachable")
+	case recorder.ErrRecordRecovering:
+		t.Skip("room recovering")
+	case recorder.ErrRecordingPending:
+		t.Skip("recording start pending")
 	default:
 		t.Fatal(err)
 	}

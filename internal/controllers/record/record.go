@@ -104,6 +104,10 @@ func (r *Controller) startRecording(ctx fiber.Ctx) error {
 			return fiber.NewError(fiber.StatusBadRequest, "房间并非直播状态")
 		case recorder.ErrRecordingStarted:
 			return fiber.NewError(fiber.StatusBadRequest, "该房间已在录制中")
+		case recorder.ErrRecordRecovering:
+			return fiber.NewError(fiber.StatusBadRequest, "该房间正在恢复流")
+		case recorder.ErrRecordingPending:
+			return fiber.NewError(fiber.StatusConflict, "该房间录制正在启动中")
 		case recorder.ErrMaxConcurrentRecordingsReached:
 			return fiber.NewError(fiber.StatusTooManyRequests, "已达到最大同时录制数")
 		case recorder.ErrInsufficientDiskSpace:

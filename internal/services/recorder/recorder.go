@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
 	"sync"
 	"time"
 
@@ -16,7 +15,6 @@ import (
 	"github.com/bilirec/bilirec/internal/services/convert"
 	"github.com/bilirec/bilirec/internal/services/notify"
 	"github.com/bilirec/bilirec/internal/services/stream"
-	"github.com/bilirec/bilirec/pkg/backoff"
 	"github.com/bilirec/bilirec/pkg/ds"
 	"github.com/bilirec/bilirec/pkg/pipeline"
 	"github.com/bilirec/bilirec/pkg/tx"
@@ -40,6 +38,8 @@ var recoveringPtr *RecordStatus = utils.Ptr(Recovering)
 
 var ErrMaxConcurrentRecordingsReached = errors.New("已达到最大并发录制数")
 var ErrRecordingStarted = errors.New("录制已开始")
+var ErrRecordRecovering = errors.New("录制正在恢复流")
+var ErrRecordingPending = errors.New("录制正在启动中")
 var ErrStreamNotLive = errors.New("该房间当前未在直播")
 var ErrEmptyStreamURLs = errors.New("没有可用的流 URL")
 var ErrStreamURLsUnreachable = errors.New("所有流 URL 均不可达")
@@ -113,6 +113,13 @@ func NewService(
 }
 
 func (r *Service) Start(roomId int, options ...RecordStartOption) error {
+	switch r.GetStatus(roomId) {
+	case Recording:
+		return ErrRecordingStarted
+	case Recovering:
+		return ErrRecordRecovering
+	}
+
 	startOptions := newRecordStartOptions()
 	for _, option := range options {
 		if option != nil {
@@ -120,260 +127,25 @@ func (r *Service) Start(roomId int, options ...RecordStartOption) error {
 		}
 	}
 
-	l := logger.WithField("room", roomId)
-
-	txn := r.reser.Begin()
-
-	if err := txn.Reserve(roomId); err != nil {
-		if errors.Is(err, tx.ErrAlreadyReserved) {
-			return ErrRecordingStarted
-		}
-		return err
-	}
-
-	defer txn.Abort(roomId)
-
-	// Check disk space - require at least configured minimum free space
-	diskSpace, err := utils.GetDiskSpace(r.cfg.OutputDir)
-	if err != nil {
-		l.Warnf("cannot check disk space: %v", err)
-	} else if diskSpace.Free < uint64(r.cfg.MinDiskSpaceBytes) {
-		return ErrInsufficientDiskSpace
-	}
-
-	startTimeRoomInfo := time.Now()
-	roomInfo, err := r.bilic.GetLiveRoomInfo(roomId)
-	durationRoomInfo := time.Since(startTimeRoomInfo)
-	l.Debugf("duration: function=GetLiveRoomInfo spent=%v", durationRoomInfo)
-	if err != nil {
-		return err
-	} else if roomInfo.IsEncrypted {
-		return ErrRoomEncrypted
-	} else if roomInfo.LockStatus != 0 {
-		return ErrRoomBanned
-	} else if roomInfo.LiveStatus != 1 {
-		return ErrStreamNotLive
-	}
-
-	var streams []bilibili.StreamURLInfo
-	startTimeStreamURLs := time.Now()
-	streams, err = r.bilic.GetStreamURLsV2(roomId, startOptions.streamOptions...)
-	durationStreamURLs := time.Since(startTimeStreamURLs)
-	l.Debugf("duration: function=GetStreamURLsV2 spent=%v", durationStreamURLs)
-
-	if err != nil {
-		return err
-	} else if len(streams) == 0 {
-		return ErrEmptyStreamURLs
-	}
-
-	// Prefer higher quality stream candidates first.
-	sort.SliceStable(streams, func(i, j int) bool {
-		return streams[i].Qn > streams[j].Qn
-	})
-
-	now := time.Now()
 	ctx, cancel := context.WithCancel(r.ctx)
-
-	// retry mechanism
-	for idx, streamInfo := range streams {
-		urlPreview := utils.TruncateString(streamInfo.URL, 160)
-
-		l.Debugf("trying stream url [%d/%d]: protocol=%s, format=%s, codec=%s, qn=%d, url=%s",
-			idx+1,
-			len(streams),
-			streamInfo.Protocol,
-			streamInfo.Format,
-			streamInfo.Codec,
-			streamInfo.Qn,
-			urlPreview,
-		)
-
-		var ch <-chan []byte
-		var strategy rs.StreamRecordStrategy
-
-		switch streamInfo.Format {
-		case "ts", "fmp4":
-			l.Debugf("stream response [%d/%d]: protocol=%s, format=%s, codec=%s, qn=%d, req=%s",
-				idx+1,
-				len(streams),
-				streamInfo.Protocol,
-				streamInfo.Format,
-				streamInfo.Codec,
-				streamInfo.Qn,
-				urlPreview,
-			)
-
-			initialURL := streamInfo.URL
-
-			profile := utils.Ternary(
-				streamInfo.Format == "ts",
-				bilibili.ProfileHLSTS,
-				bilibili.ProfileHLSFMP4,
-			)
-
-			fetchM3u8URL := func() (string, error) {
-				if initialURL != "" {
-					url := initialURL
-					initialURL = ""
-					return url, nil
-				}
-
-				latestStreams, fetchErr := r.bilic.GetStreamURLsV2(roomId, bilibili.WithProfiles(profile))
-				if fetchErr != nil {
-					return "", fetchErr
-				} else if len(latestStreams) == 0 {
-					return "", nil
-				}
-
-				tryResolve := func(candidate bilibili.StreamURLInfo) (string, bool) {
-					fetchCtx := ctx
-					if _, ok := fetchCtx.Deadline(); !ok {
-						var cancel context.CancelFunc
-						fetchCtx, cancel = context.WithTimeout(fetchCtx, 3*time.Second)
-						defer cancel()
-					}
-					m3u8Resp, fetchErr := r.bilic.GetLiveHlsPlaylistClient().R().SetContext(fetchCtx).Get(candidate.URL)
-					if fetchErr != nil {
-						return "", false
-					}
-					if body := m3u8Resp.RawBody(); body != nil {
-						defer body.Close()
-					}
-					if m3u8Resp.StatusCode() != 200 {
-						return "", false
-					}
-
-					if m3u8Resp.RawResponse != nil && m3u8Resp.RawResponse.Request != nil && m3u8Resp.RawResponse.Request.URL != nil {
-						return m3u8Resp.RawResponse.Request.URL.String(), true
-					}
-					return candidate.URL, true
-				}
-
-				for _, candidate := range latestStreams {
-					if candidate.Format != streamInfo.Format || candidate.Protocol != streamInfo.Protocol || candidate.Codec != streamInfo.Codec {
-						continue
-					}
-					if refreshedURL, ok := tryResolve(candidate); ok {
-						return refreshedURL, nil
-					}
-				}
-
-				for _, candidate := range latestStreams {
-					if candidate.Format != streamInfo.Format {
-						continue
-					}
-					if refreshedURL, ok := tryResolve(candidate); ok {
-						return refreshedURL, nil
-					}
-				}
-
-				return "", nil
-			}
-
-			hlsCh, hlsErr := r.st.ReadHlsStream(fetchM3u8URL, r.bilic.GetLiveHlsPlaylistClient(), r.bilic.GetLiveHlsSegmentClient(), ctx, streamInfo.Qn)
-			if hlsErr != nil {
-				l.Errorf("cannot start HLS stream: %v, will try next url", hlsErr)
-				continue
-			}
-			ch = hlsCh
-			strategy = utils.TernaryFunc(
-				streamInfo.Format == "ts",
-				func() rs.StreamRecordStrategy { return rs.NewHlsTsStrategy(streamInfo.Qn) },
-				func() rs.StreamRecordStrategy { return rs.NewHlsFmp4Strategy(streamInfo.Qn) },
-			)
-		default: // "flv" and any unknown format
-			startTimeFlv := time.Now()
-			resp, err := r.bilic.FetchLiveStreamUrlWithCtx(streamInfo.URL, ctx)
-			durationFlv := time.Since(startTimeFlv)
-			l.Debugf("duration: function=FetchLiveStreamUrlWithCtx spent=%v", durationFlv)
-
-			if err != nil {
-				l.Errorf("cannot fetch url: %v, will try next url (protocol=%s, format=%s, codec=%s, qn=%d, url=%s)",
-					err,
-					streamInfo.Protocol,
-					streamInfo.Format,
-					streamInfo.Codec,
-					streamInfo.Qn,
-					urlPreview,
-				)
-				continue
-			} else if resp.StatusCode() != 200 {
-				l.Errorf("non-200 response: %d, will try next url (protocol=%s, format=%s, codec=%s, qn=%d, url=%s)",
-					resp.StatusCode(),
-					streamInfo.Protocol,
-					streamInfo.Format,
-					streamInfo.Codec,
-					streamInfo.Qn,
-					urlPreview,
-				)
-				continue
-			}
-
-			finalURL := ""
-			if resp.RawResponse != nil && resp.RawResponse.Request != nil && resp.RawResponse.Request.URL != nil {
-				finalURL = resp.RawResponse.Request.URL.String()
-			}
-
-			l.Debugf("stream response [%d/%d]: status=%d, content-type=%s, protocol=%s, format=%s, codec=%s, qn=%d, req=%s, final=%s",
-				idx+1,
-				len(streams),
-				resp.StatusCode(),
-				resp.Header().Get("Content-Type"),
-				streamInfo.Protocol,
-				streamInfo.Format,
-				streamInfo.Codec,
-				streamInfo.Qn,
-				urlPreview,
-				utils.TruncateString(finalURL, 160),
-			)
-
-			flvCh, flvErr := r.st.ReadFlvStream(resp, ctx, streamInfo.Qn)
-			if flvErr != nil {
-				l.Errorf("cannot capture url stream: %v, will try next url", flvErr)
-				continue
-			}
-			ch = flvCh
-			strategy = rs.NewFlvStrategy(streamInfo.Qn)
+	adopted := false
+	defer func() {
+		if !adopted {
+			cancel()
 		}
+	}()
 
-		// Resolve runtime max duration for recorder internals.
-		// Internal semantics: 0 duration means unlimited.
-		// API/config sentinel mapping (e.g. 0 default, -1 unlimited) is handled by callers.
-		var maxDuration time.Duration
-		if startOptions.hasDuration {
-			maxDuration = startOptions.duration
-		} else {
-			maxDuration = time.Duration(r.cfg.MaxRecordingHours) * time.Hour
-		}
-
-		// initialize Recorder info
-		info := &Info{
-			cancel:      cancel,
-			startTime:   now,
-			room:        roomInfo,
-			maxDuration: maxDuration,
-			backoff: backoff.NewSequence(
-				2*time.Second, // 先連續三次 2 秒
-				2*time.Second,
-				2*time.Second,
-				5*time.Second, // 之後才開始增加退避時間
-				10*time.Second,
-				15*time.Second, // 最大退避時間 15 秒，之後一直保持直到重試成功
-			),
-		}
-		info.SetOutputPath("") // initialize output path to empty string to avoid potential nil pointer dereference in finalize()
-
-		txn.ConfirmWith(roomId, func() {
-			info.status.Store(recordingPtr)
-			r.recording.Store(roomId, info)
-		})
-
-		return r.prepare(roomId, ch, strategy, ctx, info)
+	err := r.internalStart(internalStartParams{
+		roomId: roomId,
+		opts:   startOptions,
+		ctx:    ctx,
+		cancel: cancel,
+		mode:   startModeUser,
+	})
+	if err == nil {
+		adopted = true
 	}
-	cancel()
-	l.Warn("no more url left")
-	return ErrStreamURLsUnreachable
+	return err
 }
 
 func (r *Service) Stop(roomId int) bool {
@@ -395,18 +167,19 @@ func (r *Service) Stop(roomId int) bool {
 	return hasRecording
 }
 
-func (r *Service) prepare(roomId int, ch <-chan []byte, strategy rs.StreamRecordStrategy, ctx context.Context, info *Info) error {
+func (r *Service) prepare(roomId int, ch <-chan []byte, strategy rs.StreamRecordStrategy, ctx context.Context, info *Info, scheduleDurationCheck bool) error {
 
 	r.wg.Go(func() {
 		defer r.recover(roomId)
-		defer info.cancel()
 		err := r.rotate(roomId, ch, strategy, info, ctx)
 		if err != nil {
 			logger.Errorf("轮转录制失败：%v", err)
 		}
 	})
 
-	go r.checkRecordingDurationPeriodically(roomId, ctx, info.maxDuration)
+	if scheduleDurationCheck {
+		go r.checkRecordingDurationPeriodically(roomId, ctx, info.maxDuration)
+	}
 	return nil
 }
 
@@ -552,7 +325,18 @@ func (r *Service) recover(roomId int) {
 	attempt := 1
 	retryStart := time.Now()
 	for {
-		err := r.Start(roomId)
+		if err := info.ctx.Err(); err != nil {
+			l.Infof("录制任务已停止，终止恢复")
+			return
+		}
+
+		err := r.internalStart(internalStartParams{
+			roomId:  roomId,
+			opts:    info.startOptions,
+			ctx:     info.ctx,
+			mode:    startModeRecovery,
+			session: info,
+		})
 		if err == nil {
 			l.Info("直播流恢复成功")
 			info.backoff.Reset()
@@ -571,7 +355,7 @@ func (r *Service) recover(roomId int) {
 		default:
 
 			// Should check if recording was manually stopped
-			if _, ok := r.recording.Load(roomId); !ok {
+			if _, ok := r.recording.Load(roomId); !ok || errors.Is(err, context.Canceled) {
 				l.Infof("重试期间录制任务已移除，不再恢复")
 				return
 			}
@@ -600,6 +384,10 @@ func (r *Service) recover(roomId int) {
 			case <-timer.C:
 				attempt++
 				continue
+			case <-info.ctx.Done():
+				l.Infof("录制任务已停止，终止恢复流程")
+				timer.Stop()
+				return
 			case <-r.ctx.Done():
 				l.Infof("服务正在停止，终止恢复流程")
 				timer.Stop()

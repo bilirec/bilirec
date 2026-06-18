@@ -17,9 +17,11 @@ type Info struct {
 	outputPath  ds.Atomic[string]
 	maxDuration time.Duration // internal runtime semantics: 0 = unlimited
 
-	cancel  context.CancelFunc
-	room    *bilibili.LiveRoomInfoDetail
-	backoff backoff.Backoff
+	ctx          context.Context
+	cancel       context.CancelFunc
+	startOptions RecordStartOptions
+	room         *bilibili.LiveRoomInfoDetail
+	backoff      backoff.Backoff
 }
 
 func (r *Info) SetOutputPath(path string) {

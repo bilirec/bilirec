@@ -31,3 +31,11 @@ func WithStreamOptions(opts ...bilibili.GetStreamURLsOption) RecordStartOption {
 		o.streamOptions = opts
 	}
 }
+
+func snapshotStartOptions(o RecordStartOptions) RecordStartOptions {
+	out := o
+	if len(o.streamOptions) > 0 {
+		out.streamOptions = append([]bilibili.GetStreamURLsOption(nil), o.streamOptions...)
+	}
+	return out
+}
