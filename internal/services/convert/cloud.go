@@ -39,6 +39,7 @@ type cloudConvertManager struct {
 	client     *cloudconvert.Client
 	serializer *pool.Serializer
 	getActives GetActiveRecordings
+	deleter    *sourceDeleter
 
 	processing   ds.AtomicSet[string]
 	downloadPool *pool.BytesPool
@@ -49,12 +50,13 @@ type cloudConvertManager struct {
 	pathSvc *path.Service
 }
 
-func newCloudConvertManager(client *cloudconvert.Client, pathSvc *path.Service, getActives GetActiveRecordings) ConvertManager {
+func newCloudConvertManager(client *cloudconvert.Client, pathSvc *path.Service, getActives GetActiveRecordings, deleter *sourceDeleter) ConvertManager {
 	return &cloudConvertManager{
 		logger:           logger.WithField("manager", "cloudconvert"),
 		client:           client,
 		serializer:       pool.NewSerializer(),
 		getActives:       getActives,
+		deleter:          deleter,
 		processing:       ds.NewSyncedSet[string](),
 		downloadPool:     pool.NewBytesPool(config.ReadOnly.DownloadBufferSize()),
 		concurrent:       semaphore.NewWeighted(int64(config.ReadOnly.CloudConvertMaxConcurrentDownloads())),
@@ -307,7 +309,9 @@ func (c *cloudConvertManager) asyncOnFinished(ctx context.Context, queue *TaskQu
 	defer c.processing.Remove(queue.TaskID)
 	if err := c.handleFinished(ctx, queue, &data); err != nil {
 		c.logger.Errorf("处理任务 id=%v 状态=%v 失败：%v", queue.TaskID, data.Status, err)
+		return
 	}
+	c.deleter.Schedule(queue, c.logger.WithField("task_id", queue.TaskID))
 }
 
 func (c *cloudConvertManager) asyncOnFailed(queue *TaskQueue, data cloudconvert.TaskData) {
@@ -364,17 +368,8 @@ func (c *cloudConvertManager) handleFinished(ctx context.Context, queue *TaskQue
 	})
 	if err != nil {
 		return err
-	} else if !queue.DeleteSource || queue.InputPath == queue.OutputPath {
-		return nil
 	}
-
-	return utils.WithRetry(3, c.logger, "delete source file", func() error {
-		if !utils.IsFileExists(queue.InputPath) {
-			c.logger.Debugf("source file %s does not exist, skipping delete", queue.InputPath)
-			return nil
-		}
-		return os.Remove(queue.InputPath)
-	})
+	return nil
 }
 
 func (c *cloudConvertManager) handleFailed(queue *TaskQueue, info *cloudconvert.TaskData) error {

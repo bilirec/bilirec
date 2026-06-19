@@ -32,6 +32,7 @@ type Service struct {
 	managers       map[string]ConvertManager
 	ctx            context.Context
 	db             *db.Client
+	deleter        *sourceDeleter
 
 	noConvertIfInvalid bool
 	getActives         GetActiveRecordings
@@ -41,10 +42,13 @@ type Service struct {
 func NewService(ls fx.Lifecycle, cfg *config.Config, pathSvc *path.Service) *Service {
 	ctx, cancel := context.WithCancel(context.Background())
 
+	deleter := newSourceDeleter(ctx)
+
 	svc := &Service{
 		cloudthreshold:     cfg.CloudConvertThreshold,
 		managers:           make(map[string]ConvertManager),
 		ctx:                ctx,
+		deleter:            deleter,
 		noConvertIfInvalid: cfg.NoConvertIfInvalid,
 	}
 
@@ -57,13 +61,14 @@ func NewService(ls fx.Lifecycle, cfg *config.Config, pathSvc *path.Service) *Ser
 			),
 			pathSvc,
 			svc.activeRecordings,
+			deleter,
 		)
 	} else {
 		logger.Info("未提供 CloudConvert API Key，CloudConvert 已禁用")
 	}
 
 	if ffmpeg.Available() {
-		svc.managers["ffmpeg"] = newFFmpegConvertManager(svc.activeRecordings)
+		svc.managers["ffmpeg"] = newFFmpegConvertManager(svc.activeRecordings, deleter)
 	} else {
 		logger.Warn("ffmpeg 不可用，ffmpeg 转码管理器未初始化")
 	}
@@ -71,6 +76,7 @@ func NewService(ls fx.Lifecycle, cfg *config.Config, pathSvc *path.Service) *Ser
 	stop := func() error {
 		cancel()
 		svc.wg.Wait()
+		deleter.Wait()
 		return svc.db.Close()
 	}
 

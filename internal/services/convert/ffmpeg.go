@@ -3,7 +3,6 @@
 import (
 	"context"
 	"fmt"
-	"os"
 	"sync"
 	"time"
 
@@ -28,17 +27,19 @@ type ffmpegConvertManager struct {
 	logger     *logrus.Entry
 	serializer *pool.Serializer
 	getActives GetActiveRecordings
+	deleter    *sourceDeleter
 
 	processing *xsync.Map[string, context.CancelFunc]
 	concurrent *semaphore.Weighted
 	cooldowns  *xsync.Map[string, time.Time]
 }
 
-func newFFmpegConvertManager(getActives GetActiveRecordings) ConvertManager {
+func newFFmpegConvertManager(getActives GetActiveRecordings, deleter *sourceDeleter) ConvertManager {
 	return &ffmpegConvertManager{
 		logger:     logger.WithField("manager", "ffmpeg"),
 		serializer: pool.NewSerializer(),
 		getActives: getActives,
+		deleter:    deleter,
 		processing: xsync.NewMap[string, context.CancelFunc](),
 		concurrent: semaphore.NewWeighted(int64(config.ReadOnly.FFmpegMaxConcurrentTasks())),
 		cooldowns:  xsync.NewMap[string, time.Time](),
@@ -208,6 +209,7 @@ func (f *ffmpegConvertManager) asyncProcessTask(ctx context.Context, queue *Task
 		return
 	}
 
+	f.deleter.Schedule(queue, taskLog)
 	taskLog.Info("任务已完成并从队列移除")
 }
 
@@ -238,15 +240,6 @@ func (f *ffmpegConvertManager) processTask(ctx context.Context, queue *TaskQueue
 		return err
 	} else if err := ValidateOutputFileSize(queue.InputPath, queue.OutputPath); err != nil {
 		return err
-	} else if !queue.DeleteSource || queue.InputPath == queue.OutputPath {
-		return nil
 	}
-
-	return utils.WithRetry(3, taskLog, "delete source file", func() error {
-		if !utils.IsFileExists(queue.InputPath) {
-			taskLog.Debugf("source file %s does not exist, skipping delete", queue.InputPath)
-			return nil
-		}
-		return os.Remove(queue.InputPath)
-	})
+	return nil
 }
