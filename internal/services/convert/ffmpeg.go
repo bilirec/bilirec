@@ -196,8 +196,8 @@ func (f *ffmpegConvertManager) asyncProcessTask(ctx context.Context, queue *Task
 
 	if err := f.processTask(ctx, queue, taskLog); err != nil {
 		taskLog.Errorf("ffmpeg 任务失败：%v", err)
-		// delay the tasks to interval + 30s to avoid multiple tasks failing at the same time and retrying immediately
-		delay := time.Duration(config.ReadOnly.FFmpegCheckIntervalSecs())*time.Second + 30*time.Second
+		// delay the tasks to interval * 2 to avoid multiple tasks failing at the same time and retrying immediately
+		delay := time.Duration(config.ReadOnly.FFmpegCheckIntervalSecs()) * time.Second * 2
 		delayTime := time.Now().Add(delay)
 		f.cooldowns.Store(queue.TaskID, delayTime)
 		taskLog.Warnf("任务已延后至 %v", delayTime.Format(time.RFC3339))
