@@ -234,7 +234,7 @@ Android 模式下会先注入一组移动端默认值（如 `HOST=127.0.0.1`、`
 | `FRP_SCHEME_HTTPS` | 公网 URL scheme（`true`=https，`false`=http） | `true` |
 | `MAX_CONCURRENT_RECORDINGS` | 最大同时录制数 | `3` |
 | `MAX_RECORDING_HOURS` | 单次录制最长时间（小时） | `5` |
-| `MAX_RECOVERY_ATTEMPTS` | 单次录制的最大重连尝试次数 | `5` |
+| `MAX_RECOVERY_ATTEMPTS` | 单次录制的最大重连尝试次数 | `15` |
 | `MAX_RETRY_MINUTES` | 直播中断后判断是否仍在直播的最长容忍时间（分钟） | `10` |
 | `OUTPUT_DIR` | 录制文件保存目录 | `records` |
 | `SECRET_DIR` | Cookie 和 Token 保存目录 | `secrets` |
@@ -374,7 +374,7 @@ export FRP_HTTPS=false                  # 使用 HTTP 代理
 export FRP_SCHEME_HTTPS=true            # 公网 URL 为 HTTPS
 export MAX_CONCURRENT_RECORDINGS=3
 export MAX_RECORDING_HOURS=5
-export MAX_RECOVERY_ATTEMPTS=5
+export MAX_RECOVERY_ATTEMPTS=15
 export MAX_RETRY_MINUTES=10
 export OUTPUT_DIR=/path/to/records
 export SECRET_DIR=/path/to/secrets
