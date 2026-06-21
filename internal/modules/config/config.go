@@ -207,7 +207,7 @@ func provider(lc fx.Lifecycle) (*Config, error) {
 		liveStreamWriterBufferSize:        utils.MustAtoi(utils.EmptyOrElse(os.Getenv("LIVE_STREAM_WRITER_BUFFER_SIZE"), "8388608")),          // 8MB: prioritize lower flush frequency for SD card longevity
 		liveStreamWriterSyncPeriod:             utils.MustAtoi(utils.EmptyOrElse(os.Getenv("LIVE_STREAM_WRITER_SYNC_PERIOD_SECS"), "0")),                // 0 = disabled; sync only on Close() to minimize SD card wear
 		liveStreamWriterColdCacheReleasePeriod: utils.MustAtoi(utils.EmptyOrElse(os.Getenv("LIVE_STREAM_WRITER_COLD_CACHE_RELEASE_SECS"), "60")), // periodic cold page-cache release during recording
-		liveStreamWriterFlushPeriod:       utils.MustAtoi(utils.EmptyOrElse(os.Getenv("LIVE_STREAM_WRITER_FLUSH_PERIOD_SECS"), "10")),         // default 10s: fewer flush operations, lower SD card wear
+		liveStreamWriterFlushPeriod:       utils.MustAtoi(utils.EmptyOrElse(os.Getenv("LIVE_STREAM_WRITER_FLUSH_PERIOD_SECS"), "15")),         // default 15s: fewer flush operations, lower SD card wear
 		liveStreamWriterChanBufferSize:    utils.MustAtoi(utils.EmptyOrElse(os.Getenv("LIVE_STREAM_WRITER_CHAN_BUFFER_SIZE"), "64")),          // default 64: limits in-flight memory while still tolerating write latency bursts
 		liveStreamWriterBytesPoolSize:     utils.MustAtoi(utils.EmptyOrElse(os.Getenv("LIVE_STREAM_WRITER_BYTES_POOL_SIZE"), "524288")),       // 512KB per buffer
 		liveStreamWriterBytesPoolSizeHigh: utils.MustAtoi(utils.EmptyOrElse(os.Getenv("LIVE_STREAM_WRITER_BYTES_POOL_SIZE_HIGH"), "1048576")), // default 1MB for 2K/4K
