@@ -42,6 +42,9 @@ type Service struct {
 	shardCount  int
 	shardStops  []func()
 
+	checkInterval time.Duration
+	roomsCache    subscribedRoomsCache
+
 	ctx    context.Context
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
@@ -104,6 +107,8 @@ func (s *Service) start(cfg *config.Config) error {
 		shardCount = defaultShardCount
 	}
 	s.shardCount = shardCount
+	s.checkInterval = interval
+	s.roomsCache = newSubscribedRoomsCache(interval)
 	s.coordinator = coordinator.NewRoundRobin(interval)
 	// Keep one shard tick responsive when shard count is large.
 	s.coordinator.SetMinTick(time.Second)
@@ -161,7 +166,7 @@ func (s *Service) tryStartShardAutoRecordRooms(shardIndex, shardCount int) {
 		shardCount = 1
 	}
 
-	rooms, err := s.subSvc.ListSubscribedRoomsWithConfig()
+	rooms, err := s.getSubscribedRooms()
 	if err != nil {
 		logger.Warnf("列出房间订阅失败：%v", err)
 		return

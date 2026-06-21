@@ -41,6 +41,7 @@ func (s *HlsTsStrategy) BuildPipeline(ctx context.Context, outputPath string, st
 			processors.WithChanBufferSize(config.ReadOnly.LiveStreamWriterChanBufferSize()),
 			processors.WithBytesPool(s.writerPool),
 			processors.WithSDCardProtection(config.ReadOnly.SkipSmallFlush()),
+			processors.WithDropFilePageCache(config.ReadOnly.DropFilePageCache()),
 			processors.WithSequentialWrite(config.ReadOnly.SequentialWrite()),
 		),
 	)

@@ -207,6 +207,7 @@ func defaultAndroidEnv(basePath string) map[string]string {
 		"LIVE_STREAM_WRITER_SYNC_PERIOD_SECS":     "0",
 		"LIVE_STREAM_WRITER_FLUSH_PERIOD_SECS":    "10",
 		"SKIP_SMALL_FLUSH":                        "false",
+		"DROP_FILE_PAGE_CACHE":                    "true",
 		"SILENT_ACCESS_LOG":                       "true",
 		"SEQUENTIAL_WRITE":                        "false",
 	}

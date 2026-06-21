@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/bilirec/bilirec/pkg/coordinator"
+	"github.com/bilirec/bilirec/pkg/filecache"
 	"github.com/bilirec/bilirec/pkg/pipeline"
 	"github.com/bilirec/bilirec/pkg/pool"
 	"github.com/bilirec/bilirec/pkg/rw"
@@ -64,6 +65,7 @@ type BufferedStreamWriterProcessor struct {
 	flushPeriod             time.Duration
 	sdcardProtection        bool
 	skipSmallFlushThreshold int
+	dropFilePageCache       bool
 	sequentialWrite         bool
 	writer                  *rw.FlushLockedBufferedWriter
 	logger                  *logrus.Entry
@@ -247,6 +249,11 @@ func (w *BufferedStreamWriterProcessor) Close() error {
 	var closeErr error
 	if file := w.file.Load(); file != nil {
 		w.logger.Debugf("file path: %s, total written %vB", w.path, w.bytesWritten)
+		if w.dropFilePageCache {
+			w.locker.Lock()
+			filecache.DropOpenFileCache(file)
+			w.locker.Unlock()
+		}
 		closeErr = file.Close()
 	}
 	w.writer = nil
@@ -457,6 +464,12 @@ func (p *BufferedStreamWriterProcessor) applyOptions(opts ...BufferedStreamWrite
 func WithSDCardProtection(enabled bool) BufferedStreamWriterOptions {
 	return func(p *BufferedStreamWriterProcessor) {
 		p.sdcardProtection = enabled
+	}
+}
+
+func WithDropFilePageCache(enabled bool) BufferedStreamWriterOptions {
+	return func(p *BufferedStreamWriterProcessor) {
+		p.dropFilePageCache = enabled
 	}
 }
 

@@ -9,6 +9,7 @@ import (
 	"github.com/bilirec/bilirec/internal/modules/config"
 	"github.com/bilirec/bilirec/pkg/db"
 	"github.com/bilirec/bilirec/pkg/ffmpeg"
+	"github.com/bilirec/bilirec/pkg/filecache"
 	"github.com/bilirec/bilirec/pkg/pool"
 	"github.com/bilirec/bilirec/utils"
 	"github.com/puzpuzpuz/xsync/v4"
@@ -207,6 +208,11 @@ func (f *ffmpegConvertManager) asyncProcessTask(ctx context.Context, queue *Task
 	if err := f.deleteTaskFromQueue(queue.TaskID); err != nil {
 		taskLog.Errorf("从队列移除 ffmpeg 任务失败：%v", err)
 		return
+	}
+
+	if config.ReadOnly.DropFilePageCache() {
+		filecache.DropFilePageCache(queue.InputPath)
+		filecache.DropFilePageCache(queue.OutputPath)
 	}
 
 	f.deleter.Schedule(queue, taskLog)

@@ -113,6 +113,10 @@ func (g *GlobalReadOnly) SequentialWrite() bool {
 	return g.config.sequentialWrite
 }
 
+func (g *GlobalReadOnly) DropFilePageCache() bool {
+	return g.config.dropFilePageCache
+}
+
 func (g *GlobalReadOnly) RestAuthEnabled() bool {
 	return g.config.Username != "" && g.config.PasswordHash != ""
 }

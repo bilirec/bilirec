@@ -99,6 +99,7 @@ type Config struct {
 	skipSmallFlushThreshold        int
 	skipSmallFlush                 bool
 	sequentialWrite                bool
+	dropFilePageCache              bool
 }
 
 var logger = logrus.WithField("module", "config")
@@ -211,6 +212,7 @@ func provider(lc fx.Lifecycle) (*Config, error) {
 		skipSmallFlushThreshold:        utils.MustAtoi(utils.EmptyOrElse(os.Getenv("SKIP_SMALL_FLUSH_THRESHOLD"), "1048576")),        // default 1MB: delay file creation until buffered bytes reach this threshold
 		skipSmallFlush:                 os.Getenv("SKIP_SMALL_FLUSH") != "false",                                                              // enabled by default; when true, SD-card protection mode is enabled
 		sequentialWrite:                os.Getenv("SEQUENTIAL_WRITE") != "false",                                                              // enabled by default; set false to disable global flush serialization
+		dropFilePageCache:              os.Getenv("DROP_FILE_PAGE_CACHE") == "true",
 	}
 
 	ReadOnly = &GlobalReadOnly{config: c}
