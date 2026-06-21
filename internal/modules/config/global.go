@@ -11,6 +11,7 @@ const (
 	defaultFFmpegMaxConcurrentTasks                      = 1
 	defaultFFmpegAllowDuringRecordingMaxActiveRecordings = 1
 	defaultLiveStreamWriterSyncPeriodSecs                = 0 // Disable periodic sync to reduce SD card wear; data syncs only on Close()
+	defaultLiveStreamWriterColdCacheReleaseSecs          = 60
 	defaultLiveStreamWriterFlushPeriodSecs               = 15
 	defaultLiveStreamWriterChanBufferSize                = 64
 	defaultLiveStreamWriterBytesPoolSize                 = 512 * 1024 // 512KB per buffer
@@ -47,6 +48,19 @@ func (g *GlobalReadOnly) LiveStreamWriterSyncPeriodSecs() int {
 		return defaultLiveStreamWriterSyncPeriodSecs
 	}
 	return g.config.liveStreamWriterSyncPeriod
+}
+
+func (g *GlobalReadOnly) LiveStreamWriterColdCacheReleaseSecs() int {
+	if g.LiveStreamWriterSyncPeriodSecs() > 0 {
+		return 0
+	}
+	if g.config.liveStreamWriterColdCacheReleasePeriod < 0 {
+		return 0
+	}
+	if g.config.liveStreamWriterColdCacheReleasePeriod == 0 {
+		return 0
+	}
+	return g.config.liveStreamWriterColdCacheReleasePeriod
 }
 
 func (g *GlobalReadOnly) LiveStreamWriterFlushPeriodSecs() int {
@@ -201,6 +215,16 @@ func (g *GlobalReadOnly) Validate() error {
 	}
 	if g.config.liveStreamWriterSyncPeriod < 0 {
 		logger.Warnf("LIVE_STREAM_WRITER_SYNC_PERIOD_SECS 无效（%d），使用默认值 %d 秒", g.config.liveStreamWriterSyncPeriod, defaultLiveStreamWriterSyncPeriodSecs)
+	}
+	if g.config.liveStreamWriterColdCacheReleasePeriod < 0 {
+		logger.Warnf("LIVE_STREAM_WRITER_COLD_CACHE_RELEASE_SECS 无效（%d），冷缓存释放已关闭", g.config.liveStreamWriterColdCacheReleasePeriod)
+	}
+	if g.config.liveStreamWriterSyncPeriod > 0 && g.config.liveStreamWriterColdCacheReleasePeriod > 0 {
+		logger.Warnf(
+			"LIVE_STREAM_WRITER_SYNC_PERIOD_SECS（%d）与 LIVE_STREAM_WRITER_COLD_CACHE_RELEASE_SECS（%d）同时启用；以 periodic fsync 为准，冷缓存释放已关闭",
+			g.config.liveStreamWriterSyncPeriod,
+			g.config.liveStreamWriterColdCacheReleasePeriod,
+		)
 	}
 	if g.config.liveStreamWriterFlushPeriod <= 0 {
 		logger.Warnf("LIVE_STREAM_WRITER_FLUSH_PERIOD_SECS 无效（%d），使用默认值 %d 秒", g.config.liveStreamWriterFlushPeriod, defaultLiveStreamWriterFlushPeriodSecs)

@@ -204,8 +204,9 @@ func defaultAndroidEnv(basePath string) map[string]string {
 		"READ_STREAM_BYTES_POOL_SIZE_HIGH":        "1048576",    // 1MB
 		"READ_STREAM_CHAN_BUFFER_SIZE_HIGH":       "32",         // 48 -> 32
 		"LIVE_STREAM_WRITER_BYTES_POOL_SIZE_HIGH": "1048576",    // 1MB
-		"LIVE_STREAM_WRITER_SYNC_PERIOD_SECS":     "0",
-		"LIVE_STREAM_WRITER_FLUSH_PERIOD_SECS":    "10",
+		"LIVE_STREAM_WRITER_SYNC_PERIOD_SECS":          "0",
+		"LIVE_STREAM_WRITER_COLD_CACHE_RELEASE_SECS":   "60",
+		"LIVE_STREAM_WRITER_FLUSH_PERIOD_SECS":         "10",
 		"SKIP_SMALL_FLUSH":                        "false",
 		"DROP_FILE_PAGE_CACHE":                    "true",
 		"SILENT_ACCESS_LOG":                       "true",

@@ -22,8 +22,7 @@ const (
 	// 3s is more suitable for microSD cards under concurrent I/O pressure.
 	defaultSlowFlushWarnThreshold = 3 * time.Second
 
-	// slowSyncWarnThreshold warns when fsync takes too long.
-	// This is only used if periodic sync is enabled (syncPeriod > 0).
+	// slowSyncWarnThreshold warns when fsync or cold-cache release takes too long.
 	// For microSD: warns if fsync > 1200ms (card is struggling).
 	// For HDD: consider lowering to 200ms (HDDs should sync very fast).
 	slowSyncWarnThreshold = 1200 * time.Millisecond
@@ -56,12 +55,21 @@ func (n *noOpLocker) Lock()         {}
 func (n *noOpLocker) Unlock()       {}
 func (n *noOpLocker) TryLock() bool { return true }
 
+type periodicIOMode int
+
+const (
+	periodicIODisabled periodicIOMode = iota
+	periodicIOFsync
+	periodicIOColdRelease
+)
+
 type BufferedStreamWriterProcessor struct {
 	file                    atomic.Pointer[os.File]
 	path                    string
 	bufferSize              int
 	chanBufferSize          int
 	syncPeriod              time.Duration
+	coldCacheReleasePeriod  time.Duration
 	flushPeriod             time.Duration
 	sdcardProtection        bool
 	skipSmallFlushThreshold int
@@ -72,9 +80,10 @@ type BufferedStreamWriterProcessor struct {
 	locker                  tryLocker
 
 	dataCh       chan []byte
-	stopCh       chan struct{} // Signal to stop syncWorker (only used if syncPeriod > 0)
+	stopCh       chan struct{} // Signal to stop periodicIOWorker
 	wait         sync.WaitGroup
 	bytesWritten int64
+	releasedThrough int64
 	// bufferedBytes mirrors writer.Buffered() for cross-goroutine reads (e.g. periodic ready).
 	bufferedBytes atomic.Int64
 
@@ -166,14 +175,25 @@ func (w *BufferedStreamWriterProcessor) Open(ctx context.Context, log *logrus.En
 	w.wait.Add(1)
 	go w.writePeriodically()
 
-	// If periodic sync is enabled, start the sync worker goroutine.
-	if w.syncPeriod > 0 {
+	// If periodic fsync or cold-cache release is enabled, start the I/O worker goroutine.
+	periodicMode, periodicPeriod := w.periodicIOConfig()
+	if periodicMode != periodicIODisabled {
 		w.stopCh = make(chan struct{})
 		w.wait.Add(1)
-		go w.syncWorker()
+		go w.periodicIOWorker(periodicMode, periodicPeriod)
 	}
 
 	return nil
+}
+
+func (w *BufferedStreamWriterProcessor) periodicIOConfig() (periodicIOMode, time.Duration) {
+	if w.syncPeriod > 0 {
+		return periodicIOFsync, w.syncPeriod
+	}
+	if w.coldCacheReleasePeriod > 0 {
+		return periodicIOColdRelease, w.coldCacheReleasePeriod
+	}
+	return periodicIODisabled, 0
 }
 
 // Process copies data into the write goroutine's channel and immediately returns,
@@ -202,8 +222,8 @@ func (w *BufferedStreamWriterProcessor) Close() error {
 		w.periodicSignalCh = nil
 	}
 	close(w.dataCh) // Producer closes the channel
-	if w.syncPeriod > 0 {
-		close(w.stopCh) // Signal syncWorker to stop (if it's running)
+	if w.stopCh != nil {
+		close(w.stopCh) // Signal periodicIOWorker to stop
 	}
 	w.wait.Wait()
 
@@ -421,37 +441,72 @@ func (w *BufferedStreamWriterProcessor) createFileAndWriter() error {
 	return nil
 }
 
-// syncWorker handles periodic fsync operations in a separate goroutine to avoid
-// blocking the main writer loop on slow I/O (especially important for SD cards).
-// It owns a ticker and independently drives sync operations at w.syncPeriod intervals
-// until stopCh is closed.
-func (w *BufferedStreamWriterProcessor) syncWorker() {
-	syncTicker := time.NewTicker(w.syncPeriod)
+// periodicIOWorker handles periodic fsync or cold page-cache release in a separate
+// goroutine to avoid blocking the main writer loop on slow I/O.
+func (w *BufferedStreamWriterProcessor) periodicIOWorker(mode periodicIOMode, period time.Duration) {
+	ticker := time.NewTicker(period)
 	defer w.wait.Done()
-	defer syncTicker.Stop()
+	defer ticker.Stop()
 
 	for {
 		select {
-		case <-syncTicker.C:
-			file := w.file.Load()
-			if file == nil {
-				continue
-			}
-			// Perform the actual sync to disk (can be slow on SD cards).
-			syncStart := time.Now()
-			if !w.locker.TryLock() {
-				continue
-			}
-			if err := file.Sync(); err != nil {
-				w.logger.Warnf("同步文件失败：%v", err)
-			}
-			w.locker.Unlock()
-			if syncCost := time.Since(syncStart); syncCost > slowSyncWarnThreshold {
-				w.logger.Warnf("周期性 sync 较慢：耗时=%s", syncCost)
+		case <-ticker.C:
+			switch mode {
+			case periodicIOFsync:
+				w.doPeriodicFsync()
+			case periodicIOColdRelease:
+				w.doColdCacheRelease()
 			}
 		case <-w.stopCh:
 			return
 		}
+	}
+}
+
+func (w *BufferedStreamWriterProcessor) doPeriodicFsync() {
+	file := w.file.Load()
+	if file == nil {
+		return
+	}
+	syncStart := time.Now()
+	if !w.locker.TryLock() {
+		return
+	}
+	err := file.Sync()
+	w.locker.Unlock()
+	if err != nil {
+		w.logger.Warnf("同步文件失败：%v", err)
+	}
+	if syncCost := time.Since(syncStart); syncCost > slowSyncWarnThreshold {
+		w.logger.Warnf("周期性 sync 较慢：耗时=%s", syncCost)
+	}
+}
+
+func (w *BufferedStreamWriterProcessor) doColdCacheRelease() {
+	file := w.file.Load()
+	writer := w.writer
+	if file == nil || writer == nil {
+		return
+	}
+	if !w.locker.TryLock() {
+		return
+	}
+	defer w.locker.Unlock()
+
+	onDisk := atomic.LoadInt64(&w.bytesWritten) - int64(writer.Buffered())
+	plan, ok := planColdRelease(onDisk, w.releasedThrough, w.bufferSize)
+	if !ok {
+		return
+	}
+
+	releaseStart := time.Now()
+	if err := filecache.ReleaseColdRange(file, plan.Offset, plan.Length); err != nil {
+		w.logger.Warnf("冷缓存释放失败：offset=%d length=%d err=%v", plan.Offset, plan.Length, err)
+		return
+	}
+	w.releasedThrough = plan.NewEnd
+	if releaseCost := time.Since(releaseStart); releaseCost > slowSyncWarnThreshold {
+		w.logger.Warnf("冷缓存释放较慢：耗时=%s releasedThrough=%d", releaseCost, w.releasedThrough)
 	}
 }
 
@@ -486,10 +541,18 @@ func WithBufferSize(size int) BufferedStreamWriterOptions {
 }
 
 // WithSyncPeriod sets the periodic fsync interval. Pass 0 to disable periodic
-// sync entirely (sync only on Close), which reduces wear on SD cards.
+// fsync entirely (fsync only on Close). Mutually exclusive with cold-cache release.
 func WithSyncPeriod(period time.Duration) BufferedStreamWriterOptions {
 	return func(p *BufferedStreamWriterProcessor) {
 		p.syncPeriod = period
+	}
+}
+
+// WithColdCacheReleasePeriod sets how often cold file prefixes are synced and
+// dropped from the page cache during recording. Pass 0 to disable.
+func WithColdCacheReleasePeriod(period time.Duration) BufferedStreamWriterOptions {
+	return func(p *BufferedStreamWriterProcessor) {
+		p.coldCacheReleasePeriod = period
 	}
 }
 

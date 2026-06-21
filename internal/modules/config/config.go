@@ -91,7 +91,8 @@ type Config struct {
 	downloadBufferSize                int
 	streamWriterBufferSize            int
 	liveStreamWriterBufferSize        int
-	liveStreamWriterSyncPeriod        int
+	liveStreamWriterSyncPeriod            int
+	liveStreamWriterColdCacheReleasePeriod int
 	liveStreamWriterFlushPeriod       int
 	liveStreamWriterChanBufferSize    int
 	liveStreamWriterBytesPoolSize     int
@@ -204,7 +205,8 @@ func provider(lc fx.Lifecycle) (*Config, error) {
 		downloadBufferSize:                utils.MustAtoi(utils.EmptyOrElse(os.Getenv("DOWNLOAD_BUFFER_SIZE"), "5242880")),                    // default 5MB
 		streamWriterBufferSize:            utils.MustAtoi(utils.EmptyOrElse(os.Getenv("STREAM_WRITER_BUFFER_SIZE"), "1048576")),               // default 1MB
 		liveStreamWriterBufferSize:        utils.MustAtoi(utils.EmptyOrElse(os.Getenv("LIVE_STREAM_WRITER_BUFFER_SIZE"), "8388608")),          // 8MB: prioritize lower flush frequency for SD card longevity
-		liveStreamWriterSyncPeriod:        utils.MustAtoi(utils.EmptyOrElse(os.Getenv("LIVE_STREAM_WRITER_SYNC_PERIOD_SECS"), "0")),           // 0 = disabled; sync only on Close() to minimize SD card wear
+		liveStreamWriterSyncPeriod:             utils.MustAtoi(utils.EmptyOrElse(os.Getenv("LIVE_STREAM_WRITER_SYNC_PERIOD_SECS"), "0")),                // 0 = disabled; sync only on Close() to minimize SD card wear
+		liveStreamWriterColdCacheReleasePeriod: utils.MustAtoi(utils.EmptyOrElse(os.Getenv("LIVE_STREAM_WRITER_COLD_CACHE_RELEASE_SECS"), "60")), // periodic cold page-cache release during recording
 		liveStreamWriterFlushPeriod:       utils.MustAtoi(utils.EmptyOrElse(os.Getenv("LIVE_STREAM_WRITER_FLUSH_PERIOD_SECS"), "10")),         // default 10s: fewer flush operations, lower SD card wear
 		liveStreamWriterChanBufferSize:    utils.MustAtoi(utils.EmptyOrElse(os.Getenv("LIVE_STREAM_WRITER_CHAN_BUFFER_SIZE"), "64")),          // default 64: limits in-flight memory while still tolerating write latency bursts
 		liveStreamWriterBytesPoolSize:     utils.MustAtoi(utils.EmptyOrElse(os.Getenv("LIVE_STREAM_WRITER_BYTES_POOL_SIZE"), "524288")),       // 512KB per buffer
@@ -212,7 +214,7 @@ func provider(lc fx.Lifecycle) (*Config, error) {
 		skipSmallFlushThreshold:        utils.MustAtoi(utils.EmptyOrElse(os.Getenv("SKIP_SMALL_FLUSH_THRESHOLD"), "1048576")),        // default 1MB: delay file creation until buffered bytes reach this threshold
 		skipSmallFlush:                 os.Getenv("SKIP_SMALL_FLUSH") != "false",                                                              // enabled by default; when true, SD-card protection mode is enabled
 		sequentialWrite:                os.Getenv("SEQUENTIAL_WRITE") != "false",                                                              // enabled by default; set false to disable global flush serialization
-		dropFilePageCache:              os.Getenv("DROP_FILE_PAGE_CACHE") == "true",
+		dropFilePageCache:              os.Getenv("DROP_FILE_PAGE_CACHE") != "false",
 	}
 
 	ReadOnly = &GlobalReadOnly{config: c}
