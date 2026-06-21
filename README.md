@@ -4,31 +4,69 @@
 
 **完整文档：** [www.bilirec.org/zh-cn/](https://www.bilirec.org/zh-cn/) · [常见问题](https://www.bilirec.org/zh-cn/guides/faq/)
 
-## 文档
+## 目录
 
-| 主题 | 链接 |
-|------|------|
-| 安装 | [guides/installation](https://www.bilirec.org/zh-cn/guides/installation/) |
-| 快速开始 | [guides/quick-start](https://www.bilirec.org/zh-cn/guides/quick-start/) |
-| 配置与调优 | [configuration/overview](https://www.bilirec.org/zh-cn/configuration/overview/) |
-| REST API | [api/overview](https://www.bilirec.org/zh-cn/api/overview/)（运行时根路径 `/` 另有 Swagger UI） |
-| 常见问题 | [guides/faq](https://www.bilirec.org/zh-cn/guides/faq/) |
+- [功能特性](#功能特性)
+- [效能指标](#效能指标)
+- [快速开始](#快速开始)
+- [生态](#生态)
+- [文档](#文档)
+- [贡献与许可](#贡献与许可)
 
-原 README 长文章节对照：[`#配置`](https://www.bilirec.org/zh-cn/configuration/overview/) · [`#rest-api`](https://www.bilirec.org/zh-cn/api/overview/) · [`#内存占用估算`](https://www.bilirec.org/zh-cn/configuration/memory-estimation/) · [`#android嵌入-app`](https://www.bilirec.org/zh-cn/guides/android/)
+## 功能特性
 
-## 特性
+- ✅ **开箱即用** — 零配置起步，运行后直接访问 Web 界面即可管理任务
+- ✅ **多模式录制** — 手动开始录制，或订阅直播间自动开播录制
+- ✅ **多格式支持** — HTTP-FLV / HLS-TS / HLS-fMP4
+- ✅ **灵活录制时长** — 指定时长上限、定时停止或无限时长
+- ✅ **开播即时通知** — Web Push / SSE 推送开播动态
+- ✅ **自动分段轮转** — PK 或分辨率变更时自动切文件，减少花屏与损坏
+- ✅ **多路并发录制** — 低配硬件上也能稳定多路同时录
+- ✅ **故障自动恢复** — FLV 时间戳修复与断流重连，连接波动时尽量不中断
+- ✅ **自动 MP4 转换** — 本地 FFmpeg 或 CloudConvert 云端转码
+- ✅ **多端运行与接入** — RESTful API、[bilirec-web](https://github.com/bilirec/bilirec-web)（PWA）、[bilirec-mobile](https://github.com/bilirec/bilirec-mobile)（Android 内嵌后端）
+- ✅ **FRP 内网穿透** — 无公网 IP 也可外网访问管理界面与文件
+- ✅ **文件管理与播放** — 列表浏览、批量删除、浏览器内 MP4 预览
+- ✅ **账号登录与刷新** — 匿名 / 扫码 / Controller 模式，Cookie 自动刷新
+- ✅ **低配与 microSD 优化** — 大块缓冲、序列化写入、跳过极短直播写盘；默认开启录製中定期清理旧文件缓存，压低容器监控内存
 
-- 开箱即用，Web 界面管理任务；支持 HTTP-FLV / HLS-TS / HLS-fMP4
-- 多路并发录制、自动恢复与分段轮转；可选录完转 MP4
-- 订阅开播自动录制；Web Push / SSE 通知
-- REST API、[bilirec-web](https://github.com/bilirec/bilirec-web)（PWA）、[bilirec-mobile](https://github.com/bilirec/bilirec-mobile)（Android）
-- 内置 FRP 内网穿透；针对树莓派与 microSD 的 I/O 优化
+配置详解、API、调优方案见 [官方文档站](https://www.bilirec.org/zh-cn/configuration/overview/)。
+
+## 效能指标
+
+> 测试环境：**树莓派 5B 16GB** · Docker 容器（**1 GB 内存限制**）· 默认配置 · 每路 **1080p**。
+>
+> 以下为**实测快照**（改配置或版本后会有偏差）。规划容器上限请用 [内存占用估算](https://www.bilirec.org/zh-cn/configuration/memory-estimation/)（偏保守，通常高于下表）。
+
+| 并发路数 | CPU 峰值占用 | 内存峰值占用 |
+| -------- | ------------ | ------------ |
+| 初始闲置 | ~0.0% | ~7 MB |
+| 1 路并发 | ~1.8% | ~72 MB |
+| 2 路并发 | ~2.7% | ~117 MB |
+| 3 路并发 | ~3.6% | ~141 MB |
+| 4 路并发 | ~4.1% | ~165 MB |
+| 5 路并发 | ~4.9% | ~192 MB |
+| 恢复闲置 | ~0.0% | ~54 MB |
+
+> 程序使用内存池复用缓冲，停录后部分内存会保留（见上表「恢复闲置」），以减轻 GC 压力，属正常现象。
+>
+> 更完整的压测说明见 [性能实测](https://www.bilirec.org/zh-cn/guides/performance-benchmark/)。
+
+**内存规划速查（默认 1080p）：**
+
+| 路数 N | 计算 | 预计总峰值 |
+| ------ | ---- | ---------- |
+| 1 | `(43~50) + 1×49` | 约 92~99 MB |
+| 3 | `(43~50) + 3×49` | 约 190~197 MB |
+| 5 | `(43~50) + 5×49` | 约 288~295 MB |
+
+默认 **4K 单路**约 `(43~50) + 1×122` → **165~172 MB**。公式与变量说明见 [内存占用估算](https://www.bilirec.org/zh-cn/configuration/memory-estimation/)。
 
 ## 快速开始
 
 ### 二进制
 
-从 [Releases](https://github.com/bilirec/bilirec/releases) 下载对应平台文件后启动：
+从 [Releases](https://github.com/bilirec/bilirec/releases) 下载对应平台文件：
 
 ```bash
 chmod +x bilirec-linux-amd64 && ./bilirec-linux-amd64
@@ -46,22 +84,35 @@ docker run -d --name bilirec -p 8080:8080 \
   eric1008818/bilirec:latest
 ```
 
-启动后打开 [app.bilirec.org](https://app.bilirec.org/)，在登录页填写你的后端地址（默认 `http://localhost:8080`）。更多步骤见 [快速开始](https://www.bilirec.org/zh-cn/guides/quick-start/)。
+启动后打开 [app.bilirec.org](https://app.bilirec.org/)，在登录页填写后端地址（默认 `http://localhost:8080`）。详细步骤见 [快速开始](https://www.bilirec.org/zh-cn/guides/quick-start/)。
+
+### Android（嵌入 App）
+
+- 官方客户端：[bilirec-mobile](https://github.com/bilirec/bilirec-mobile)
+- 库接口与构建：`make android` → `dist/android/<abi>/libbilirec.so`
+- 说明见 [Android 指南](https://www.bilirec.org/zh-cn/guides/android/) · [Android 库接口](https://www.bilirec.org/zh-cn/guides/android-library/)
 
 ## 生态
 
-- **[bilirec-web](https://github.com/bilirec/bilirec-web)** — Web 管理界面（PWA）
-- **[bilirec-mobile](https://github.com/bilirec/bilirec-mobile)** — Android 客户端，可在手机内运行后端
-- **[bilirec-docs](https://github.com/bilirec/bilirec-docs)** — 官方文档站
+| 项目 | 说明 |
+| ---- | ---- |
+| [bilirec-web](https://github.com/bilirec/bilirec-web) | Web 管理界面（PWA） |
+| [bilirec-mobile](https://github.com/bilirec/bilirec-mobile) | Android 客户端，可在手机内运行后端 |
+| [bilirec-docs](https://github.com/bilirec/bilirec-docs) | 官方文档站 |
 
-## 性能
+## 文档
 
-树莓派 5B 等低配设备上的多路录制实测见 [性能实测](https://www.bilirec.org/zh-cn/guides/performance-benchmark/)；规划内存请用 [内存占用估算](https://www.bilirec.org/zh-cn/configuration/memory-estimation/)。
+| 主题 | 链接 |
+| ---- | ---- |
+| 安装 | [guides/installation](https://www.bilirec.org/zh-cn/guides/installation/) |
+| 快速开始 | [guides/quick-start](https://www.bilirec.org/zh-cn/guides/quick-start/) |
+| 配置与调优 | [configuration/overview](https://www.bilirec.org/zh-cn/configuration/overview/) |
+| 树莓派 / microSD 默认 | [configuration/pi5-defaults](https://www.bilirec.org/zh-cn/configuration/pi5-defaults/) |
+| 内存占用估算 | [configuration/memory-estimation](https://www.bilirec.org/zh-cn/configuration/memory-estimation/) |
+| REST API | [api/overview](https://www.bilirec.org/zh-cn/api/overview/)（运行时根路径 `/` 另有 Swagger UI） |
+| 常见问题 | [guides/faq](https://www.bilirec.org/zh-cn/guides/faq/) |
+| 性能实测 | [guides/performance-benchmark](https://www.bilirec.org/zh-cn/guides/performance-benchmark/) |
 
-## 贡献
+## 贡献与许可
 
-请参阅 [CONTRIBUTING.md](CONTRIBUTING.md)。
-
-## 许可证
-
-请参阅项目许可证文件。
+请参阅 [CONTRIBUTING.md](CONTRIBUTING.md) 与项目许可证文件。
