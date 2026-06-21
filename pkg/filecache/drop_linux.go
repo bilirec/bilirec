@@ -9,19 +9,19 @@ import (
 )
 
 // DropOpenFileCache advises the kernel to release page cache for an open file.
-func DropOpenFileCache(f *os.File) {
+func DropOpenFileCache(f *os.File) error {
 	if f == nil {
-		return
+		return nil
 	}
-	_ = unix.Fadvise(int(f.Fd()), 0, 0, unix.FADV_DONTNEED)
+	return unix.Fadvise(int(f.Fd()), 0, 0, unix.FADV_DONTNEED)
 }
 
 // DropFilePageCache opens path read-only and drops its page cache.
-func DropFilePageCache(path string) {
+func DropFilePageCache(path string) error {
 	f, err := os.Open(path)
 	if err != nil {
-		return
+		return err
 	}
 	defer f.Close()
-	DropOpenFileCache(f)
+	return DropOpenFileCache(f)
 }

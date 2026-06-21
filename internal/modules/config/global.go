@@ -51,13 +51,7 @@ func (g *GlobalReadOnly) LiveStreamWriterSyncPeriodSecs() int {
 }
 
 func (g *GlobalReadOnly) LiveStreamWriterColdCacheReleaseSecs() int {
-	if g.LiveStreamWriterSyncPeriodSecs() > 0 {
-		return 0
-	}
 	if g.config.liveStreamWriterColdCacheReleasePeriod < 0 {
-		return 0
-	}
-	if g.config.liveStreamWriterColdCacheReleasePeriod == 0 {
 		return 0
 	}
 	return g.config.liveStreamWriterColdCacheReleasePeriod
@@ -221,7 +215,7 @@ func (g *GlobalReadOnly) Validate() error {
 	}
 	if g.config.liveStreamWriterSyncPeriod > 0 && g.config.liveStreamWriterColdCacheReleasePeriod > 0 {
 		logger.Warnf(
-			"LIVE_STREAM_WRITER_SYNC_PERIOD_SECS（%d）与 LIVE_STREAM_WRITER_COLD_CACHE_RELEASE_SECS（%d）同时启用；以 periodic fsync 为准，冷缓存释放已关闭",
+			"LIVE_STREAM_WRITER_SYNC_PERIOD_SECS（%d）与 LIVE_STREAM_WRITER_COLD_CACHE_RELEASE_SECS（%d）同时启用；以 periodic fsync 为准，冷缓存将在每次 fsync 成功后一并释放（不再按冷释放间隔单独计时）",
 			g.config.liveStreamWriterSyncPeriod,
 			g.config.liveStreamWriterColdCacheReleasePeriod,
 		)

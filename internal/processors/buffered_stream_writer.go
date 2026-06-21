@@ -271,7 +271,9 @@ func (w *BufferedStreamWriterProcessor) Close() error {
 		w.logger.Debugf("file path: %s, total written %vB", w.path, w.bytesWritten)
 		if w.dropFilePageCache {
 			w.locker.Lock()
-			filecache.DropOpenFileCache(file)
+			if err := filecache.DropOpenFileCache(file); err != nil {
+				w.logger.Warnf("释放文件页缓存失败：%v", err)
+			}
 			w.locker.Unlock()
 		}
 		closeErr = file.Close()
@@ -465,20 +467,25 @@ func (w *BufferedStreamWriterProcessor) periodicIOWorker(mode periodicIOMode, pe
 
 func (w *BufferedStreamWriterProcessor) doPeriodicFsync() {
 	file := w.file.Load()
+	writer := w.writer
 	if file == nil {
 		return
 	}
-	syncStart := time.Now()
 	if !w.locker.TryLock() {
 		return
 	}
-	err := file.Sync()
-	w.locker.Unlock()
-	if err != nil {
+	defer w.locker.Unlock()
+
+	syncStart := time.Now()
+	if err := file.Sync(); err != nil {
 		w.logger.Warnf("同步文件失败：%v", err)
+		return
 	}
 	if syncCost := time.Since(syncStart); syncCost > slowSyncWarnThreshold {
 		w.logger.Warnf("周期性 sync 较慢：耗时=%s", syncCost)
+	}
+	if w.coldCacheReleasePeriod > 0 {
+		w.releaseColdPrefixLocked(file, writer, false)
 	}
 }
 
@@ -492,7 +499,13 @@ func (w *BufferedStreamWriterProcessor) doColdCacheRelease() {
 		return
 	}
 	defer w.locker.Unlock()
+	w.releaseColdPrefixLocked(file, writer, true)
+}
 
+func (w *BufferedStreamWriterProcessor) releaseColdPrefixLocked(file *os.File, writer *rw.FlushLockedBufferedWriter, syncBeforeDrop bool) {
+	if writer == nil {
+		return
+	}
 	onDisk := atomic.LoadInt64(&w.bytesWritten) - int64(writer.Buffered())
 	plan, ok := planColdRelease(onDisk, w.releasedThrough, w.bufferSize)
 	if !ok {
@@ -500,7 +513,13 @@ func (w *BufferedStreamWriterProcessor) doColdCacheRelease() {
 	}
 
 	releaseStart := time.Now()
-	if err := filecache.ReleaseColdRange(file, plan.Offset, plan.Length); err != nil {
+	var err error
+	if syncBeforeDrop {
+		err = filecache.ReleaseColdRange(file, plan.Offset, plan.Length)
+	} else {
+		err = filecache.DropPageCacheRange(file, plan.Offset, plan.Length)
+	}
+	if err != nil {
 		w.logger.Warnf("冷缓存释放失败：offset=%d length=%d err=%v", plan.Offset, plan.Length, err)
 		return
 	}
@@ -541,7 +560,9 @@ func WithBufferSize(size int) BufferedStreamWriterOptions {
 }
 
 // WithSyncPeriod sets the periodic fsync interval. Pass 0 to disable periodic
-// fsync entirely (fsync only on Close). Mutually exclusive with cold-cache release.
+// fsync entirely (fsync only on Close). When enabled, cold page-cache release
+// runs after each successful fsync (fadvise only). Mutually exclusive with a
+// separate cold-cache release timer.
 func WithSyncPeriod(period time.Duration) BufferedStreamWriterOptions {
 	return func(p *BufferedStreamWriterProcessor) {
 		p.syncPeriod = period

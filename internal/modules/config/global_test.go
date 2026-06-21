@@ -2,7 +2,7 @@ package config
 
 import "testing"
 
-func TestLiveStreamWriterColdCacheReleaseSecs_SoftMutex(t *testing.T) {
+func TestLiveStreamWriterColdCacheReleaseSecs_WithSync(t *testing.T) {
 	g := &GlobalReadOnly{config: &Config{
 		BilibiliLoginMode:                      "controller",
 		liveStreamWriterSyncPeriod:             45,
@@ -11,8 +11,8 @@ func TestLiveStreamWriterColdCacheReleaseSecs_SoftMutex(t *testing.T) {
 	if err := g.Validate(); err != nil {
 		t.Fatalf("Validate: %v", err)
 	}
-	if got := g.LiveStreamWriterColdCacheReleaseSecs(); got != 0 {
-		t.Fatalf("expected 0 when sync enabled, got %d", got)
+	if got := g.LiveStreamWriterColdCacheReleaseSecs(); got != 60 {
+		t.Fatalf("expected configured 60, got %d", got)
 	}
 }
 
