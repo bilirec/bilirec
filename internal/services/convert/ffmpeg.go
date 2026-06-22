@@ -213,9 +213,13 @@ func (f *ffmpegConvertManager) asyncProcessTask(ctx context.Context, queue *Task
 	if config.ReadOnly.DropFilePageCache() {
 		if err := filecache.DropFilePageCache(queue.InputPath); err != nil {
 			taskLog.Warnf("释放输入文件页缓存失败：path=%s err=%v", queue.InputPath, err)
+		} else {
+			taskLog.Debugf("释放输入文件页缓存成功：path=%s", queue.InputPath)
 		}
 		if err := filecache.DropFilePageCache(queue.OutputPath); err != nil {
 			taskLog.Warnf("释放输出文件页缓存失败：path=%s err=%v", queue.OutputPath, err)
+		} else {
+			taskLog.Debugf("释放输出文件页缓存成功：path=%s", queue.OutputPath)
 		}
 	}
 

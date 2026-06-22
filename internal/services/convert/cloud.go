@@ -14,6 +14,7 @@ import (
 	"github.com/bilirec/bilirec/pkg/cloudconvert"
 	"github.com/bilirec/bilirec/pkg/db"
 	"github.com/bilirec/bilirec/pkg/ds"
+	"github.com/bilirec/bilirec/pkg/filecache"
 	"github.com/bilirec/bilirec/pkg/pool"
 	"github.com/bilirec/bilirec/pkg/signeddownload"
 	"github.com/bilirec/bilirec/utils"
@@ -363,13 +364,18 @@ func (c *cloudConvertManager) handleFinished(ctx context.Context, queue *TaskQue
 	c.logger.Infof("已成功将任务 %s 的导出文件下载到 %s", queue.TaskID, queue.OutputPath)
 	c.presignedUrlPool.Delete(queue.InputPath)
 
-	err := utils.WithRetry(3, c.logger, "delete bucket", func() error {
+	if config.ReadOnly.DropFilePageCache() {
+		taskLog := c.logger.WithField("task_id", queue.TaskID)
+		if err := filecache.DropFilePageCache(queue.OutputPath); err != nil {
+			taskLog.Warnf("释放输出文件页缓存失败：path=%s err=%v", queue.OutputPath, err)
+		} else {
+			taskLog.Debugf("释放输出文件页缓存成功：path=%s", queue.OutputPath)
+		}
+	}
+
+	return utils.WithRetry(3, c.logger, "delete bucket", func() error {
 		return c.bucket.Delete([]byte(queue.TaskID))
 	})
-	if err != nil {
-		return err
-	}
-	return nil
 }
 
 func (c *cloudConvertManager) handleFailed(queue *TaskQueue, info *cloudconvert.TaskData) error {

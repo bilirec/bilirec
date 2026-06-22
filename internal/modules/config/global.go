@@ -57,6 +57,18 @@ func (g *GlobalReadOnly) LiveStreamWriterColdCacheReleaseSecs() int {
 	return g.config.liveStreamWriterColdCacheReleasePeriod
 }
 
+// ServeCacheIdleReleaseSecs returns idle seconds before dropping page cache after
+// playback or download ends. Zero or negative recording cold-release config falls
+// back to the default interval so DROP_FILE_PAGE_CACHE is not tied to disabling
+// recording cold release.
+func (g *GlobalReadOnly) ServeCacheIdleReleaseSecs() int {
+	secs := g.LiveStreamWriterColdCacheReleaseSecs()
+	if secs <= 0 {
+		return defaultLiveStreamWriterColdCacheReleaseSecs
+	}
+	return secs
+}
+
 func (g *GlobalReadOnly) LiveStreamWriterFlushPeriodSecs() int {
 	if g.config.liveStreamWriterFlushPeriod <= 0 {
 		return defaultLiveStreamWriterFlushPeriodSecs
@@ -243,4 +255,12 @@ func (g *GlobalReadOnly) Validate() error {
 		return fmt.Errorf("配置无效：当 FRP_ENABLED=true 且 FRP_HTTPS=true 时，必须同时设置 SERVER_CRT 和 SERVER_KEY 以启用 Fiber HTTPS；否则 FRP HTTPS 后端协议不匹配会导致 FRP 失败。请设置 SERVER_CRT 和 SERVER_KEY，或将 FRP_HTTPS=false，或禁用 FRP")
 	}
 	return nil
+}
+
+// NewGlobalReadOnlyForTest builds read-only config for unit tests in other packages.
+func NewGlobalReadOnlyForTest(dropFilePageCache bool, liveStreamWriterColdCacheReleaseSecs int) *GlobalReadOnly {
+	return &GlobalReadOnly{config: &Config{
+		dropFilePageCache:                      dropFilePageCache,
+		liveStreamWriterColdCacheReleasePeriod: liveStreamWriterColdCacheReleaseSecs,
+	}}
 }

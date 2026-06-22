@@ -89,7 +89,13 @@ func (c *Controller) playbackFile(ctx fiber.Ctx) error {
 		"inline; filename=\""+filepath.Base(fullPath)+"\"",
 	)
 
-	return ctx.SendFile(fullPath, fiber.SendFile{ByteRange: true})
+	return c.sendFileWithIdleCacheRelease(ctx, fullPath, fiber.SendFile{ByteRange: true})
+}
+
+func (c *Controller) sendFileWithIdleCacheRelease(ctx fiber.Ctx, fullPath string, cfg fiber.SendFile) error {
+	done := c.fileSvc.BeginServeCacheRelease(fullPath)
+	defer done()
+	return ctx.SendFile(fullPath, cfg)
 }
 
 // @Summary List files and directories
@@ -166,7 +172,7 @@ func (c *Controller) downloadFile(ctx fiber.Ctx) error {
 		return c.parseFiberError(err)
 	}
 	ctx.Attachment(fullPath) // set this because SendFile does not set the filename when using Download: true
-	return ctx.SendFile(fullPath, fiber.SendFile{
+	return c.sendFileWithIdleCacheRelease(ctx, fullPath, fiber.SendFile{
 		ByteRange: true,
 	})
 }
@@ -200,7 +206,7 @@ func (c *Controller) presignedDownload(ctx fiber.Ctx) error {
 		return c.parseFiberError(err)
 	}
 	ctx.Attachment(fullPath) // set this because SendFile does not set the filename when using Download: true
-	return ctx.SendFile(fullPath, fiber.SendFile{
+	return c.sendFileWithIdleCacheRelease(ctx, fullPath, fiber.SendFile{
 		ByteRange: true,
 	})
 }

@@ -36,6 +36,20 @@ func TestLiveStreamWriterColdCacheReleaseSecs_NegativeCold(t *testing.T) {
 	}
 }
 
+func TestServeCacheIdleReleaseSecs_ZeroUsesDefault(t *testing.T) {
+	g := &GlobalReadOnly{config: &Config{liveStreamWriterColdCacheReleasePeriod: 0}}
+	if got := g.ServeCacheIdleReleaseSecs(); got != 60 {
+		t.Fatalf("expected default 60 when cold=0, got %d", got)
+	}
+}
+
+func TestServeCacheIdleReleaseSecs_ConfiguredValue(t *testing.T) {
+	g := &GlobalReadOnly{config: &Config{liveStreamWriterColdCacheReleasePeriod: 120}}
+	if got := g.ServeCacheIdleReleaseSecs(); got != 120 {
+		t.Fatalf("expected 120, got %d", got)
+	}
+}
+
 func TestDropFilePageCache_DefaultEnabled(t *testing.T) {
 	g := &GlobalReadOnly{config: &Config{dropFilePageCache: true}}
 	if !g.DropFilePageCache() {

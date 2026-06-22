@@ -273,6 +273,8 @@ func (w *BufferedStreamWriterProcessor) Close() error {
 			w.locker.Lock()
 			if err := filecache.DropOpenFileCache(file); err != nil {
 				w.logger.Warnf("释放文件页缓存失败：%v", err)
+			} else {
+				w.logger.Debugf("释放文件页缓存成功：path=%s", w.path)
 			}
 			w.locker.Unlock()
 		}
@@ -524,6 +526,11 @@ func (w *BufferedStreamWriterProcessor) releaseColdPrefixLocked(file *os.File, w
 		return
 	}
 	w.releasedThrough = plan.NewEnd
+	if syncBeforeDrop {
+		w.logger.Debugf("冷缓存释放成功（sync+fadvise）：path=%s offset=%d length=%d releasedThrough=%d", w.path, plan.Offset, plan.Length, w.releasedThrough)
+	} else {
+		w.logger.Debugf("冷缓存释放成功（fadvise）：path=%s offset=%d length=%d releasedThrough=%d", w.path, plan.Offset, plan.Length, w.releasedThrough)
+	}
 	if releaseCost := time.Since(releaseStart); releaseCost > slowSyncWarnThreshold {
 		w.logger.Warnf("冷缓存释放较慢：耗时=%s releasedThrough=%d", releaseCost, w.releasedThrough)
 	}

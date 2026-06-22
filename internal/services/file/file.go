@@ -8,13 +8,16 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/bilirec/bilirec/internal/modules/config"
 	"github.com/bilirec/bilirec/internal/services/path"
+	"github.com/sirupsen/logrus"
 	"go.uber.org/fx"
 )
 
-// var logger = logrus.WithField("service", "file")
+var logger = logrus.WithField("service", "file")
 
 var ErrIsDirectory = fmt.Errorf("路径是目录")
 
@@ -23,6 +26,11 @@ type Service struct {
 	ctx context.Context
 
 	path *path.Service
+
+	serveCacheMu                sync.Mutex
+	serveCache                  map[string]*serveCacheSession
+	dropPageCacheFn             func(string) error
+	serveCacheIdleDelayOverride time.Duration
 }
 
 type Tree struct {
@@ -49,12 +57,16 @@ func NewService(ls fx.Lifecycle, cfg *config.Config, pathSvc *path.Service) *Ser
 	ctx, cancel := context.WithCancel(context.Background())
 
 	s := &Service{
-		cfg:  cfg,
-		ctx:  ctx,
-		path: pathSvc,
+		cfg:        cfg,
+		ctx:        ctx,
+		path:       pathSvc,
+		serveCache: make(map[string]*serveCacheSession),
 	}
 
-	ls.Append(fx.StopHook(cancel))
+	ls.Append(fx.StopHook(func() {
+		cancel()
+		s.stopServeCacheRelease()
+	}))
 	return s
 }
 
