@@ -201,6 +201,11 @@ func (g *GlobalReadOnly) Validate() error {
 	default:
 		return fmt.Errorf("配置无效：BILIBILI_LOGIN_MODE 仅支持 startup、controller、anonymous，当前值：%s", g.config.BilibiliLoginMode)
 	}
+	switch g.config.RecordingRecoveryDuration {
+	case "preserve", "reset":
+	default:
+		return fmt.Errorf("配置无效：RECORDING_RECOVERY_DURATION 仅支持 preserve、reset，当前值：%s", g.config.RecordingRecoveryDuration)
+	}
 	if g.config.CloudConvertCheckIntervalSecs <= 0 {
 		logger.Warnf("CLOUDCONVERT_CHECK_INTERVAL_SECS 无效（%d），使用默认值 %d 秒", g.config.CloudConvertCheckIntervalSecs, defaultCloudConvertCheckIntervalSecs)
 	}

@@ -155,7 +155,9 @@ func (r *Service) commitSession(
 	if p.mode == startModeRecovery {
 		info := p.session
 		info.room = roomInfo
-		info.startTime = now
+		if r.cfg.RecordingRecoveryDuration == "reset" {
+			info.startTime = now
+		}
 		info.startOptions = snapshotStartOptions(p.opts)
 		txn.ConfirmWith(p.roomId, func() {
 			info.status.Store(recordingPtr)

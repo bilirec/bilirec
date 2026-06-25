@@ -171,3 +171,79 @@ func TestSnapshotStartOptions_CopiesSlice(t *testing.T) {
 		t.Fatalf("expected copied stream options, got %d", len(snap.streamOptions))
 	}
 }
+
+func TestCommitSession_RecoveryPreserveStartTime(t *testing.T) {
+	r := newTestRecorderService(t)
+	r.cfg.RecordingRecoveryDuration = "preserve"
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	originalStart := time.Now().Add(-10 * time.Minute)
+	info := &Info{
+		ctx:       ctx,
+		cancel:    cancel,
+		startTime: originalStart,
+		backoff:   backoff.NewSequence(1 * time.Second),
+		room:      &bilibili.LiveRoomInfoDetail{RoomID: 1},
+	}
+	info.status.Store(recoveringPtr)
+	r.recording.Store(1, info)
+
+	txn := r.reser.Begin()
+	now := time.Now()
+	roomInfo := &bilibili.LiveRoomInfoDetail{RoomID: 1, LiveStatus: 1}
+
+	got, err := r.commitSession(internalStartParams{
+		roomId:  1,
+		ctx:     ctx,
+		mode:    startModeRecovery,
+		session: info,
+	}, txn, roomInfo, now, time.Hour)
+	if err != nil {
+		t.Fatalf("commitSession: %v", err)
+	}
+	txn.Confirm(1)
+
+	if got.startTime != originalStart {
+		t.Fatalf("expected startTime preserved, got %v want %v", got.startTime, originalStart)
+	}
+}
+
+func TestCommitSession_RecoveryResetStartTime(t *testing.T) {
+	r := newTestRecorderService(t)
+	r.cfg.RecordingRecoveryDuration = "reset"
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	originalStart := time.Now().Add(-10 * time.Minute)
+	info := &Info{
+		ctx:       ctx,
+		cancel:    cancel,
+		startTime: originalStart,
+		backoff:   backoff.NewSequence(1 * time.Second),
+		room:      &bilibili.LiveRoomInfoDetail{RoomID: 1},
+	}
+	info.status.Store(recoveringPtr)
+	r.recording.Store(1, info)
+
+	txn := r.reser.Begin()
+	now := time.Now()
+	roomInfo := &bilibili.LiveRoomInfoDetail{RoomID: 1, LiveStatus: 1}
+
+	got, err := r.commitSession(internalStartParams{
+		roomId:  1,
+		ctx:     ctx,
+		mode:    startModeRecovery,
+		session: info,
+	}, txn, roomInfo, now, time.Hour)
+	if err != nil {
+		t.Fatalf("commitSession: %v", err)
+	}
+	txn.Confirm(1)
+
+	if !got.startTime.Equal(now) {
+		t.Fatalf("expected startTime reset to %v, got %v", now, got.startTime)
+	}
+}

@@ -5,6 +5,7 @@ import "testing"
 func TestLiveStreamWriterColdCacheReleaseSecs_WithSync(t *testing.T) {
 	g := &GlobalReadOnly{config: &Config{
 		BilibiliLoginMode:                      "controller",
+		RecordingRecoveryDuration:              "preserve",
 		liveStreamWriterSyncPeriod:             45,
 		liveStreamWriterColdCacheReleasePeriod: 60,
 	}}
@@ -54,5 +55,27 @@ func TestDropFilePageCache_DefaultEnabled(t *testing.T) {
 	g := &GlobalReadOnly{config: &Config{dropFilePageCache: true}}
 	if !g.DropFilePageCache() {
 		t.Fatal("expected drop file page cache enabled by default")
+	}
+}
+
+func TestValidate_RecordingRecoveryDuration_Invalid(t *testing.T) {
+	g := &GlobalReadOnly{config: &Config{
+		BilibiliLoginMode:         "controller",
+		RecordingRecoveryDuration: "invalid",
+	}}
+	if err := g.Validate(); err == nil {
+		t.Fatal("expected Validate error for invalid RECORDING_RECOVERY_DURATION")
+	}
+}
+
+func TestValidate_RecordingRecoveryDuration_Valid(t *testing.T) {
+	for _, mode := range []string{"preserve", "reset"} {
+		g := &GlobalReadOnly{config: &Config{
+			BilibiliLoginMode:         "controller",
+			RecordingRecoveryDuration: mode,
+		}}
+		if err := g.Validate(); err != nil {
+			t.Fatalf("Validate(%q): %v", mode, err)
+		}
 	}
 }

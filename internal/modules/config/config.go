@@ -35,10 +35,11 @@ type Config struct {
 	FRPHttps       bool
 	FRPSchemeHttps bool
 
-	MaxConcurrentRecordings int
-	MaxRecordingHours       int
-	MaxRecoveryAttempts     int
-	MaxRetryMinutes         int
+	MaxConcurrentRecordings   int
+	MaxRecordingHours         int
+	MaxRecoveryAttempts       int
+	MaxRetryMinutes           int
+	RecordingRecoveryDuration string // preserve or reset (default: preserve)
 
 	OutputDir   string
 	SecretDir   string
@@ -69,16 +70,16 @@ type Config struct {
 
 	MinDiskSpaceBytes int64
 
-	CloudConvertCheckIntervalSecs                          int
-	CloudConvertMaxConcurrentDownloads                     int
-	CloudConvertAllowDuringRecording                       bool
-	CloudConvertAllowDuringRecordingMaxActiveRecordings    int
-	FFmpegCheckIntervalSecs                                int
-	FFmpegMaxConcurrentTasks                      int
-	FFmpegAllowDuringRecording                    bool
-	FFmpegAllowDuringRecordingMaxActiveRecordings int
-	SubcheckCheckIntervalSecs                     int
-	SubcheckShardCount                            int
+	CloudConvertCheckIntervalSecs                       int
+	CloudConvertMaxConcurrentDownloads                  int
+	CloudConvertAllowDuringRecording                    bool
+	CloudConvertAllowDuringRecordingMaxActiveRecordings int
+	FFmpegCheckIntervalSecs                             int
+	FFmpegMaxConcurrentTasks                            int
+	FFmpegAllowDuringRecording                          bool
+	FFmpegAllowDuringRecordingMaxActiveRecordings       int
+	SubcheckCheckIntervalSecs                           int
+	SubcheckShardCount                                  int
 
 	// configurable performances
 	ReadStreamBytesPoolSize      int
@@ -87,20 +88,20 @@ type Config struct {
 	readStreamChanBufferSizeHigh int
 
 	// configurable global performances
-	uploadBufferSize                  int
-	downloadBufferSize                int
-	streamWriterBufferSize            int
-	liveStreamWriterBufferSize        int
-	liveStreamWriterSyncPeriod            int
+	uploadBufferSize                       int
+	downloadBufferSize                     int
+	streamWriterBufferSize                 int
+	liveStreamWriterBufferSize             int
+	liveStreamWriterSyncPeriod             int
 	liveStreamWriterColdCacheReleasePeriod int
-	liveStreamWriterFlushPeriod       int
-	liveStreamWriterChanBufferSize    int
-	liveStreamWriterBytesPoolSize     int
-	liveStreamWriterBytesPoolSizeHigh int
-	skipSmallFlushThreshold        int
-	skipSmallFlush                 bool
-	sequentialWrite                bool
-	dropFilePageCache              bool
+	liveStreamWriterFlushPeriod            int
+	liveStreamWriterChanBufferSize         int
+	liveStreamWriterBytesPoolSize          int
+	liveStreamWriterBytesPoolSizeHigh      int
+	skipSmallFlushThreshold                int
+	skipSmallFlush                         bool
+	sequentialWrite                        bool
+	dropFilePageCache                      bool
 }
 
 var logger = logrus.WithField("module", "config")
@@ -146,20 +147,23 @@ func provider(lc fx.Lifecycle) (*Config, error) {
 	frpToken := resolveFRPToken(frpServer, frpBaseDomain)
 
 	c := &Config{
-		BilibiliLoginMode:                  strings.ToLower(strings.TrimSpace(utils.EmptyOrElse(os.Getenv("BILIBILI_LOGIN_MODE"), "controller"))),
-		Host:                               strings.TrimSpace(os.Getenv("HOST")),
-		Port:                               utils.EmptyOrElse(os.Getenv("PORT"), "8080"),
-		TrustedProxies:                     parseCommaSeparatedValues(utils.EmptyOrElse(os.Getenv("TRUSTED_PROXIES"), "161.33.159.26")),
-		FRPEnabled:                         os.Getenv("FRP_ENABLED") == "true",
-		FRPServer:                          frpServer,
-		FRPToken:                           frpToken,
-		FRPBaseDomain:                      frpBaseDomain,
-		FRPHttps:                           os.Getenv("FRP_HTTPS") == "true",
-		FRPSchemeHttps:                     utils.EmptyOrElse(os.Getenv("FRP_SCHEME_HTTPS"), "true") == "true",
-		MaxConcurrentRecordings:            utils.MustAtoi(utils.EmptyOrElse(os.Getenv("MAX_CONCURRENT_RECORDINGS"), "3")),
-		MaxRecordingHours:                  utils.MustAtoi(utils.EmptyOrElse(os.Getenv("MAX_RECORDING_HOURS"), "5")),
-		MaxRecoveryAttempts:                utils.MustAtoi(utils.EmptyOrElse(os.Getenv("MAX_RECOVERY_ATTEMPTS"), "15")),
-		MaxRetryMinutes:                    utils.MustAtoi(utils.EmptyOrElse(os.Getenv("MAX_RETRY_MINUTES"), "10")),
+		BilibiliLoginMode:       strings.ToLower(strings.TrimSpace(utils.EmptyOrElse(os.Getenv("BILIBILI_LOGIN_MODE"), "controller"))),
+		Host:                    strings.TrimSpace(os.Getenv("HOST")),
+		Port:                    utils.EmptyOrElse(os.Getenv("PORT"), "8080"),
+		TrustedProxies:          parseCommaSeparatedValues(utils.EmptyOrElse(os.Getenv("TRUSTED_PROXIES"), "161.33.159.26")),
+		FRPEnabled:              os.Getenv("FRP_ENABLED") == "true",
+		FRPServer:               frpServer,
+		FRPToken:                frpToken,
+		FRPBaseDomain:           frpBaseDomain,
+		FRPHttps:                os.Getenv("FRP_HTTPS") == "true",
+		FRPSchemeHttps:          utils.EmptyOrElse(os.Getenv("FRP_SCHEME_HTTPS"), "true") == "true",
+		MaxConcurrentRecordings: utils.MustAtoi(utils.EmptyOrElse(os.Getenv("MAX_CONCURRENT_RECORDINGS"), "3")),
+		MaxRecordingHours:       utils.MustAtoi(utils.EmptyOrElse(os.Getenv("MAX_RECORDING_HOURS"), "5")),
+		MaxRecoveryAttempts:     utils.MustAtoi(utils.EmptyOrElse(os.Getenv("MAX_RECOVERY_ATTEMPTS"), "15")),
+		MaxRetryMinutes:         utils.MustAtoi(utils.EmptyOrElse(os.Getenv("MAX_RETRY_MINUTES"), "10")),
+		RecordingRecoveryDuration: strings.ToLower(strings.TrimSpace(
+			utils.EmptyOrElse(os.Getenv("RECORDING_RECOVERY_DURATION"), "preserve"),
+		)),
 		OutputDir:                          utils.EmptyOrElse(os.Getenv("OUTPUT_DIR"), "records"),
 		SecretDir:                          utils.EmptyOrElse(os.Getenv("SECRET_DIR"), "secrets"),
 		DatabaseDir:                        utils.EmptyOrElse(os.Getenv("DATABASE_DIR"), "database"),
@@ -183,38 +187,38 @@ func provider(lc fx.Lifecycle) (*Config, error) {
 		ProductionMode:                     os.Getenv("PRODUCTION_MODE") == "true",
 		SilentAccessLog:                    os.Getenv("SILENT_ACCESS_LOG") == "true",
 		MinDiskSpaceBytes:                  utils.MustAtoi64(utils.EmptyOrElse(os.Getenv("MIN_DISK_SPACE_BYTES"), "5368709120")), // 5GB
-		CloudConvertCheckIntervalSecs:               utils.MustAtoi(utils.EmptyOrElse(os.Getenv("CLOUDCONVERT_CHECK_INTERVAL_SECS"), "180")),
-		CloudConvertMaxConcurrentDownloads:          utils.MustAtoi(utils.EmptyOrElse(os.Getenv("CLOUDCONVERT_MAX_CONCURRENT_DOWNLOADS"), "1")),
-		CloudConvertAllowDuringRecording:            os.Getenv("CLOUDCONVERT_ALLOW_DURING_RECORDING") == "true",
+		CloudConvertCheckIntervalSecs:      utils.MustAtoi(utils.EmptyOrElse(os.Getenv("CLOUDCONVERT_CHECK_INTERVAL_SECS"), "180")),
+		CloudConvertMaxConcurrentDownloads: utils.MustAtoi(utils.EmptyOrElse(os.Getenv("CLOUDCONVERT_MAX_CONCURRENT_DOWNLOADS"), "1")),
+		CloudConvertAllowDuringRecording:   os.Getenv("CLOUDCONVERT_ALLOW_DURING_RECORDING") == "true",
 		CloudConvertAllowDuringRecordingMaxActiveRecordings: utils.MustAtoi(utils.EmptyOrElse(os.Getenv("CLOUDCONVERT_ALLOW_DURING_RECORDING_MAX_ACTIVE_RECORDINGS"), "1")), // <1 = no limit; when >=1, cloudconvert during recording runs only if active recordings <= this value
-		FFmpegCheckIntervalSecs:            utils.MustAtoi(utils.EmptyOrElse(os.Getenv("FFMPEG_CHECK_INTERVAL_SECS"), "60")),
-		FFmpegMaxConcurrentTasks:           utils.MustAtoi(utils.EmptyOrElse(os.Getenv("FFMPEG_MAX_CONCURRENT_TASKS"), "1")),
-		FFmpegAllowDuringRecording:         os.Getenv("FFMPEG_ALLOW_DURING_RECORDING") == "true",
-		FFmpegAllowDuringRecordingMaxActiveRecordings: utils.MustAtoi(ffmpegAllowDuringRecordingMaxActives), // <1 = no limit; when >=1, ffmpeg during recording runs only if active recordings <= this value
-		SubcheckCheckIntervalSecs:          utils.MustAtoi(utils.EmptyOrElse(os.Getenv("SUBCHECK_CHECK_INTERVAL_SECS"), "60")),
-		SubcheckShardCount:                 utils.MustAtoi(utils.EmptyOrElse(os.Getenv("SUBCHECK_SHARD_COUNT"), "6")),
+		FFmpegCheckIntervalSecs:                             utils.MustAtoi(utils.EmptyOrElse(os.Getenv("FFMPEG_CHECK_INTERVAL_SECS"), "60")),
+		FFmpegMaxConcurrentTasks:                            utils.MustAtoi(utils.EmptyOrElse(os.Getenv("FFMPEG_MAX_CONCURRENT_TASKS"), "1")),
+		FFmpegAllowDuringRecording:                          os.Getenv("FFMPEG_ALLOW_DURING_RECORDING") == "true",
+		FFmpegAllowDuringRecordingMaxActiveRecordings:       utils.MustAtoi(ffmpegAllowDuringRecordingMaxActives), // <1 = no limit; when >=1, ffmpeg during recording runs only if active recordings <= this value
+		SubcheckCheckIntervalSecs:                           utils.MustAtoi(utils.EmptyOrElse(os.Getenv("SUBCHECK_CHECK_INTERVAL_SECS"), "60")),
+		SubcheckShardCount:                                  utils.MustAtoi(utils.EmptyOrElse(os.Getenv("SUBCHECK_SHARD_COUNT"), "6")),
 
 		// stream performance configs
-		ReadStreamBytesPoolSize:     utils.MustAtoi(utils.EmptyOrElse(os.Getenv("READ_STREAM_BYTES_POOL_SIZE"), "524288")),       // default 512KB
-		ReadStreamChanBufferSize:     utils.MustAtoi(utils.EmptyOrElse(os.Getenv("READ_STREAM_CHAN_BUFFER_SIZE"), "16")),               // default 16
-		readStreamBytesPoolSizeHigh:  utils.MustAtoi(utils.EmptyOrElse(os.Getenv("READ_STREAM_BYTES_POOL_SIZE_HIGH"), "1048576")),      // default 1MB for 2K/4K
-		readStreamChanBufferSizeHigh: utils.MustAtoi(utils.EmptyOrElse(os.Getenv("READ_STREAM_CHAN_BUFFER_SIZE_HIGH"), "48")),         // default 48 for 2K/4K
+		ReadStreamBytesPoolSize:      utils.MustAtoi(utils.EmptyOrElse(os.Getenv("READ_STREAM_BYTES_POOL_SIZE"), "524288")),       // default 512KB
+		ReadStreamChanBufferSize:     utils.MustAtoi(utils.EmptyOrElse(os.Getenv("READ_STREAM_CHAN_BUFFER_SIZE"), "16")),          // default 16
+		readStreamBytesPoolSizeHigh:  utils.MustAtoi(utils.EmptyOrElse(os.Getenv("READ_STREAM_BYTES_POOL_SIZE_HIGH"), "1048576")), // default 1MB for 2K/4K
+		readStreamChanBufferSizeHigh: utils.MustAtoi(utils.EmptyOrElse(os.Getenv("READ_STREAM_CHAN_BUFFER_SIZE_HIGH"), "48")),     // default 48 for 2K/4K
 
 		// global performance configs
-		uploadBufferSize:                  utils.MustAtoi(utils.EmptyOrElse(os.Getenv("UPLOAD_BUFFER_SIZE"), "5242880")),                      // default 5MB
-		downloadBufferSize:                utils.MustAtoi(utils.EmptyOrElse(os.Getenv("DOWNLOAD_BUFFER_SIZE"), "5242880")),                    // default 5MB
-		streamWriterBufferSize:            utils.MustAtoi(utils.EmptyOrElse(os.Getenv("STREAM_WRITER_BUFFER_SIZE"), "1048576")),               // default 1MB
-		liveStreamWriterBufferSize:        utils.MustAtoi(utils.EmptyOrElse(os.Getenv("LIVE_STREAM_WRITER_BUFFER_SIZE"), "8388608")),          // 8MB: prioritize lower flush frequency for SD card longevity
-		liveStreamWriterSyncPeriod:             utils.MustAtoi(utils.EmptyOrElse(os.Getenv("LIVE_STREAM_WRITER_SYNC_PERIOD_SECS"), "0")),                // 0 = disabled; sync only on Close() to minimize SD card wear
-		liveStreamWriterColdCacheReleasePeriod: utils.MustAtoi(utils.EmptyOrElse(os.Getenv("LIVE_STREAM_WRITER_COLD_CACHE_RELEASE_SECS"), "60")), // periodic cold page-cache release during recording
-		liveStreamWriterFlushPeriod:       utils.MustAtoi(utils.EmptyOrElse(os.Getenv("LIVE_STREAM_WRITER_FLUSH_PERIOD_SECS"), "15")),         // default 15s: fewer flush operations, lower SD card wear
-		liveStreamWriterChanBufferSize:    utils.MustAtoi(utils.EmptyOrElse(os.Getenv("LIVE_STREAM_WRITER_CHAN_BUFFER_SIZE"), "64")),          // default 64: limits in-flight memory while still tolerating write latency bursts
-		liveStreamWriterBytesPoolSize:     utils.MustAtoi(utils.EmptyOrElse(os.Getenv("LIVE_STREAM_WRITER_BYTES_POOL_SIZE"), "524288")),       // 512KB per buffer
-		liveStreamWriterBytesPoolSizeHigh: utils.MustAtoi(utils.EmptyOrElse(os.Getenv("LIVE_STREAM_WRITER_BYTES_POOL_SIZE_HIGH"), "1048576")), // default 1MB for 2K/4K
-		skipSmallFlushThreshold:        utils.MustAtoi(utils.EmptyOrElse(os.Getenv("SKIP_SMALL_FLUSH_THRESHOLD"), "1048576")),        // default 1MB: delay file creation until buffered bytes reach this threshold
-		skipSmallFlush:                 os.Getenv("SKIP_SMALL_FLUSH") != "false",                                                              // enabled by default; when true, SD-card protection mode is enabled
-		sequentialWrite:                os.Getenv("SEQUENTIAL_WRITE") != "false",                                                              // enabled by default; set false to disable global flush serialization
-		dropFilePageCache:              os.Getenv("DROP_FILE_PAGE_CACHE") != "false",
+		uploadBufferSize:                       utils.MustAtoi(utils.EmptyOrElse(os.Getenv("UPLOAD_BUFFER_SIZE"), "5242880")),                      // default 5MB
+		downloadBufferSize:                     utils.MustAtoi(utils.EmptyOrElse(os.Getenv("DOWNLOAD_BUFFER_SIZE"), "5242880")),                    // default 5MB
+		streamWriterBufferSize:                 utils.MustAtoi(utils.EmptyOrElse(os.Getenv("STREAM_WRITER_BUFFER_SIZE"), "1048576")),               // default 1MB
+		liveStreamWriterBufferSize:             utils.MustAtoi(utils.EmptyOrElse(os.Getenv("LIVE_STREAM_WRITER_BUFFER_SIZE"), "8388608")),          // 8MB: prioritize lower flush frequency for SD card longevity
+		liveStreamWriterSyncPeriod:             utils.MustAtoi(utils.EmptyOrElse(os.Getenv("LIVE_STREAM_WRITER_SYNC_PERIOD_SECS"), "0")),           // 0 = disabled; sync only on Close() to minimize SD card wear
+		liveStreamWriterColdCacheReleasePeriod: utils.MustAtoi(utils.EmptyOrElse(os.Getenv("LIVE_STREAM_WRITER_COLD_CACHE_RELEASE_SECS"), "60")),   // periodic cold page-cache release during recording
+		liveStreamWriterFlushPeriod:            utils.MustAtoi(utils.EmptyOrElse(os.Getenv("LIVE_STREAM_WRITER_FLUSH_PERIOD_SECS"), "15")),         // default 15s: fewer flush operations, lower SD card wear
+		liveStreamWriterChanBufferSize:         utils.MustAtoi(utils.EmptyOrElse(os.Getenv("LIVE_STREAM_WRITER_CHAN_BUFFER_SIZE"), "64")),          // default 64: limits in-flight memory while still tolerating write latency bursts
+		liveStreamWriterBytesPoolSize:          utils.MustAtoi(utils.EmptyOrElse(os.Getenv("LIVE_STREAM_WRITER_BYTES_POOL_SIZE"), "524288")),       // 512KB per buffer
+		liveStreamWriterBytesPoolSizeHigh:      utils.MustAtoi(utils.EmptyOrElse(os.Getenv("LIVE_STREAM_WRITER_BYTES_POOL_SIZE_HIGH"), "1048576")), // default 1MB for 2K/4K
+		skipSmallFlushThreshold:                utils.MustAtoi(utils.EmptyOrElse(os.Getenv("SKIP_SMALL_FLUSH_THRESHOLD"), "1048576")),              // default 1MB: delay file creation until buffered bytes reach this threshold
+		skipSmallFlush:                         os.Getenv("SKIP_SMALL_FLUSH") != "false",                                                           // enabled by default; when true, SD-card protection mode is enabled
+		sequentialWrite:                        os.Getenv("SEQUENTIAL_WRITE") != "false",                                                           // enabled by default; set false to disable global flush serialization
+		dropFilePageCache:                      os.Getenv("DROP_FILE_PAGE_CACHE") != "false",
 	}
 
 	ReadOnly = &GlobalReadOnly{config: c}
