@@ -66,6 +66,12 @@ func (c *subscribedRoomsCache) get(
 	return v.(map[int]*subscribe.RoomConfig), nil
 }
 
+func (c *subscribedRoomsCache) setInterval(d time.Duration) {
+	c.mu.Lock()
+	c.interval = d
+	c.mu.Unlock()
+}
+
 func (s *Service) getSubscribedRooms() (map[int]*subscribe.RoomConfig, error) {
 	return s.roomsCache.get(s.subSvc.ListSubscribedRoomsWithConfig, time.Now())
 }

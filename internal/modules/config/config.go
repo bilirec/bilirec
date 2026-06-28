@@ -78,8 +78,11 @@ type Config struct {
 	FFmpegMaxConcurrentTasks                            int
 	FFmpegAllowDuringRecording                          bool
 	FFmpegAllowDuringRecordingMaxActiveRecordings       int
-	SubcheckCheckIntervalSecs                           int
-	SubcheckShardCount                                  int
+	SubcheckRoomsPerShard                               int
+	SubcheckTickSecs                                    int
+	SubcheckMinIntervalSecs                             int
+	SubcheckMaxIntervalSecs                             int
+	SubcheckMaxShards                                   int
 
 	// configurable performances
 	ReadStreamBytesPoolSize      int
@@ -195,8 +198,11 @@ func provider(lc fx.Lifecycle) (*Config, error) {
 		FFmpegMaxConcurrentTasks:                            utils.MustAtoi(utils.EmptyOrElse(os.Getenv("FFMPEG_MAX_CONCURRENT_TASKS"), "1")),
 		FFmpegAllowDuringRecording:                          os.Getenv("FFMPEG_ALLOW_DURING_RECORDING") == "true",
 		FFmpegAllowDuringRecordingMaxActiveRecordings:       utils.MustAtoi(ffmpegAllowDuringRecordingMaxActives), // <1 = no limit; when >=1, ffmpeg during recording runs only if active recordings <= this value
-		SubcheckCheckIntervalSecs:                           utils.MustAtoi(utils.EmptyOrElse(os.Getenv("SUBCHECK_CHECK_INTERVAL_SECS"), "60")),
-		SubcheckShardCount:                                  utils.MustAtoi(utils.EmptyOrElse(os.Getenv("SUBCHECK_SHARD_COUNT"), "6")),
+		SubcheckRoomsPerShard:                               utils.MustAtoi(utils.EmptyOrElse(os.Getenv("SUBCHECK_ROOMS_PER_SHARD"), "50")),
+		SubcheckTickSecs:                                    utils.MustAtoi(utils.EmptyOrElse(os.Getenv("SUBCHECK_TICK_SECS"), "10")),
+		SubcheckMinIntervalSecs:                             utils.MustAtoi(utils.EmptyOrElse(os.Getenv("SUBCHECK_MIN_INTERVAL_SECS"), "60")),
+		SubcheckMaxIntervalSecs:                             utils.MustAtoi(utils.EmptyOrElse(os.Getenv("SUBCHECK_MAX_INTERVAL_SECS"), "300")),
+		SubcheckMaxShards:                                   utils.MustAtoi(utils.EmptyOrElse(os.Getenv("SUBCHECK_MAX_SHARDS"), "32")),
 
 		// stream performance configs
 		ReadStreamBytesPoolSize:      utils.MustAtoi(utils.EmptyOrElse(os.Getenv("READ_STREAM_BYTES_POOL_SIZE"), "524288")),       // default 512KB

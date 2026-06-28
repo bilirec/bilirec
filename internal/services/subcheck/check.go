@@ -25,11 +25,7 @@ import (
 
 var logger = logrus.WithField("service", "subcheck")
 
-const (
-	checkInterval         = 1 * time.Minute
-	defaultShardCount     = 6
-	sessionKeysBucketName = "SubCheck_LiveStates"
-)
+const sessionKeysBucketName = "SubCheck_LiveStates"
 
 type Service struct {
 	subSvc      *subscribe.Service
@@ -42,8 +38,11 @@ type Service struct {
 	shardCount  int
 	shardStops  []func()
 
-	checkInterval time.Duration
-	roomsCache    subscribedRoomsCache
+	checkInterval  time.Duration
+	scheduleParams scheduleParams
+	lastRescale    time.Time
+	scheduleMu     sync.Mutex
+	roomsCache     subscribedRoomsCache
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -98,18 +97,25 @@ func (s *Service) start(cfg *config.Config) error {
 		return err
 	}
 
-	interval := time.Duration(cfg.SubcheckCheckIntervalSecs) * time.Second
-	if interval <= 0 {
-		interval = checkInterval
+	s.scheduleParams = scheduleParamsFromConfig(
+		cfg.SubcheckRoomsPerShard,
+		cfg.SubcheckTickSecs,
+		cfg.SubcheckMinIntervalSecs,
+		cfg.SubcheckMaxIntervalSecs,
+		cfg.SubcheckMaxShards,
+	)
+	roomCount, err := s.countLiveCheckRooms()
+	if err != nil {
+		logger.Warnf("启动时统计订阅检查房间数失败：%v", err)
+		roomCount = 0
 	}
-	shardCount := cfg.SubcheckShardCount
-	if shardCount <= 0 {
-		shardCount = defaultShardCount
-	}
-	s.shardCount = shardCount
-	s.checkInterval = interval
-	s.roomsCache = newSubscribedRoomsCache(interval)
-	s.coordinator = coordinator.NewRoundRobin(interval)
+	sched := computeSchedule(roomCount, s.scheduleParams)
+	s.shardCount = sched.shards
+	s.checkInterval = sched.interval
+	logger.Infof("subcheck 调度：rooms=%d shards=%d interval=%s", roomCount, sched.shards, sched.interval)
+
+	s.roomsCache = newSubscribedRoomsCache(s.checkInterval)
+	s.coordinator = coordinator.NewRoundRobin(s.checkInterval)
 	// Keep one shard tick responsive when shard count is large.
 	s.coordinator.SetMinTick(time.Second)
 
@@ -130,8 +136,9 @@ func (s *Service) loop() {
 	// Run one full check cycle at startup so behavior matches previous implementation.
 	s.tryStartAllAutoRecordRooms()
 
-	s.shardStops = make([]func(), 0, s.shardCount)
-	for shard := 0; shard < s.shardCount; shard++ {
+	maxShards := s.scheduleParams.maxShards
+	s.shardStops = make([]func(), 0, maxShards)
+	for shard := 0; shard < maxShards; shard++ {
 		ch, unregister := s.coordinator.Register(nil)
 		s.shardStops = append(s.shardStops, unregister)
 		s.wg.Add(1)
@@ -150,7 +157,16 @@ func (s *Service) shardLoop(shard int, ch <-chan struct{}) {
 	for {
 		select {
 		case <-ch:
-			s.tryStartShardAutoRecordRooms(shard, s.shardCount)
+			if shard == 0 {
+				s.maybeRescale()
+			}
+			s.scheduleMu.Lock()
+			activeShards := s.shardCount
+			s.scheduleMu.Unlock()
+			if shard >= activeShards {
+				continue
+			}
+			s.tryStartShardAutoRecordRooms(shard, activeShards)
 		case <-s.ctx.Done():
 			return
 		}

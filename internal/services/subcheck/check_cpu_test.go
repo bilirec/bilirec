@@ -84,7 +84,7 @@ func TestSubcheck_ShardTick_CPUSpike_Live(t *testing.T) {
 	sess := newSubcheckTestSession(t)
 	targetRooms := parseTargetRoomCount(t)
 	validated := prepareSubscribedLiveRooms(t, sess, targetRooms)
-	shardCount := parseShardCount(t)
+	shardCount := computeSchedule(len(validated), scheduleParamsFromConfig(50, 10, 60, 300, 32)).shards
 
 	phaseName := fmt.Sprintf("subcheck_shard_tick_after_n%d_k%d", targetRooms, shardCount)
 	phase, err := sess.monitor.beginPhase(phaseName, "after")
@@ -116,19 +116,6 @@ func parseTargetRoomCount(tb testing.TB) int {
 	n, err := strconv.Atoi(raw)
 	if err != nil || n <= 0 {
 		tb.Fatalf("invalid %s value %q", subcheckLiveRoomsEnv, raw)
-	}
-	return n
-}
-
-func parseShardCount(tb testing.TB) int {
-	tb.Helper()
-	raw := strings.TrimSpace(os.Getenv("SUBCHECK_SHARD_COUNT"))
-	if raw == "" {
-		return 6
-	}
-	n, err := strconv.Atoi(raw)
-	if err != nil || n <= 0 {
-		tb.Fatalf("invalid SUBCHECK_SHARD_COUNT value %q", raw)
 	}
 	return n
 }
