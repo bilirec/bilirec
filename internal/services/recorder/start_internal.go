@@ -125,6 +125,7 @@ func (r *Service) internalStart(p internalStartParams) error {
 			discardStreamCh(ch)
 			return err
 		}
+		info.SetStream(streamInfo.Qn, streamInfo.IsAudioOnly)
 
 		return r.prepare(p.roomId, ch, strategy, info.ctx, info, p.mode == startModeUser)
 	}

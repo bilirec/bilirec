@@ -13,6 +13,8 @@ import (
 type Info struct {
 	status      atomic.Pointer[RecordStatus]
 	bytesRead   atomic.Uint64
+	actualQn    atomic.Int32
+	isAudioOnly atomic.Bool
 	startTime   time.Time
 	outputPath  ds.Atomic[string]
 	maxDuration time.Duration // internal runtime semantics: 0 = unlimited
@@ -22,6 +24,19 @@ type Info struct {
 	startOptions RecordStartOptions
 	room         *bilibili.LiveRoomInfoDetail
 	backoff      backoff.Backoff
+}
+
+func (r *Info) SetStream(qn int, audioOnly bool) {
+	r.actualQn.Store(int32(qn))
+	r.isAudioOnly.Store(audioOnly)
+}
+
+func (r *Info) ActualQn() int {
+	return int(r.actualQn.Load())
+}
+
+func (r *Info) IsAudioOnly() bool {
+	return r.isAudioOnly.Load()
 }
 
 func (r *Info) SetOutputPath(path string) {

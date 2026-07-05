@@ -14,6 +14,8 @@ type Stats struct {
 	StartTime      int64        `json:"start_time"`
 	ElapsedSeconds int64        `json:"elapsed_seconds"`
 	OutputPath     string       `json:"output_path"`
+	ActualQn       int          `json:"actual_qn"`
+	IsAudioOnly    bool         `json:"is_audio_only"`
 }
 
 func (r *Service) GetStatus(roomId int) RecordStatus {
@@ -54,6 +56,8 @@ func (r *Service) GetStats(roomId int) (*Stats, bool) {
 		StartTime:      info.startTime.Unix(),
 		ElapsedSeconds: int64(time.Since(info.startTime).Seconds()),
 		OutputPath:     info.OutputPath(),
+		ActualQn:       info.ActualQn(),
+		IsAudioOnly:    info.IsAudioOnly(),
 	}, true
 }
 
