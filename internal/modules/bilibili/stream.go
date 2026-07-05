@@ -249,6 +249,7 @@ func (c *Client) GetStreamURLsV2(roomID int, opts ...GetStreamURLsOption) ([]Str
 		}
 	}
 
+	sortStreams(streamInfos, int(options.qn))
 	return streamInfos, nil
 }
 func containFormat(profiles []StreamProfile, format string) bool {

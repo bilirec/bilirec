@@ -78,8 +78,6 @@ func (r *Service) internalStart(p internalStartParams) error {
 		return ErrEmptyStreamURLs
 	}
 
-	sortStreams(streams)
-
 	now := time.Now()
 	ctx := p.ctx
 

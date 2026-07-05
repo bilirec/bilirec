@@ -1,10 +1,6 @@
-package recorder
+package bilibili
 
-import (
-	"sort"
-
-	"github.com/bilirec/bilirec/internal/modules/bilibili"
-)
+import "sort"
 
 // streamProfileRank breaks ties at the same qn: flv → fmp4 → ts.
 func streamProfileRank(format string) int {
@@ -20,8 +16,15 @@ func streamProfileRank(format string) int {
 	}
 }
 
-func sortStreams(streams []bilibili.StreamURLInfo) {
+func sortStreams(streams []StreamURLInfo, qn int) {
 	sort.SliceStable(streams, func(i, j int) bool {
+		if qn > 0 {
+			pi := streams[i].Qn == qn
+			pj := streams[j].Qn == qn
+			if pi != pj {
+				return pi
+			}
+		}
 		if streams[i].Qn != streams[j].Qn {
 			return streams[i].Qn > streams[j].Qn
 		}
