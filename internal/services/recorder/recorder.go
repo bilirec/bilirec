@@ -254,7 +254,9 @@ func (r *Service) rev(roomId int, ch <-chan []byte, info *Info, ctx context.Cont
 	for data := range ch {
 		info.bytesRead.Add(uint64(len(data)))
 		result, err := pipe.Process(ctx, data)
-		r.st.Flush(data)
+		if info.chunkPool != nil && cap(data) > 0 {
+			info.chunkPool.Put(data[:cap(data)])
+		}
 		if err != nil {
 			// "abandoned" bytes = pipeline output size at the moment of error, not input size.
 			// Observed values:

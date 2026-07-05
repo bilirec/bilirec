@@ -8,6 +8,7 @@ import (
 	"github.com/bilirec/bilirec/internal/modules/bilibili"
 	"github.com/bilirec/bilirec/pkg/backoff"
 	"github.com/bilirec/bilirec/pkg/ds"
+	"github.com/bilirec/bilirec/pkg/pool"
 )
 
 type Info struct {
@@ -24,6 +25,7 @@ type Info struct {
 	startOptions RecordStartOptions
 	room         *bilibili.LiveRoomInfoDetail
 	backoff      backoff.Backoff
+	chunkPool    *pool.BucketedBytesPool
 }
 
 func (r *Info) SetStream(qn int, audioOnly bool) {

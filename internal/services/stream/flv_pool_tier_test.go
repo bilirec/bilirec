@@ -12,7 +12,17 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+func newTestChunkPools(defaultSize, highSize int) *pool.LazyDualPool[*pool.BucketedBytesPool] {
+	return pool.NewLazyDualPool(
+		15*time.Minute,
+		func() *pool.BucketedBytesPool { return newChunkBytesPool(defaultSize, 4) },
+		func() *pool.BucketedBytesPool { return newChunkBytesPool(highSize, 4) },
+	)
+}
+
 func TestFlvRead_4KPayload_DefaultVsHighPool(t *testing.T) {
+	initStreamTestConfig(t)
+
 	const (
 		payloadSize = 900 * 1024 // 900KB: larger than default 512KB, smaller than high 1MB
 		defaultSize = 512 * 1024
@@ -21,29 +31,26 @@ func TestFlvRead_4KPayload_DefaultVsHighPool(t *testing.T) {
 
 	newSvc := func() *Service {
 		return &Service{
-			readPools: pool.NewLazyDualPool(
-				15*time.Minute,
-				func() *pool.BytesPool { return pool.NewBytesPool(defaultSize) },
-				func() *pool.BytesPool { return pool.NewBytesPool(highSize) },
-			),
+			chunkPools:         newTestChunkPools(defaultSize, highSize),
 			chanBufferSize:     64,
 			highChanBufferSize: 64,
 		}
 	}
 
 	run := func(svc *Service, qn int) (chunks int, totalBytes int) {
-		readPool, release := svc.acquireReadPool(qn)
+		chunkPool, release := svc.AcquireChunkPool(qn)
 		defer release()
 
 		ch := make(chan []byte, 8)
 		ctx := context.Background()
 		stream := io.NopCloser(bytes.NewReader(make([]byte, payloadSize)))
-		go svc.read(ch, stream, ctx, readPool, func() {})
+		readSize := svc.readBufSizeForQn(qn)
+		go svc.readFlv(ch, stream, ctx, chunkPool, readSize, func() {})
 
 		for chunk := range ch {
 			chunks++
 			totalBytes += len(chunk)
-			svc.FlushTo(readPool, chunk)
+			svc.putChunk(chunkPool, chunk)
 		}
 		return chunks, totalBytes
 	}
@@ -58,19 +65,19 @@ func TestFlvRead_4KPayload_DefaultVsHighPool(t *testing.T) {
 		t.Fatalf("high pool total bytes mismatch: got %d, want %d", highBytes, payloadSize)
 	}
 
-	// default 512KB can't hold a 900KB payload in one read, should split.
 	if defaultChunks <= 1 {
 		t.Fatalf("expected default pool to split payload into multiple chunks, got %d", defaultChunks)
 	}
-	// high 1MB can hold 900KB payload in one read.
 	if highChunks != 1 {
 		t.Fatalf("expected high pool to read payload in one chunk, got %d", highChunks)
 	}
 }
 
 func BenchmarkFlvRead_4KPayload_DefaultVsHighPool(b *testing.B) {
+	initStreamTestConfig(b)
+
 	const (
-		payloadSize = 900 * 1024 // 900KB: >512KB(default), <1MB(high)
+		payloadSize = 900 * 1024
 		defaultSize = 512 * 1024
 		highSize    = 1024 * 1024
 	)
@@ -80,29 +87,26 @@ func BenchmarkFlvRead_4KPayload_DefaultVsHighPool(b *testing.B) {
 
 	newSvc := func() *Service {
 		return &Service{
-			readPools: pool.NewLazyDualPool(
-				15*time.Minute,
-				func() *pool.BytesPool { return pool.NewBytesPool(defaultSize) },
-				func() *pool.BytesPool { return pool.NewBytesPool(highSize) },
-			),
+			chunkPools:         newTestChunkPools(defaultSize, highSize),
 			chanBufferSize:     64,
 			highChanBufferSize: 64,
 		}
 	}
 
 	runOnce := func(svc *Service, qn int) (chunks int, totalBytes int) {
-		readPool, release := svc.acquireReadPool(qn)
+		chunkPool, release := svc.AcquireChunkPool(qn)
 		defer release()
 
 		ch := make(chan []byte, 8)
 		ctx := context.Background()
 		stream := io.NopCloser(bytes.NewReader(make([]byte, payloadSize)))
-		go svc.read(ch, stream, ctx, readPool, func() {})
+		readSize := svc.readBufSizeForQn(qn)
+		go svc.readFlv(ch, stream, ctx, chunkPool, readSize, func() {})
 
 		for chunk := range ch {
 			chunks++
 			totalBytes += len(chunk)
-			svc.FlushTo(readPool, chunk)
+			svc.putChunk(chunkPool, chunk)
 		}
 		return chunks, totalBytes
 	}

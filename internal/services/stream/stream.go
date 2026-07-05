@@ -11,26 +11,25 @@ import (
 var logger = logrus.WithField("service", "stream")
 
 type Service struct {
-	readPools          *pool.LazyDualPool[*pool.BytesPool]
+	chunkPools         *pool.LazyDualPool[*pool.BucketedBytesPool]
 	chanBufferSize     int
 	highChanBufferSize int
 }
 
 func NewService(cfg *config.Config) *Service {
-	highChanBufferSize := 48
-	if config.ReadOnly != nil {
-		highChanBufferSize = config.ReadOnly.ReadStreamChanBufferSizeHigh()
-	}
+	highChanBufferSize := config.ReadOnly.ReadStreamChanBufferSizeHigh()
+	boundedHigh := config.ReadStreamBytesPoolBoundedCapacity(highChanBufferSize)
+	bounded := config.ReadStreamBytesPoolBoundedCapacity(cfg.ReadStreamChanBufferSize)
 	return &Service{
-		readPools: pool.NewLazyDualPool(
+		chunkPools: pool.NewLazyDualPool(
 			15*time.Minute,
-			func() *pool.BytesPool {
-				return newReadBytesPool(cfg.ReadStreamBytesPoolSize, cfg.ReadStreamChanBufferSize)
+			func() *pool.BucketedBytesPool {
+				return newChunkBytesPool(cfg.ReadStreamBytesPoolSize, bounded)
 			},
-			func() *pool.BytesPool {
-				return newReadBytesPool(
+			func() *pool.BucketedBytesPool {
+				return newChunkBytesPool(
 					config.ReadOnly.ReadStreamBytesPoolSizeHigh(),
-					config.ReadOnly.ReadStreamChanBufferSizeHigh(),
+					boundedHigh,
 				)
 			},
 		),
@@ -39,32 +38,31 @@ func NewService(cfg *config.Config) *Service {
 	}
 }
 
-func newReadBytesPool(size, chanBuf int) *pool.BytesPool {
-	return pool.NewBytesPool(size,
+func newChunkBytesPool(baseSize, boundedCap int) *pool.BucketedBytesPool {
+	if baseSize <= 0 {
+		baseSize = 512 * 1024
+	}
+	return pool.NewBucketedBytesPool(baseSize,
 		pool.WithPoolBoundedMode(true),
-		pool.WithPoolBoundedCapacity(config.ReadStreamBytesPoolBoundedCapacity(chanBuf)),
+		pool.WithPoolBoundedCapacity(boundedCap),
 	)
 }
 
-func (r *Service) Flush(buf []byte) {
-	r.FlushTo(r.readPools.Default(), buf)
-	highPool := r.readPools.MaybeHigh()
-	if highPool != nil {
-		r.FlushTo(highPool, buf)
-	}
+// AcquireChunkPool returns the session chunk pool and a release callback for the
+// LazyDualPool high-tier lease. The read goroutine must call release when it exits.
+func (r *Service) AcquireChunkPool(qn int) (*pool.BucketedBytesPool, func()) {
+	return r.chunkPools.Acquire(config.IsHighQualityQn(qn))
 }
 
-func (r *Service) FlushTo(p *pool.BytesPool, buf []byte) {
-	if p == nil || buf == nil {
+func (r *Service) readBufSizeForQn(qn int) int {
+	return config.ReadStreamBytesPoolSizeForQn(qn)
+}
+
+func (r *Service) putChunk(pool *pool.BucketedBytesPool, buf []byte) {
+	if pool == nil || buf == nil || cap(buf) == 0 {
 		return
 	}
-	if cap(buf) == p.BufferSize {
-		p.PutBytes(buf)
-	}
-}
-
-func (r *Service) acquireReadPool(qn int) (*pool.BytesPool, func()) {
-	return r.readPools.Acquire(config.IsHighQualityQn(qn))
+	pool.Put(buf[:cap(buf)])
 }
 
 func (r *Service) chanBufferSizeForQn(qn int) int {

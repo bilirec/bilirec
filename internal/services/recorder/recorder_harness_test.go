@@ -16,6 +16,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -760,7 +761,133 @@ func runFormatRecordTest(t *testing.T, profile bilibili.StreamProfile, format st
 	sess.Monitor.logAnalysisHints(t)
 
 	if checkFFmpegAvailable(t) {
-		t.Logf("\n📹 Verifying %s recording playability...", strings.ToUpper(format))
-		verifyRecordingPlayability(t, outputPath, format)
+		t.Logf("\n📹 Verifying %s recordings in room dir...", strings.ToUpper(format))
+		verifyAllRecordingsInRoomDir(t, filepath.Dir(outputPath), format)
+	}
+}
+
+type concurrentFormatRecordSpec struct {
+	profile bilibili.StreamProfile
+	format  string
+}
+
+type concurrentRoomRecording struct {
+	roomID     int
+	outputPath string
+	spec       concurrentFormatRecordSpec
+}
+
+// runConcurrentFormatRecordTest records each format on a distinct live room in parallel.
+// Structure mirrors runFormatRecordTest with profiling, memory budget, and directory ffprobe.
+func runConcurrentFormatRecordTest(t *testing.T, specs ...concurrentFormatRecordSpec) {
+	t.Helper()
+	if testing.Short() {
+		t.Skip("skipping concurrent format record test in short mode")
+	}
+	if len(specs) == 0 {
+		t.Fatal("no recording specs")
+	}
+
+	label := specs[0].format
+	for i := 1; i < len(specs); i++ {
+		label += "_" + specs[i].format
+	}
+
+	sess := newRecorderTestSession(t)
+	rooms := resolveLiveTestRoomIDs(t, sess.Room, len(specs))
+	if len(rooms) < len(specs) {
+		t.Fatalf("need %d live rooms, got %d", len(specs), len(rooms))
+	}
+
+	baseline := sess.Monitor.snapshotMemory(t, "concurrent_baseline", true)
+	sess.Room.InvalidateRooms(rooms...)
+
+	recordings := make([]concurrentRoomRecording, len(specs))
+	for i, spec := range specs {
+		recordings[i] = concurrentRoomRecording{
+			roomID: rooms[i],
+			spec:   spec,
+		}
+	}
+
+	t.Logf("concurrent format record: label=%s rooms=%v", label, rooms)
+
+	startPhase, err := sess.Monitor.beginPhase(label + "_start")
+	if err != nil {
+		t.Fatalf("begin start phase: %v", err)
+	}
+
+	type startResult struct {
+		room int
+		err  error
+	}
+
+	startGate := make(chan struct{})
+	resultCh := make(chan startResult, len(recordings))
+	var wg sync.WaitGroup
+	for i := range recordings {
+		rec := recordings[i]
+		spec := specs[i]
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-startGate
+			err := sess.Recorder.Start(rec.roomID, recorder.WithStreamOptions(bilibili.WithProfiles(spec.profile)))
+			resultCh <- startResult{room: rec.roomID, err: err}
+		}()
+	}
+	close(startGate)
+	wg.Wait()
+	close(resultCh)
+
+	startReport := startPhase.end(t)
+	logCPUPhase(t, startReport)
+
+	started := make([]int, 0, len(recordings))
+	for r := range resultCh {
+		if r.err == nil {
+			started = append(started, r.room)
+			t.Logf("concurrent start ok: room=%d", r.room)
+			continue
+		}
+		for _, rid := range started {
+			_ = sess.Recorder.Stop(rid)
+		}
+		waitUntilNoActiveRecordings(t, sess.Recorder, 30*time.Second)
+		handleRecordingStartErr(t, r.err)
+	}
+
+	if len(started) != len(recordings) {
+		t.Fatalf("expected %d successful starts, got %d", len(recordings), len(started))
+	}
+
+	for i := range recordings {
+		recordings[i].outputPath = waitForOutputPathAfterStart(t, sess.Recorder, recordings[i].roomID)
+	}
+
+	_ = sess.Monitor.runRecordingProfiledWait(t, label+"_recording", integrationRecordDuration())
+	during := sess.Monitor.snapshotMemory(t, "during_recording", false)
+	logMemoryDelta(t, baseline, during)
+
+	t.Log("stopping concurrent recordings")
+	for _, rec := range recordings {
+		t.Logf("stop room=%d success=%v", rec.roomID, sess.Recorder.Stop(rec.roomID))
+	}
+	waitUntilNoActiveRecordings(t, sess.Recorder, 30*time.Second)
+	time.Sleep(recorderTestSettleAfterStop)
+
+	afterStop := sess.Monitor.snapshotMemory(t, "after_stop", false)
+	logMemoryDelta(t, during, afterStop)
+
+	afterCleanup := sess.Monitor.snapshotMemoryReleased(t, label+"_after_cleanup")
+	assertRecordingMemoryReleased(t, baseline, afterCleanup, recordingMemoryBudgetForSessions(len(specs), label))
+
+	sess.Monitor.logAnalysisHints(t)
+
+	if checkFFmpegAvailable(t) {
+		for _, rec := range recordings {
+			t.Logf("\n📹 Verifying %s recordings in room dir (room=%d)...", strings.ToUpper(rec.spec.format), rec.roomID)
+			verifyAllRecordingsInRoomDir(t, filepath.Dir(rec.outputPath), rec.spec.format)
+		}
 	}
 }

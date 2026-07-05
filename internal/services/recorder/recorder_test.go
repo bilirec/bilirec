@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"sort"
 	"sync"
 	"testing"
 	"time"
@@ -26,6 +28,13 @@ func TestTsRecord(t *testing.T) {
 
 func TestFmp4Record(t *testing.T) {
 	runFormatRecordTest(t, bilibili.ProfileHLSFMP4, "fmp4")
+}
+
+func TestFlvFmp4ConcurrentRecord(t *testing.T) {
+	runConcurrentFormatRecordTest(t,
+		concurrentFormatRecordSpec{profile: bilibili.ProfileHTTPFLV, format: "flv"},
+		concurrentFormatRecordSpec{profile: bilibili.ProfileHLSFMP4, format: "fmp4"},
+	)
 }
 
 // TestZZZ_Final_Concurrent3WayRecord exercises three concurrent FLV recordings in an
@@ -303,6 +312,41 @@ func checkFFmpegAvailable(t *testing.T) bool {
 	}
 	t.Log("✓ ffprobe found, will verify recorded file playability")
 	return true
+}
+
+var recordingFormatExtensions = map[string]string{
+	"flv":  ".flv",
+	"ts":   ".ts",
+	"fmp4": ".fmp4",
+}
+
+func verifyAllRecordingsInRoomDir(t *testing.T, roomDir, expectedFormat string) {
+	t.Helper()
+	if !checkFFmpegAvailable(t) {
+		return
+	}
+	ext, ok := recordingFormatExtensions[expectedFormat]
+	if !ok {
+		t.Fatalf("unknown format %q", expectedFormat)
+	}
+
+	pattern := filepath.Join(roomDir, "*"+ext)
+	files, err := filepath.Glob(pattern)
+	if err != nil {
+		t.Fatalf("glob %s: %v", pattern, err)
+	}
+	if len(files) == 0 {
+		t.Fatalf("no %s recordings under %s", ext, roomDir)
+	}
+
+	sort.Strings(files)
+	t.Logf("ffprobe %d file(s) in %s", len(files), roomDir)
+	for i, f := range files {
+		t.Run(filepath.Base(f), func(t *testing.T) {
+			t.Logf("[%d/%d] %s", i+1, len(files), f)
+			verifyRecordingPlayability(t, f, expectedFormat)
+		})
+	}
 }
 
 func parseFloatDuration(durationStr string) (float64, error) {

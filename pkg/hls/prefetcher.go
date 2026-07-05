@@ -16,13 +16,22 @@ type SegmentPrefetcher struct {
 	resolver *URLResolver
 	attempts int
 	delay    time.Duration
+	readBody SegmentBodyReader
 	started  map[int64]chan SegmentFetchResult
 	mu       sync.Mutex
 	sem      chan struct{}
 }
 
 // NewSegmentPrefetcher creates a prefetcher using fixed retry settings.
-func NewSegmentPrefetcher(ctx context.Context, client *resty.Client, resolver *URLResolver, attempts int, delay time.Duration, maxConcurrent int) *SegmentPrefetcher {
+func NewSegmentPrefetcher(
+	ctx context.Context,
+	client *resty.Client,
+	resolver *URLResolver,
+	attempts int,
+	delay time.Duration,
+	maxConcurrent int,
+	readBody SegmentBodyReader,
+) *SegmentPrefetcher {
 	if maxConcurrent < 1 {
 		maxConcurrent = 1
 	}
@@ -32,6 +41,7 @@ func NewSegmentPrefetcher(ctx context.Context, client *resty.Client, resolver *U
 		resolver: resolver,
 		attempts: attempts,
 		delay:    delay,
+		readBody: readBody,
 		started:  make(map[int64]chan SegmentFetchResult),
 		sem:      make(chan struct{}, maxConcurrent),
 	}
@@ -66,7 +76,7 @@ func (p *SegmentPrefetcher) Start(seq int64, segmentURI string) {
 			return
 		}
 
-		data, err := FetchSegmentWithRetry(p.ctx, p.client, segmentURL, p.attempts, p.delay)
+		data, err := FetchSegmentWithRetryReader(p.ctx, p.client, segmentURL, p.attempts, p.delay, p.readBody)
 		resultCh <- SegmentFetchResult{Data: data, Err: err}
 	}()
 }

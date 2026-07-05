@@ -9,6 +9,7 @@ import (
 
 	hlsutil "github.com/bilirec/bilirec/pkg/hls"
 	"github.com/bilirec/bilirec/pkg/backoff"
+	"github.com/bilirec/bilirec/pkg/pool"
 	"github.com/go-resty/resty/v2"
 	"github.com/sirupsen/logrus"
 )
@@ -65,7 +66,14 @@ func isRetryablePlaylistStatusErr(err error) bool {
 //
 // playlistClient should have a short timeout for m3u8 fetches.
 // segmentClient should have a longer timeout for segment and map downloads.
-func (r *Service) ReadHlsStream(fetchM3u8URL func() (string, error), playlistClient, segmentClient *resty.Client, ctx context.Context, qn int) (<-chan []byte, error) {
+func (r *Service) ReadHlsStream(
+	fetchM3u8URL func() (string, error),
+	playlistClient, segmentClient *resty.Client,
+	ctx context.Context,
+	qn int,
+	chunkPool *pool.BucketedBytesPool,
+	releasePool func(),
+) (<-chan []byte, error) {
 	var (
 		m3u8URL        string
 		resolver       *hlsutil.URLResolver
@@ -76,6 +84,10 @@ func (r *Service) ReadHlsStream(fetchM3u8URL func() (string, error), playlistCli
 		lastModified   string
 		cachedPlaylist *hlsPlaylist
 	)
+
+	readSegmentBody := func(resp *resty.Response) ([]byte, error) {
+		return readHlsSegmentBody(chunkPool, resp)
+	}
 
 	refreshM3u8URL := func(reason string) error {
 		nextURL, err := fetchM3u8URL()
@@ -98,7 +110,7 @@ func (r *Service) ReadHlsStream(fetchM3u8URL func() (string, error), playlistCli
 
 		m3u8URL = nextURL
 		resolver = nextResolver
-		prefetcher = hlsutil.NewSegmentPrefetcher(ctx, segmentClient, resolver, segmentRetryAttempts, segmentRetryDelay, segmentFetchWorkers)
+		prefetcher = hlsutil.NewSegmentPrefetcher(ctx, segmentClient, resolver, segmentRetryAttempts, segmentRetryDelay, segmentFetchWorkers, readSegmentBody)
 		currentMapURI = ""
 		mapSent = false
 		lastEtag = ""
@@ -229,6 +241,7 @@ func (r *Service) ReadHlsStream(fetchM3u8URL func() (string, error), playlistCli
 	ch := make(chan []byte, r.chanBufferSizeForQn(qn))
 	go func() {
 		defer close(ch)
+		defer releasePool()
 		ticker := time.NewTicker(pollInterval)
 		defer ticker.Stop()
 		syncWaitTimer := time.NewTimer(time.Hour)
@@ -407,7 +420,7 @@ func (r *Service) ReadHlsStream(fetchM3u8URL func() (string, error), playlistCli
 							continue
 						}
 
-						mapResp, err := segmentClient.R().SetContext(ctx).Get(mapURL)
+						mapResp, err := segmentClient.R().SetContext(ctx).SetDoNotParseResponse(true).Get(mapURL)
 						if err != nil {
 							if isCanceled(err, ctx) {
 								return
@@ -419,12 +432,21 @@ func (r *Service) ReadHlsStream(fetchM3u8URL func() (string, error), playlistCli
 							logger.Warnf("hls：map 状态码 %d", mapResp.StatusCode())
 							continue
 						}
-						logger.Debugf("hls: map fetch ok bytes=%d elapsed=%v", len(mapResp.Body()), time.Since(mapFetchStart))
+						mapData, readErr := readHlsSegmentBody(chunkPool, mapResp)
+						if readErr != nil {
+							if isCanceled(readErr, ctx) {
+								return
+							}
+							logger.Warnf("hls：读取 map 失败：%v", readErr)
+							continue
+						}
+						logger.Debugf("hls: map fetch ok bytes=%d elapsed=%v", len(mapData), time.Since(mapFetchStart))
 
 						select {
-						case ch <- mapResp.Body():
+						case ch <- mapData:
 							mapSent = true
 						case <-ctx.Done():
+							r.putChunk(chunkPool, mapData)
 							return
 						}
 					}
