@@ -298,6 +298,8 @@ func (r *Controller) getRoomConfig(ctx fiber.Ctx) error {
 		AutoRecord:            cfg.AutoRecord,
 		Notify:                cfg.Notify,
 		RecordDurationMinutes: cfg.RecordDurationMinutes,
+		Qn:                    cfg.Qn,
+		OnlyAudio:             cfg.OnlyAudio,
 	})
 }
 
@@ -328,7 +330,13 @@ func (r *Controller) updateRoomConfig(ctx fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusBadRequest, "无效的请求数据")
 	}
 
-	if err := r.subSvc.UpdateConfig(roomId, &subscribe.RoomConfig{AutoRecord: req.AutoRecord, Notify: req.Notify, RecordDurationMinutes: req.RecordDurationMinutes}); err != nil {
+	if err := r.subSvc.UpdateConfig(roomId, &subscribe.RoomConfig{
+		AutoRecord:            req.AutoRecord,
+		Notify:                req.Notify,
+		RecordDurationMinutes: req.RecordDurationMinutes,
+		Qn:                    req.Qn,
+		OnlyAudio:             req.OnlyAudio,
+	}); err != nil {
 		logger.Errorf("更新房间 %d 配置失败：%v", roomId, err)
 		if err == subscribe.ErrRoomNotSubscribed {
 			return fiber.NewError(fiber.StatusNotFound, "未订阅该房间")
@@ -341,5 +349,7 @@ func (r *Controller) updateRoomConfig(ctx fiber.Ctx) error {
 		AutoRecord:            req.AutoRecord,
 		Notify:                req.Notify,
 		RecordDurationMinutes: req.RecordDurationMinutes,
+		Qn:                    req.Qn,
+		OnlyAudio:             req.OnlyAudio,
 	})
 }

@@ -233,9 +233,14 @@ func (s *Service) tryStartShardAutoRecordRooms(shardIndex, shardCount int) {
 				var autoRecordArgs []recorder.RecordStartOption
 				switch {
 				case cfg.RecordDurationMinutes == -1:
-					autoRecordArgs = []recorder.RecordStartOption{recorder.WithDuration(0)}
+					autoRecordArgs = append(autoRecordArgs, recorder.WithDuration(0))
 				case cfg.RecordDurationMinutes > 0:
-					autoRecordArgs = []recorder.RecordStartOption{recorder.WithDuration(time.Duration(cfg.RecordDurationMinutes) * time.Minute)}
+					autoRecordArgs = append(autoRecordArgs, recorder.WithDuration(time.Duration(cfg.RecordDurationMinutes)*time.Minute))
+				}
+
+				streamOptions := streamOptionsFromRoomConfig(cfg)
+				if len(streamOptions) > 0 {
+					autoRecordArgs = append(autoRecordArgs, recorder.WithStreamOptions(streamOptions...))
 				}
 
 				err := s.recSvc.Start(roomID, autoRecordArgs...)
@@ -256,6 +261,24 @@ func (s *Service) tryStartShardAutoRecordRooms(shardIndex, shardCount int) {
 
 		s.markSessionState(roomID, currentSessionKey)
 	}
+}
+
+func streamOptionsFromRoomConfig(cfg *subscribe.RoomConfig) []bilibili.GetStreamURLsOption {
+	if cfg == nil {
+		return nil
+	}
+
+	var opts []bilibili.GetStreamURLsOption
+	if cfg.Qn > 0 {
+		qn := bilibili.Quality(cfg.Qn)
+		if qn.IsValid() {
+			opts = append(opts, bilibili.WithQn(qn))
+		}
+	}
+	if cfg.OnlyAudio {
+		opts = append(opts, bilibili.WithOnlyAudio(true))
+	}
+	return opts
 }
 
 func (s *Service) markSessionState(roomID int, sessionKey string) {

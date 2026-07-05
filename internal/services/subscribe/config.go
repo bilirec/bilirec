@@ -12,6 +12,8 @@ type RoomConfig struct {
 	AutoRecord            bool
 	Notify                bool
 	RecordDurationMinutes int // 0 = system default, -1 = unlimited, >0 = custom minutes
+	Qn                    int  // 0 = backend default (原画); see bilibili.Quality
+	OnlyAudio             bool // request audio-only stream when starting recording
 }
 
 var roomConfigSerializer = pool.NewSerializer()

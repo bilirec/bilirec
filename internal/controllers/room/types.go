@@ -23,10 +23,14 @@ type RoomConfigResponse struct {
 	AutoRecord            bool `json:"auto_record"`
 	Notify                bool `json:"notify"`
 	RecordDurationMinutes int  `json:"record_duration_minutes"`
+	Qn                    int  `json:"qn"`
+	OnlyAudio             bool `json:"only_audio"`
 }
 
 type UpdateRoomConfigRequest struct {
 	AutoRecord            bool `json:"auto_record"`
 	Notify                bool `json:"notify"`
 	RecordDurationMinutes int  `json:"record_duration_minutes"`
+	Qn                    int  `json:"qn"`
+	OnlyAudio             bool `json:"only_audio"`
 }

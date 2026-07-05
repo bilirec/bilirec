@@ -11,6 +11,30 @@ import (
 	"github.com/puzpuzpuz/xsync/v4"
 )
 
+func TestStreamOptionsFromRoomConfig(t *testing.T) {
+	tests := []struct {
+		name string
+		cfg  *subscribe.RoomConfig
+		want int
+	}{
+		{name: "nil config", cfg: nil, want: 0},
+		{name: "defaults", cfg: &subscribe.RoomConfig{}, want: 0},
+		{name: "only audio", cfg: &subscribe.RoomConfig{OnlyAudio: true}, want: 1},
+		{name: "quality", cfg: &subscribe.RoomConfig{Qn: int(bilibili.QualityHigh)}, want: 1},
+		{name: "quality and audio", cfg: &subscribe.RoomConfig{Qn: int(bilibili.QualityHigh), OnlyAudio: true}, want: 2},
+		{name: "invalid quality ignored", cfg: &subscribe.RoomConfig{Qn: 999}, want: 0},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := streamOptionsFromRoomConfig(tt.cfg)
+			if len(got) != tt.want {
+				t.Fatalf("got %d stream options, want %d", len(got), tt.want)
+			}
+		})
+	}
+}
+
 func TestResolveLiveSessionKey(t *testing.T) {
 	tests := []struct {
 		name string
