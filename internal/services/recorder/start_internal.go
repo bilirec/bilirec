@@ -3,6 +3,7 @@ package recorder
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/bilirec/bilirec/internal/modules/bilibili"
@@ -21,12 +22,12 @@ const (
 )
 
 type internalStartParams struct {
-	roomId      int
-	opts        RecordStartOptions
-	ctx         context.Context
-	cancel      context.CancelFunc // user mode only; adopted by Info on success
-	mode        startMode
-	session     *Info // recovery only
+	roomId  int
+	opts    RecordStartOptions
+	ctx     context.Context
+	cancel  context.CancelFunc // user mode only; adopted by Info on success
+	mode    startMode
+	session *Info // recovery only
 }
 
 func (r *Service) internalStart(p internalStartParams) error {
@@ -300,7 +301,7 @@ func (r *Service) connectStream(
 			func() rs.StreamRecordStrategy { return rs.NewHlsTsStrategy(streamInfo.Qn) },
 			func() rs.StreamRecordStrategy { return rs.NewHlsFmp4Strategy(streamInfo.Qn) },
 		)
-	default:
+	case "flv":
 		startTimeFlv := time.Now()
 		resp, err := r.bilic.FetchLiveStreamUrlWithCtx(streamInfo.URL, ctx)
 		durationFlv := time.Since(startTimeFlv)
@@ -356,6 +357,8 @@ func (r *Service) connectStream(
 		}
 		ch = flvCh
 		strategy = rs.NewFlvStrategy(streamInfo.Qn)
+	default:
+		return nil, nil, false, fmt.Errorf("unsupported format: %s", streamInfo.Format)
 	}
 
 	return ch, strategy, true, nil
