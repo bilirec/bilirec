@@ -10,10 +10,11 @@ on:
     tags:
       - '*'
     branches:
-      - '*'
+      - '**'
     paths:
       - '**/*.go'
       - 'Dockerfile'
+      - '.github/workflows/push-docker.yaml'
   workflow_dispatch:
 
 jobs:
@@ -58,6 +59,7 @@ jobs:
             docker.io/${{ secrets.DOCKER_USERNAME }}/${{ env.artifact_name }}
           tags: |
             type=edge
+            type=ref,event=branch
             type=sha,event=branch
             type=ref,event=tag
       - name: Build and push
