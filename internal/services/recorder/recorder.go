@@ -28,24 +28,30 @@ var logger = logrus.WithField("service", "recorder")
 
 type RecordStatus string
 
-const Recording RecordStatus = "recording"
-const Recovering RecordStatus = "recovering"
-const Idle RecordStatus = "idle"
+const (
+	Recording  RecordStatus = "recording"
+	Recovering RecordStatus = "recovering"
+	Idle       RecordStatus = "idle"
+)
 
-// var idlePtr *RecordStatus = utils.Ptr(Idle)
-var recordingPtr *RecordStatus = utils.Ptr(Recording)
-var recoveringPtr *RecordStatus = utils.Ptr(Recovering)
+var (
+	//idlePtr       = new(Idle)
+	recordingPtr  = new(Recording)
+	recoveringPtr = new(Recovering)
+)
 
-var ErrMaxConcurrentRecordingsReached = errors.New("已达到最大并发录制数")
-var ErrRecordingStarted = errors.New("录制已开始")
-var ErrRecordRecovering = errors.New("录制正在恢复流")
-var ErrRecordingPending = errors.New("录制正在启动中")
-var ErrStreamNotLive = errors.New("该房间当前未在直播")
-var ErrEmptyStreamURLs = errors.New("没有可用的流 URL")
-var ErrStreamURLsUnreachable = errors.New("所有流 URL 均不可达")
-var ErrRoomBanned = errors.New("该房间已被封禁")
-var ErrRoomEncrypted = errors.New("该房间已加密")
-var ErrInsufficientDiskSpace = errors.New("磁盘空间不足")
+var (
+	ErrMaxConcurrentRecordingsReached = errors.New("已达到最大并发录制数")
+	ErrRecordingStarted               = errors.New("录制已开始")
+	ErrRecordRecovering               = errors.New("录制正在恢复流")
+	ErrRecordingPending               = errors.New("录制正在启动中")
+	ErrStreamNotLive                  = errors.New("该房间当前未在直播")
+	ErrEmptyStreamURLs                = errors.New("没有可用的流 URL")
+	ErrStreamURLsUnreachable          = errors.New("所有流 URL 均不可达")
+	ErrRoomBanned                     = errors.New("该房间已被封禁")
+	ErrRoomEncrypted                  = errors.New("该房间已加密")
+	ErrInsufficientDiskSpace          = errors.New("磁盘空间不足")
+)
 
 type Service struct {
 	st           *stream.Service

@@ -35,15 +35,15 @@ import (
 )
 
 const (
-	recorderTestProfileDirEnv        = "RECORDER_TEST_PROFILE_DIR"
-	recorderCPUSteadySampleEnv       = "RECORDER_CPU_STEADY_SAMPLE_SECS"
-	recorderCPUSteadySampleMin       = 1 * time.Second
-	recorderTestSettleAfterStop      = 5 * time.Second
-	pprofLogTopN                     = 10
-	recorderRecordProfileIntervalEnv      = "RECORDER_RECORD_PROFILE_INTERVAL_SECS"
-	recorderProfileLogTopEnv              = "RECORDER_PROFILE_LOG_TOP" // default false: save only during test
-	recorderTestMaxRetainedAllocMBEnv     = "RECORDER_TEST_MAX_RETAINED_ALLOC_MB"
-	recorderTestMaxRetainedSysMBEnv       = "RECORDER_TEST_MAX_RETAINED_SYS_MB"
+	recorderTestProfileDirEnv              = "RECORDER_TEST_PROFILE_DIR"
+	recorderCPUSteadySampleEnv             = "RECORDER_CPU_STEADY_SAMPLE_SECS"
+	recorderCPUSteadySampleMin             = 1 * time.Second
+	recorderTestSettleAfterStop            = 5 * time.Second
+	pprofLogTopN                           = 10
+	recorderRecordProfileIntervalEnv       = "RECORDER_RECORD_PROFILE_INTERVAL_SECS"
+	recorderProfileLogTopEnv               = "RECORDER_PROFILE_LOG_TOP" // default false: save only during test
+	recorderTestMaxRetainedAllocMBEnv      = "RECORDER_TEST_MAX_RETAINED_ALLOC_MB"
+	recorderTestMaxRetainedSysMBEnv        = "RECORDER_TEST_MAX_RETAINED_SYS_MB"
 	recorderTestMaxRetainedAllocPerRoomEnv = "RECORDER_TEST_MAX_RETAINED_ALLOC_MB_PER_ROOM"
 	recorderTestMaxRetainedSysPerRoomEnv   = "RECORDER_TEST_MAX_RETAINED_SYS_MB_PER_ROOM"
 )
