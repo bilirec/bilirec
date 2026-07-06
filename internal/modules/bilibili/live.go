@@ -1,12 +1,12 @@
 ﻿package bilibili
 
 import (
+	"context"
 	"encoding/json"
 	"net/url"
 	"strconv"
 
-	bili "github.com/CuteReimu/bilibili/v2"
-	"github.com/pkg/errors"
+	"github.com/go-resty/resty/v2"
 )
 
 type (
@@ -63,25 +63,40 @@ func (c *Client) IsStreamLiving(roomID int) (bool, error) {
 }
 
 func (c *Client) GetLiveRoomInfos(roomIDs ...int) (map[string]*LiveRoomInfoDetail, error) {
-	req := c.liveClient.R()
-	queries := url.Values{}
-	queries.Set("req_biz", "web_room_componet") // hard coded value
-	for _, id := range roomIDs {
-		queries.Add("room_ids", strconv.Itoa(id))
+	if len(roomIDs) == 0 {
+		return map[string]*LiveRoomInfoDetail{}, nil
 	}
-	req.SetQueryParamsFromValues(queries)
-	res, err := req.Get(liveRoomInfov1)
+
+	resp, err := c.liveInfoFB.Do(context.Background(), func(req *resty.Request) (*resty.Response, error) {
+		queries := url.Values{}
+		queries.Set("req_biz", "web_room_componet") // hard coded value
+		for _, id := range roomIDs {
+			queries.Add("room_ids", strconv.Itoa(id))
+		}
+		return req.SetQueryParamsFromValues(queries).Get(liveRoomInfov1)
+	})
 	if err != nil {
 		return nil, err
 	}
+	return decodeLiveRoomInfos(resp)
+}
+
+func decodeLiveRoomInfos(res *resty.Response) (map[string]*LiveRoomInfoDetail, error) {
 	var resp LiveRoomInfoResponse
 	if err := json.Unmarshal(res.Body(), &resp); err != nil {
 		return nil, err
-	} else if resp.Code != 0 {
-		return nil, errors.Errorf("failed to get live room infos: %s (code: %d)", resp.Message, resp.Code)
-	} else if resp.Data == nil {
-		return nil, errors.New("直播间信息响应中没有数据")
-	} else if len(resp.Data.ByRoomIDs) == 0 {
+	}
+	if resp.Code != 0 {
+		return nil, &APIError{
+			HTTPStatus: res.StatusCode(),
+			Code:       resp.Code,
+			Message:    resp.Message,
+		}
+	}
+	if resp.Data == nil {
+		return nil, ErrNilResponse
+	}
+	if len(resp.Data.ByRoomIDs) == 0 {
 		return nil, ErrRoomNotFound
 	}
 	return resp.Data.ByRoomIDs, nil
@@ -97,19 +112,4 @@ func (c *Client) GetLiveRoomInfo(roomID int) (*LiveRoomInfoDetail, error) {
 		return nil, ErrRoomNotFound
 	}
 	return info, nil
-}
-
-func IsErrRoomNotFound(err error) bool {
-	if err == ErrRoomNotFound {
-		return true
-	}
-	cause := errors.Cause(err)
-	if biliErr, ok := cause.(bili.Error); ok && biliErr.Code == 1 {
-		return true
-	}
-	return false
-}
-
-func IsErrStreamGeoRestricted(err error) bool {
-	return errors.Is(err, ErrStreamGeoRestricted)
 }

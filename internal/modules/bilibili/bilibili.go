@@ -2,7 +2,6 @@
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -14,6 +13,7 @@ import (
 
 	bili "github.com/CuteReimu/bilibili/v2"
 	"github.com/bilirec/bilirec/internal/modules/config"
+	"github.com/bilirec/bilirec/pkg/fallback"
 	"github.com/bilirec/bilirec/utils"
 	"github.com/go-resty/resty/v2"
 	"github.com/sirupsen/logrus"
@@ -21,11 +21,6 @@ import (
 )
 
 var logger = logrus.WithField("module", "bilibili")
-
-var (
-	ErrRoomNotFound        = errors.New("房间不存在")
-	ErrStreamGeoRestricted = errors.New("该直播间在当前地区不可用")
-)
 
 const liveReferer = "https://live.bilibili.com/"
 const liveOrigin = "https://live.bilibili.com"
@@ -38,6 +33,7 @@ type Client struct {
 	refreshToken     string
 	wbi              *bili.WBI
 	liveClient       *resty.Client
+	liveInfoFB       *fallback.Client
 	liveStreamClient *resty.Client
 	ctx              context.Context
 
@@ -77,6 +73,7 @@ func provider(cfg *config.Config, ls fx.Lifecycle) *Client {
 	client.loginMode = cfg.BilibiliLoginMode
 	client.wbi = bili.NewDefaultWbi()
 	client.liveClient = client.withLiveClient()
+	client.liveInfoFB = fallback.New(client.withLiveClient(), client.liveClient, liveInterpret) // anonymous client and auth client
 	client.liveStreamClient = client.withLiveStreamClient()
 	client.cookiePath = fmt.Sprintf("%s%c_cookies", cfg.SecretDir, os.PathSeparator)
 	client.refreshTokenPath = fmt.Sprintf("%s%c_refresh_token", cfg.SecretDir, os.PathSeparator)

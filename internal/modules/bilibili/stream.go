@@ -108,8 +108,8 @@ const v1StreamAPI = "https://api.live.bilibili.com/room/v1/Room/playUrl"
 const v2StreamAPI = "https://api.live.bilibili.com/xlive/web-room/v2/index/getRoomPlayInfo"
 
 const (
-	streamAPICodeRoomNotFound    = 19002003
-	streamAPICodeGeoRestricted   = 60005
+	streamAPICodeRoomNotFound  = 19002003
+	streamAPICodeGeoRestricted = 60005
 )
 
 func mapStreamAPIError(code int, message string) error {
@@ -119,7 +119,7 @@ func mapStreamAPIError(code int, message string) error {
 	case streamAPICodeGeoRestricted:
 		return ErrStreamGeoRestricted
 	default:
-		return fmt.Errorf("获取流 URL 失败：%s（代码 %d）", message, code)
+		return &APIError{Code: code, Message: message}
 	}
 }
 

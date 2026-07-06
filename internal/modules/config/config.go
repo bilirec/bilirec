@@ -83,6 +83,7 @@ type Config struct {
 	SubcheckMinIntervalSecs                             int
 	SubcheckMaxIntervalSecs                             int
 	SubcheckMaxShards                                   int
+	SubcheckJitterSecs                                  int
 
 	// configurable performances
 	ReadStreamBytesPoolSize      int
@@ -203,6 +204,7 @@ func provider(lc fx.Lifecycle) (*Config, error) {
 		SubcheckMinIntervalSecs:                             utils.MustAtoi(utils.EmptyOrElse(os.Getenv("SUBCHECK_MIN_INTERVAL_SECS"), "60")),
 		SubcheckMaxIntervalSecs:                             utils.MustAtoi(utils.EmptyOrElse(os.Getenv("SUBCHECK_MAX_INTERVAL_SECS"), "300")),
 		SubcheckMaxShards:                                   utils.MustAtoi(utils.EmptyOrElse(os.Getenv("SUBCHECK_MAX_SHARDS"), "32")),
+		SubcheckJitterSecs:                                  utils.MustAtoi(utils.EmptyOrElse(os.Getenv("SUBCHECK_JITTER_SECS"), "2")),
 
 		// stream performance configs
 		ReadStreamBytesPoolSize:      utils.MustAtoi(utils.EmptyOrElse(os.Getenv("READ_STREAM_BYTES_POOL_SIZE"), "524288")),       // default 512KB

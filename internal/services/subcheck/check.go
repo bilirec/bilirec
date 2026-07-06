@@ -3,6 +3,7 @@
 import (
 	"context"
 	"maps"
+	"math/rand"
 	"os"
 	"slices"
 	"strconv"
@@ -43,6 +44,7 @@ type Service struct {
 	lastRescale    time.Time
 	scheduleMu     sync.Mutex
 	roomsCache     subscribedRoomsCache
+	jitterSecs     int
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -104,6 +106,7 @@ func (s *Service) start(cfg *config.Config) error {
 		cfg.SubcheckMaxIntervalSecs,
 		cfg.SubcheckMaxShards,
 	)
+	s.jitterSecs = cfg.SubcheckJitterSecs
 	roomCount, err := s.countLiveCheckRooms()
 	if err != nil {
 		logger.Warnf("启动时统计订阅检查房间数失败：%v", err)
@@ -157,6 +160,9 @@ func (s *Service) shardLoop(shard int, ch <-chan struct{}) {
 	for {
 		select {
 		case <-ch:
+			if s.jitterSecs > 0 {
+				time.Sleep(time.Duration(rand.Intn(s.jitterSecs)) * time.Second)
+			}
 			if shard == 0 {
 				s.maybeRescale()
 			}
