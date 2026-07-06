@@ -891,3 +891,127 @@ func runConcurrentFormatRecordTest(t *testing.T, specs ...concurrentFormatRecord
 		}
 	}
 }
+
+// runZZZFinalConcurrentRecordTest exercises concurrent recordings of one format in an
+// isolated go test process so heap/cpu pprof are not polluted by other integration
+// tests. CI runs each ZZZ_Final_* test in a separate workflow step.
+func runZZZFinalConcurrentRecordTest(t *testing.T, profile bilibili.StreamProfile, format string, concurrent int) {
+	t.Helper()
+	if testing.Short() {
+		t.Skipf("skipping final concurrent %s record test in short mode", format)
+	}
+	if concurrent < 1 {
+		t.Fatalf("concurrent must be >= 1, got %d", concurrent)
+	}
+
+	t.Setenv("MAX_CONCURRENT_RECORDINGS", strconv.Itoa(concurrent))
+
+	label := fmt.Sprintf("concurrent%d_%s", concurrent, format)
+
+	sess := newRecorderTestSession(t)
+	rooms := resolveLiveTestRoomIDs(t, sess.Room, concurrent)
+	if len(rooms) < concurrent {
+		t.Skipf("need %d live rooms, got %d", concurrent, len(rooms))
+	}
+	rooms = rooms[:concurrent]
+
+	startOpts := []recorder.RecordStartOption{
+		recorder.WithStreamOptions(
+			bilibili.WithProfiles(profile),
+			bilibili.WithQn(bilibili.QualityOriginal),
+		),
+	}
+
+	baseline := sess.Monitor.snapshotMemory(t, label+"_baseline", true)
+	sess.Room.InvalidateRooms(rooms...)
+
+	recordDuration := integrationRecordDuration()
+	t.Logf("final concurrent test: format=%s concurrent=%d rooms=%v record_duration=%s", format, concurrent, rooms, recordDuration)
+
+	type startResult struct {
+		room int
+		err  error
+	}
+
+	startPhase, err := sess.Monitor.beginPhase(label + "_start_burst")
+	if err != nil {
+		t.Fatalf("begin concurrent start phase: %v", err)
+	}
+
+	startGate := make(chan struct{})
+	resultCh := make(chan startResult, concurrent)
+	var wg sync.WaitGroup
+	for _, roomID := range rooms {
+		rid := roomID
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-startGate
+			err := sess.Recorder.Start(rid, startOpts...)
+			resultCh <- startResult{room: rid, err: err}
+		}()
+	}
+	close(startGate)
+	wg.Wait()
+	close(resultCh)
+
+	startReport := startPhase.end(t)
+	logCPUPhase(t, startReport)
+
+	started := make([]int, 0, concurrent)
+	for r := range resultCh {
+		if r.err == nil {
+			started = append(started, r.room)
+			t.Logf("concurrent start ok: room=%d", r.room)
+			continue
+		}
+		for _, rid := range started {
+			_ = sess.Recorder.Stop(rid)
+		}
+		waitUntilNoActiveRecordings(t, sess.Recorder, 30*time.Second)
+		handleRecordingStartErr(t, r.err)
+	}
+
+	if len(started) != concurrent {
+		t.Fatalf("expected %d successful starts, got %d", concurrent, len(started))
+	}
+	if active := sess.Recorder.ListRecordingSize(); active != concurrent {
+		t.Fatalf("expected %d active recordings, got %d", concurrent, active)
+	}
+
+	outputPaths := make(map[int]string, concurrent)
+	for _, rid := range started {
+		outputPaths[rid] = waitForOutputPathAfterStart(t, sess.Recorder, rid)
+	}
+
+	recordReport := sess.Monitor.runRecordingProfiledWait(t, label+"_recording", recordDuration)
+	during := sess.Monitor.snapshotMemory(t, label+"_during", false)
+	sess.Monitor.snapshotGoroutines(t, label+"_during")
+	logCPUPhase(t, recordReport)
+	logMemoryDelta(t, baseline, during)
+
+	t.Log("stopping all concurrent recordings")
+	for _, rid := range started {
+		if !sess.Recorder.Stop(rid) {
+			t.Logf("stop returned false for room=%d", rid)
+		}
+	}
+	waitUntilNoActiveRecordings(t, sess.Recorder, 30*time.Second)
+
+	time.Sleep(recorderTestSettleAfterStop)
+	afterStop := sess.Monitor.snapshotMemory(t, label+"_after_stop", false)
+	sess.Monitor.snapshotGoroutines(t, label+"_after_stop")
+	logMemoryDelta(t, during, afterStop)
+
+	afterCleanup := sess.Monitor.snapshotMemoryReleased(t, label+"_after_cleanup")
+	assertRecordingMemoryReleased(t, baseline, afterCleanup, recordingMemoryBudgetForSessions(concurrent, label))
+
+	sess.Monitor.logAnalysisHints(t)
+
+	if checkFFmpegAvailable(t) {
+		for _, rid := range started {
+			t.Logf("\n📹 Verifying %s recordings in room dir (room=%d)...", strings.ToUpper(format), rid)
+			verifyAllRecordingsInRoomDir(t, filepath.Dir(outputPaths[rid]), format)
+		}
+	}
+}

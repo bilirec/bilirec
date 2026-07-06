@@ -37,118 +37,22 @@ func TestFlvFmp4ConcurrentRecord(t *testing.T) {
 	)
 }
 
-// TestZZZ_Final_Concurrent3WayRecord exercises three concurrent FLV recordings in an
-// isolated go test process so heap/cpu pprof are not polluted by other integration
-// tests. CI runs it in a separate workflow step; locally, run it alone:
+// ZZZ_Final_* long soak tests run in isolated go test processes so heap/cpu pprof are
+// not polluted by other integration tests. CI runs each in a separate workflow step; locally:
 //
-//	go test ./internal/services/recorder -run TestZZZ_Final_Concurrent3WayRecord -count=1 -timeout 30m
+//	go test ./internal/services/recorder -run TestZZZ_Final_Concurrent3WayFlvRecord -count=1 -timeout 30m
+//	go test ./internal/services/recorder -run TestZZZ_Final_Concurrent3WayFmp4Record -count=1 -timeout 30m
 //
 // The ZZZ prefix keeps lexicographic order last when the full recorder package is
 // run in one invocation (e.g. go test ./internal/services/recorder without -run).
 //
 // Optional: RECORDER_RECORD_PROFILE_INTERVAL_SECS=60s
-func TestZZZ_Final_Concurrent3WayRecord(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping final concurrent 3-way record test in short mode")
-	}
+func TestZZZ_Final_Concurrent3WayFlvRecord(t *testing.T) {
+	runZZZFinalConcurrentRecordTest(t, bilibili.ProfileHTTPFLV, "flv", 3)
+}
 
-	t.Setenv("MAX_CONCURRENT_RECORDINGS", "3")
-
-	const wantConcurrent = 3
-	sess := newRecorderTestSession(t)
-	rooms := resolveLiveTestRoomIDs(t, sess.Room, wantConcurrent)
-	if len(rooms) < wantConcurrent {
-		t.Skipf("need %d live rooms, got %d", wantConcurrent, len(rooms))
-	}
-	rooms = rooms[:wantConcurrent]
-
-	startOpts := []recorder.RecordStartOption{
-		recorder.WithStreamOptions(
-			bilibili.WithProfiles(bilibili.ProfileHTTPFLV),
-			bilibili.WithQn(bilibili.QualityOriginal),
-		),
-	}
-
-	baseline := sess.Monitor.snapshotMemory(t, "concurrent3_baseline", true)
-	sess.Room.InvalidateRooms(rooms...)
-
-	recordDuration := integrationRecordDuration()
-	t.Logf("final concurrent test: rooms=%v record_duration=%s", rooms, recordDuration)
-
-	type startResult struct {
-		room int
-		err  error
-	}
-
-	startPhase, err := sess.Monitor.beginPhase("concurrent3_start_burst")
-	if err != nil {
-		t.Fatalf("begin concurrent start phase: %v", err)
-	}
-
-	startGate := make(chan struct{})
-	resultCh := make(chan startResult, wantConcurrent)
-	var wg sync.WaitGroup
-	for _, roomID := range rooms {
-		rid := roomID
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			<-startGate
-			err := sess.Recorder.Start(rid, startOpts...)
-			resultCh <- startResult{room: rid, err: err}
-		}()
-	}
-	close(startGate)
-	wg.Wait()
-	close(resultCh)
-
-	startReport := startPhase.end(t)
-	logCPUPhase(t, startReport)
-
-	started := make([]int, 0, wantConcurrent)
-	for r := range resultCh {
-		if r.err == nil {
-			started = append(started, r.room)
-			t.Logf("concurrent start ok: room=%d", r.room)
-			continue
-		}
-		for _, rid := range started {
-			_ = sess.Recorder.Stop(rid)
-		}
-		waitUntilNoActiveRecordings(t, sess.Recorder, 30*time.Second)
-		handleRecordingStartErr(t, r.err)
-	}
-
-	if len(started) != wantConcurrent {
-		t.Fatalf("expected %d successful starts, got %d", wantConcurrent, len(started))
-	}
-	if active := sess.Recorder.ListRecordingSize(); active != wantConcurrent {
-		t.Fatalf("expected %d active recordings, got %d", wantConcurrent, active)
-	}
-
-	recordReport := sess.Monitor.runRecordingProfiledWait(t, "concurrent3_recording", recordDuration)
-	during := sess.Monitor.snapshotMemory(t, "concurrent3_during", false)
-	sess.Monitor.snapshotGoroutines(t, "concurrent3_during")
-	logCPUPhase(t, recordReport)
-	logMemoryDelta(t, baseline, during)
-
-	t.Log("stopping all concurrent recordings")
-	for _, rid := range started {
-		if !sess.Recorder.Stop(rid) {
-			t.Logf("stop returned false for room=%d", rid)
-		}
-	}
-	waitUntilNoActiveRecordings(t, sess.Recorder, 30*time.Second)
-
-	time.Sleep(recorderTestSettleAfterStop)
-	afterStop := sess.Monitor.snapshotMemory(t, "concurrent3_after_stop", false)
-	sess.Monitor.snapshotGoroutines(t, "concurrent3_after_stop")
-	logMemoryDelta(t, during, afterStop)
-
-	afterCleanup := sess.Monitor.snapshotMemoryReleased(t, "concurrent3_after_cleanup")
-	assertRecordingMemoryReleased(t, baseline, afterCleanup, recordingMemoryBudgetForSessions(wantConcurrent, "concurrent3_flv"))
-
-	sess.Monitor.logAnalysisHints(t)
+func TestZZZ_Final_Concurrent3WayFmp4Record(t *testing.T) {
+	runZZZFinalConcurrentRecordTest(t, bilibili.ProfileHLSFMP4, "fmp4", 3)
 }
 
 func TestFlvRecord_AutoStopAfterDuration(t *testing.T) {
