@@ -4,6 +4,8 @@
 
 **完整文档：** [www.bilirec.org/zh-cn/](https://www.bilirec.org/zh-cn/) · [常见问题](https://www.bilirec.org/zh-cn/guides/faq/)
 
+**交流与反馈：** QQ 群 [834229325](https://qm.qq.com/q/oMTN3EsGBy)，用于交流和问题反映。
+
 ## 目录
 
 - [功能特性](#功能特性)
