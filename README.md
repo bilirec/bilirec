@@ -74,13 +74,20 @@ chmod +x bilirec-linux-amd64 && ./bilirec-linux-amd64
 ### Docker
 
 ```bash
+# Docker Hub
 docker pull eric1008818/bilirec:latest
+
+# GHCR（国内若 Docker Hub 拉取困难，可改用 GitHub Container Registry）
+docker pull ghcr.io/bilirec/bilirec:latest
+
 docker run -d --name bilirec -p 8080:8080 \
   -v /path/to/records:/app/records \
   -v /path/to/secrets:/app/secrets \
   -v /path/to/database:/app/database \
   eric1008818/bilirec:latest
 ```
+
+`docker run` 时把镜像名换成 `ghcr.io/bilirec/bilirec:latest` 即可使用 GHCR。
 
 启动后打开 [app.bilirec.org](https://app.bilirec.org/)，在登录页填写后端地址（默认 `http://localhost:8080`）。详细步骤见 [快速开始](https://www.bilirec.org/zh-cn/guides/quick-start/)。
 
