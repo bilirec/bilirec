@@ -817,13 +817,8 @@ func runConcurrentFormatRecordTest(t *testing.T, specs ...concurrentFormatRecord
 		t.Fatalf("begin start phase: %v", err)
 	}
 
-	type startResult struct {
-		room int
-		err  error
-	}
-
 	startGate := make(chan struct{})
-	resultCh := make(chan startResult, len(recordings))
+	resultCh := make(chan concurrentStartResult, len(recordings))
 	var wg sync.WaitGroup
 	for i := range recordings {
 		rec := recordings[i]
@@ -833,7 +828,7 @@ func runConcurrentFormatRecordTest(t *testing.T, specs ...concurrentFormatRecord
 			defer wg.Done()
 			<-startGate
 			err := sess.Recorder.Start(rec.roomID, recorder.WithStreamOptions(bilibili.WithProfiles(spec.profile)))
-			resultCh <- startResult{room: rec.roomID, err: err}
+			resultCh <- concurrentStartResult{room: rec.roomID, err: err}
 		}()
 	}
 	close(startGate)
@@ -843,19 +838,7 @@ func runConcurrentFormatRecordTest(t *testing.T, specs ...concurrentFormatRecord
 	startReport := startPhase.end(t)
 	logCPUPhase(t, startReport)
 
-	started := make([]int, 0, len(recordings))
-	for r := range resultCh {
-		if r.err == nil {
-			started = append(started, r.room)
-			t.Logf("concurrent start ok: room=%d", r.room)
-			continue
-		}
-		for _, rid := range started {
-			_ = sess.Recorder.Stop(rid)
-		}
-		waitUntilNoActiveRecordings(t, sess.Recorder, 30*time.Second)
-		handleRecordingStartErr(t, r.err)
-	}
+	started := collectConcurrentStartResults(t, sess.Recorder, resultCh)
 
 	if len(started) != len(recordings) {
 		t.Fatalf("expected %d successful starts, got %d", len(recordings), len(started))
@@ -928,18 +911,13 @@ func runZZZFinalConcurrentRecordTest(t *testing.T, profile bilibili.StreamProfil
 	recordDuration := integrationRecordDuration()
 	t.Logf("final concurrent test: format=%s concurrent=%d rooms=%v record_duration=%s", format, concurrent, rooms, recordDuration)
 
-	type startResult struct {
-		room int
-		err  error
-	}
-
 	startPhase, err := sess.Monitor.beginPhase(label + "_start_burst")
 	if err != nil {
 		t.Fatalf("begin concurrent start phase: %v", err)
 	}
 
 	startGate := make(chan struct{})
-	resultCh := make(chan startResult, concurrent)
+	resultCh := make(chan concurrentStartResult, concurrent)
 	var wg sync.WaitGroup
 	for _, roomID := range rooms {
 		rid := roomID
@@ -948,7 +926,7 @@ func runZZZFinalConcurrentRecordTest(t *testing.T, profile bilibili.StreamProfil
 			defer wg.Done()
 			<-startGate
 			err := sess.Recorder.Start(rid, startOpts...)
-			resultCh <- startResult{room: rid, err: err}
+			resultCh <- concurrentStartResult{room: rid, err: err}
 		}()
 	}
 	close(startGate)
@@ -958,19 +936,7 @@ func runZZZFinalConcurrentRecordTest(t *testing.T, profile bilibili.StreamProfil
 	startReport := startPhase.end(t)
 	logCPUPhase(t, startReport)
 
-	started := make([]int, 0, concurrent)
-	for r := range resultCh {
-		if r.err == nil {
-			started = append(started, r.room)
-			t.Logf("concurrent start ok: room=%d", r.room)
-			continue
-		}
-		for _, rid := range started {
-			_ = sess.Recorder.Stop(rid)
-		}
-		waitUntilNoActiveRecordings(t, sess.Recorder, 30*time.Second)
-		handleRecordingStartErr(t, r.err)
-	}
+	started := collectConcurrentStartResults(t, sess.Recorder, resultCh)
 
 	if len(started) != concurrent {
 		t.Fatalf("expected %d successful starts, got %d", concurrent, len(started))
