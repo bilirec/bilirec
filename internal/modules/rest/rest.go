@@ -186,9 +186,9 @@ func provider(ls fx.Lifecycle, cfg *config.Config) *fiber.App {
 				addr := net.JoinHostPort(cfg.Host, cfg.Port)
 				// Check if both SERVER_CRT and SERVER_KEY are provided
 				if cfg.ServerCrt != "" && cfg.ServerKey != "" {
-					return startHttpsServer(app, &wg, addr, cfg.ServerCrt, cfg.ServerKey)
+					return startHttpsServer(app, &wg, addr, cfg)
 				} else {
-					return startHttpServer(app, &wg, addr)
+					return startHttpServer(app, &wg, addr, cfg)
 				}
 			},
 			func(ctx context.Context) error {
@@ -197,6 +197,7 @@ func provider(ls fx.Lifecycle, cfg *config.Config) *fiber.App {
 					logger.Warnf("服务器关闭错误：%v", err)
 				}
 				wg.Wait()
+				logger.Info("服务器已停止")
 				return nil
 			},
 		),
@@ -205,9 +206,9 @@ func provider(ls fx.Lifecycle, cfg *config.Config) *fiber.App {
 	return app
 }
 
-func startHttpsServer(app *fiber.App, wg *sync.WaitGroup, addr, serverCrt, serverKey string) error {
-	logger.Infof("正在 %s 启动 HTTPS 服务器", addr)
-	cert, err := tls.LoadX509KeyPair(serverCrt, serverKey)
+func startHttpsServer(app *fiber.App, wg *sync.WaitGroup, addr string, cfg *config.Config) error {
+	logger.Infof("正在监听 HTTPS 服务器: %s", addr)
+	cert, err := tls.LoadX509KeyPair(cfg.ServerCrt, cfg.ServerKey)
 	if err != nil {
 		return fmt.Errorf("加载证书失败：%w", err)
 	}
@@ -221,20 +222,22 @@ func startHttpsServer(app *fiber.App, wg *sync.WaitGroup, addr, serverCrt, serve
 		return fmt.Errorf("HTTPS 服务器错误：%w", err)
 	}
 	wg.Go(func() {
-		if err := app.Listener(listener); err != nil {
+		if err := app.Listener(listener, fiber.ListenConfig{DisableStartupMessage: !cfg.Debug}); err != nil {
 			logger.Errorf("HTTPS 服务器错误：%v", err)
 		}
 	})
+	logger.Info("HTTPS 服务器已启动")
 	return nil
 }
 
-func startHttpServer(app *fiber.App, wg *sync.WaitGroup, addr string) error {
-	logger.Infof("正在 %s 启动 HTTP 服务器", addr)
+func startHttpServer(app *fiber.App, wg *sync.WaitGroup, addr string, cfg *config.Config) error {
+	logger.Infof("正在监听 HTTP 服务器: %s", addr)
 	wg.Go(func() {
-		if err := app.Listen(addr); err != nil {
+		if err := app.Listen(addr, fiber.ListenConfig{DisableStartupMessage: !cfg.Debug}); err != nil {
 			logger.Errorf("HTTP 服务器错误：%v", err)
 		}
 	})
+	logger.Info("HTTP 服务器已启动")
 	return nil
 }
 

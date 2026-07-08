@@ -28,6 +28,9 @@ import (
 	"github.com/bilirec/bilirec/pkg/updatecheck"
 	"github.com/bilirec/bilirec/utils"
 	"go.uber.org/fx"
+	"go.uber.org/fx/fxevent"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 )
 
 func MainModule() fx.Option {
@@ -76,6 +79,10 @@ func NewApp() *fx.App {
 			),
 		),
 		fx.StopTimeout(1*time.Minute),
+		fx.Provide(zapLogger),
+		fx.WithLogger(func(log *zap.Logger) fxevent.Logger {
+			return &fxevent.ZapLogger{Logger: log}
+		}),
 	)
 }
 
@@ -84,5 +91,21 @@ func NewAndroidApp() *fx.App {
 		MainModule(),
 		fx.StartTimeout(10*time.Second),
 		fx.StopTimeout(10*time.Second),
+		fx.Provide(zapLogger),
+		fx.WithLogger(func(log *zap.Logger) fxevent.Logger {
+			return &fxevent.ZapLogger{Logger: log}
+		}),
 	)
+}
+
+func zapLogger() (*zap.Logger, error) {
+	cfg := zap.NewDevelopmentConfig()
+
+	cfg.Level = zap.NewAtomicLevelAt(zapcore.WarnLevel)
+
+	if os.Getenv("DEBUG") == "true" {
+		cfg.Level = zap.NewAtomicLevelAt(zapcore.DebugLevel)
+	}
+
+	return cfg.Build()
 }
