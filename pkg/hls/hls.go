@@ -27,6 +27,19 @@ var (
 	segmentScratchPool = pool.NewBytesPool(segmentScratchSize)
 )
 
+// SegmentBodyReader reads an HTTP segment response body into a reusable buffer.
+type SegmentBodyReader func(resp *resty.Response) ([]byte, error)
+
+// SegmentScratchBytes returns a scratch buffer for segment body reads.
+func SegmentScratchBytes() []byte {
+	return segmentScratchPool.GetBytes()
+}
+
+// ReleaseSegmentScratch returns a scratch buffer to the pool.
+func ReleaseSegmentScratch(scratch []byte) {
+	segmentScratchPool.PutBytes(scratch)
+}
+
 // Parse decodes a media playlist body.
 func Parse(body string) (*Playlist, error) {
 	return ParseBytes([]byte(body))
@@ -261,6 +274,21 @@ func waitBeforeSegmentRetry(ctx context.Context, delay time.Duration) error {
 
 // FetchSegmentWithRetry fetches a segment with a fixed short retry policy.
 func FetchSegmentWithRetry(ctx context.Context, client *resty.Client, segmentURL string, attempts int, delay time.Duration) ([]byte, error) {
+	return FetchSegmentWithRetryReader(ctx, client, segmentURL, attempts, delay, readSegmentBody)
+}
+
+// FetchSegmentWithRetryReader fetches a segment using readBody to load the response.
+func FetchSegmentWithRetryReader(
+	ctx context.Context,
+	client *resty.Client,
+	segmentURL string,
+	attempts int,
+	delay time.Duration,
+	readBody SegmentBodyReader,
+) ([]byte, error) {
+	if readBody == nil {
+		readBody = readSegmentBody
+	}
 	if attempts <= 0 {
 		attempts = 1
 	}
@@ -284,7 +312,7 @@ func FetchSegmentWithRetry(ctx context.Context, client *resty.Client, segmentURL
 		}
 
 		if resp.StatusCode() == 200 {
-			data, readErr := readSegmentBody(resp)
+			data, readErr := readBody(resp)
 			if readErr == nil {
 				return data, nil
 			}

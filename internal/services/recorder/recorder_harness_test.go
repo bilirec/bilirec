@@ -16,6 +16,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -34,15 +35,15 @@ import (
 )
 
 const (
-	recorderTestProfileDirEnv        = "RECORDER_TEST_PROFILE_DIR"
-	recorderCPUSteadySampleEnv       = "RECORDER_CPU_STEADY_SAMPLE_SECS"
-	recorderCPUSteadySampleMin       = 1 * time.Second
-	recorderTestSettleAfterStop      = 5 * time.Second
-	pprofLogTopN                     = 10
-	recorderRecordProfileIntervalEnv      = "RECORDER_RECORD_PROFILE_INTERVAL_SECS"
-	recorderProfileLogTopEnv              = "RECORDER_PROFILE_LOG_TOP" // default false: save only during test
-	recorderTestMaxRetainedAllocMBEnv     = "RECORDER_TEST_MAX_RETAINED_ALLOC_MB"
-	recorderTestMaxRetainedSysMBEnv       = "RECORDER_TEST_MAX_RETAINED_SYS_MB"
+	recorderTestProfileDirEnv              = "RECORDER_TEST_PROFILE_DIR"
+	recorderCPUSteadySampleEnv             = "RECORDER_CPU_STEADY_SAMPLE_SECS"
+	recorderCPUSteadySampleMin             = 1 * time.Second
+	recorderTestSettleAfterStop            = 5 * time.Second
+	pprofLogTopN                           = 10
+	recorderRecordProfileIntervalEnv       = "RECORDER_RECORD_PROFILE_INTERVAL_SECS"
+	recorderProfileLogTopEnv               = "RECORDER_PROFILE_LOG_TOP" // default false: save only during test
+	recorderTestMaxRetainedAllocMBEnv      = "RECORDER_TEST_MAX_RETAINED_ALLOC_MB"
+	recorderTestMaxRetainedSysMBEnv        = "RECORDER_TEST_MAX_RETAINED_SYS_MB"
 	recorderTestMaxRetainedAllocPerRoomEnv = "RECORDER_TEST_MAX_RETAINED_ALLOC_MB_PER_ROOM"
 	recorderTestMaxRetainedSysPerRoomEnv   = "RECORDER_TEST_MAX_RETAINED_SYS_MB_PER_ROOM"
 )
@@ -760,7 +761,223 @@ func runFormatRecordTest(t *testing.T, profile bilibili.StreamProfile, format st
 	sess.Monitor.logAnalysisHints(t)
 
 	if checkFFmpegAvailable(t) {
-		t.Logf("\n📹 Verifying %s recording playability...", strings.ToUpper(format))
-		verifyRecordingPlayability(t, outputPath, format)
+		t.Logf("\n📹 Verifying %s recordings in room dir...", strings.ToUpper(format))
+		verifyAllRecordingsInRoomDir(t, filepath.Dir(outputPath), format)
+	}
+}
+
+type concurrentFormatRecordSpec struct {
+	profile bilibili.StreamProfile
+	format  string
+}
+
+type concurrentRoomRecording struct {
+	roomID     int
+	outputPath string
+	spec       concurrentFormatRecordSpec
+}
+
+// runConcurrentFormatRecordTest records each format on a distinct live room in parallel.
+// Structure mirrors runFormatRecordTest with profiling, memory budget, and directory ffprobe.
+func runConcurrentFormatRecordTest(t *testing.T, specs ...concurrentFormatRecordSpec) {
+	t.Helper()
+	if testing.Short() {
+		t.Skip("skipping concurrent format record test in short mode")
+	}
+	if len(specs) == 0 {
+		t.Fatal("no recording specs")
+	}
+
+	label := specs[0].format
+	for i := 1; i < len(specs); i++ {
+		label += "_" + specs[i].format
+	}
+
+	sess := newRecorderTestSession(t)
+	rooms := resolveLiveTestRoomIDs(t, sess.Room, len(specs))
+	if len(rooms) < len(specs) {
+		t.Fatalf("need %d live rooms, got %d", len(specs), len(rooms))
+	}
+
+	baseline := sess.Monitor.snapshotMemory(t, "concurrent_baseline", true)
+	sess.Room.InvalidateRooms(rooms...)
+
+	recordings := make([]concurrentRoomRecording, len(specs))
+	for i, spec := range specs {
+		recordings[i] = concurrentRoomRecording{
+			roomID: rooms[i],
+			spec:   spec,
+		}
+	}
+
+	t.Logf("concurrent format record: label=%s rooms=%v", label, rooms)
+
+	startPhase, err := sess.Monitor.beginPhase(label + "_start")
+	if err != nil {
+		t.Fatalf("begin start phase: %v", err)
+	}
+
+	startGate := make(chan struct{})
+	resultCh := make(chan concurrentStartResult, len(recordings))
+	var wg sync.WaitGroup
+	for i := range recordings {
+		rec := recordings[i]
+		spec := specs[i]
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-startGate
+			err := sess.Recorder.Start(rec.roomID, recorder.WithStreamOptions(bilibili.WithProfiles(spec.profile)))
+			resultCh <- concurrentStartResult{room: rec.roomID, err: err}
+		}()
+	}
+	close(startGate)
+	wg.Wait()
+	close(resultCh)
+
+	startReport := startPhase.end(t)
+	logCPUPhase(t, startReport)
+
+	started := collectConcurrentStartResults(t, sess.Recorder, resultCh)
+
+	if len(started) != len(recordings) {
+		t.Fatalf("expected %d successful starts, got %d", len(recordings), len(started))
+	}
+
+	for i := range recordings {
+		recordings[i].outputPath = waitForOutputPathAfterStart(t, sess.Recorder, recordings[i].roomID)
+	}
+
+	_ = sess.Monitor.runRecordingProfiledWait(t, label+"_recording", integrationRecordDuration())
+	during := sess.Monitor.snapshotMemory(t, "during_recording", false)
+	logMemoryDelta(t, baseline, during)
+
+	t.Log("stopping concurrent recordings")
+	for _, rec := range recordings {
+		t.Logf("stop room=%d success=%v", rec.roomID, sess.Recorder.Stop(rec.roomID))
+	}
+	waitUntilNoActiveRecordings(t, sess.Recorder, 30*time.Second)
+	time.Sleep(recorderTestSettleAfterStop)
+
+	afterStop := sess.Monitor.snapshotMemory(t, "after_stop", false)
+	logMemoryDelta(t, during, afterStop)
+
+	afterCleanup := sess.Monitor.snapshotMemoryReleased(t, label+"_after_cleanup")
+	assertRecordingMemoryReleased(t, baseline, afterCleanup, recordingMemoryBudgetForSessions(len(specs), label))
+
+	sess.Monitor.logAnalysisHints(t)
+
+	if checkFFmpegAvailable(t) {
+		for _, rec := range recordings {
+			t.Logf("\n📹 Verifying %s recordings in room dir (room=%d)...", strings.ToUpper(rec.spec.format), rec.roomID)
+			verifyAllRecordingsInRoomDir(t, filepath.Dir(rec.outputPath), rec.spec.format)
+		}
+	}
+}
+
+// runZZZFinalConcurrentRecordTest exercises concurrent recordings of one format in an
+// isolated go test process so heap/cpu pprof are not polluted by other integration
+// tests. CI runs each ZZZ_Final_* test in a separate workflow step.
+func runZZZFinalConcurrentRecordTest(t *testing.T, profile bilibili.StreamProfile, format string, concurrent int) {
+	t.Helper()
+	if testing.Short() {
+		t.Skipf("skipping final concurrent %s record test in short mode", format)
+	}
+	if concurrent < 1 {
+		t.Fatalf("concurrent must be >= 1, got %d", concurrent)
+	}
+
+	t.Setenv("MAX_CONCURRENT_RECORDINGS", strconv.Itoa(concurrent))
+
+	label := fmt.Sprintf("concurrent%d_%s", concurrent, format)
+
+	sess := newRecorderTestSession(t)
+	rooms := resolveLiveTestRoomIDs(t, sess.Room, concurrent)
+	if len(rooms) < concurrent {
+		t.Skipf("need %d live rooms, got %d", concurrent, len(rooms))
+	}
+	rooms = rooms[:concurrent]
+
+	startOpts := []recorder.RecordStartOption{
+		recorder.WithStreamOptions(
+			bilibili.WithProfiles(profile),
+			bilibili.WithQn(bilibili.QualityOriginal),
+		),
+	}
+
+	baseline := sess.Monitor.snapshotMemory(t, label+"_baseline", true)
+	sess.Room.InvalidateRooms(rooms...)
+
+	recordDuration := integrationRecordDuration()
+	t.Logf("final concurrent test: format=%s concurrent=%d rooms=%v record_duration=%s", format, concurrent, rooms, recordDuration)
+
+	startPhase, err := sess.Monitor.beginPhase(label + "_start_burst")
+	if err != nil {
+		t.Fatalf("begin concurrent start phase: %v", err)
+	}
+
+	startGate := make(chan struct{})
+	resultCh := make(chan concurrentStartResult, concurrent)
+	var wg sync.WaitGroup
+	for _, roomID := range rooms {
+		rid := roomID
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-startGate
+			err := sess.Recorder.Start(rid, startOpts...)
+			resultCh <- concurrentStartResult{room: rid, err: err}
+		}()
+	}
+	close(startGate)
+	wg.Wait()
+	close(resultCh)
+
+	startReport := startPhase.end(t)
+	logCPUPhase(t, startReport)
+
+	started := collectConcurrentStartResults(t, sess.Recorder, resultCh)
+
+	if len(started) != concurrent {
+		t.Fatalf("expected %d successful starts, got %d", concurrent, len(started))
+	}
+	if active := sess.Recorder.ListRecordingSize(); active != concurrent {
+		t.Fatalf("expected %d active recordings, got %d", concurrent, active)
+	}
+
+	outputPaths := make(map[int]string, concurrent)
+	for _, rid := range started {
+		outputPaths[rid] = waitForOutputPathAfterStart(t, sess.Recorder, rid)
+	}
+
+	recordReport := sess.Monitor.runRecordingProfiledWait(t, label+"_recording", recordDuration)
+	during := sess.Monitor.snapshotMemory(t, label+"_during", false)
+	sess.Monitor.snapshotGoroutines(t, label+"_during")
+	logCPUPhase(t, recordReport)
+	logMemoryDelta(t, baseline, during)
+
+	t.Log("stopping all concurrent recordings")
+	for _, rid := range started {
+		if !sess.Recorder.Stop(rid) {
+			t.Logf("stop returned false for room=%d", rid)
+		}
+	}
+	waitUntilNoActiveRecordings(t, sess.Recorder, 30*time.Second)
+
+	time.Sleep(recorderTestSettleAfterStop)
+	afterStop := sess.Monitor.snapshotMemory(t, label+"_after_stop", false)
+	sess.Monitor.snapshotGoroutines(t, label+"_after_stop")
+	logMemoryDelta(t, during, afterStop)
+
+	afterCleanup := sess.Monitor.snapshotMemoryReleased(t, label+"_after_cleanup")
+	assertRecordingMemoryReleased(t, baseline, afterCleanup, recordingMemoryBudgetForSessions(concurrent, label))
+
+	sess.Monitor.logAnalysisHints(t)
+
+	if checkFFmpegAvailable(t) {
+		for _, rid := range started {
+			t.Logf("\n📹 Verifying %s recordings in room dir (room=%d)...", strings.ToUpper(format), rid)
+			verifyAllRecordingsInRoomDir(t, filepath.Dir(outputPaths[rid]), format)
+		}
 	}
 }

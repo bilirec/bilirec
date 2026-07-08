@@ -49,7 +49,10 @@ func BenchmarkReadHlsStream_DeliveryLatency(b *testing.B) {
 	}))
 	defer server.Close()
 
-	svc := &Service{chanBufferSize: 64}
+	svc := &Service{
+		chunkPools:     newTestChunkPools(512*1024, 1024*1024),
+		chanBufferSize: 64,
+	}
 	playlistClient := resty.New().SetTimeout(3 * time.Second)
 	segmentClient := resty.New().SetTimeout(5 * time.Second)
 	fetchURL := func() (string, error) { return server.URL + playlistPath, nil }
@@ -63,7 +66,8 @@ func BenchmarkReadHlsStream_DeliveryLatency(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		ctx, cancel := context.WithCancel(context.Background())
 		start := time.Now()
-		ch, err := svc.ReadHlsStream(fetchURL, playlistClient, segmentClient, ctx, 10000)
+		chunkPool, releasePool := svc.AcquireChunkPool(10000)
+		ch, err := svc.ReadHlsStream(fetchURL, playlistClient, segmentClient, ctx, 10000, chunkPool, releasePool)
 		if err != nil {
 			cancel()
 			b.Fatalf("ReadHlsStream failed: %v", err)

@@ -100,3 +100,37 @@ func waitUntilNoActiveRecordings(t *testing.T, recorderService *recorder.Service
 	}
 	t.Fatalf("cleanup timeout: still has %d active recordings", recorderService.ListRecordingSize())
 }
+
+type concurrentStartResult struct {
+	room int
+	err  error
+}
+
+// collectConcurrentStartResults drains all concurrent Start results before handling
+// errors so a failure received early cannot skip Stop on later successful starts.
+func collectConcurrentStartResults(t *testing.T, recorderService *recorder.Service, results <-chan concurrentStartResult) []int {
+	t.Helper()
+
+	started := make([]int, 0)
+	var firstErr error
+	for r := range results {
+		if r.err == nil {
+			started = append(started, r.room)
+			t.Logf("concurrent start ok: room=%d", r.room)
+			continue
+		}
+		if firstErr == nil {
+			firstErr = r.err
+		}
+	}
+
+	if firstErr != nil {
+		for _, rid := range started {
+			_ = recorderService.Stop(rid)
+		}
+		waitUntilNoActiveRecordings(t, recorderService, 30*time.Second)
+		handleRecordingStartErr(t, firstErr)
+	}
+
+	return started
+}

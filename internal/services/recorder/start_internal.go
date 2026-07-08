@@ -9,6 +9,7 @@ import (
 	"github.com/bilirec/bilirec/internal/modules/bilibili"
 	rs "github.com/bilirec/bilirec/internal/record_strategies"
 	"github.com/bilirec/bilirec/pkg/backoff"
+	"github.com/bilirec/bilirec/pkg/pool"
 	"github.com/bilirec/bilirec/pkg/tx"
 	"github.com/bilirec/bilirec/utils"
 	"github.com/sirupsen/logrus"
@@ -97,7 +98,7 @@ func (r *Service) internalStart(p internalStartParams) error {
 			urlPreview,
 		)
 
-		ch, strategy, connected, err := r.connectStream(l, p.roomId, ctx, streamInfo, urlPreview, idx, len(streams))
+		ch, strategy, chunkPool, connected, err := r.connectStream(l, p.roomId, ctx, streamInfo, urlPreview, idx, len(streams))
 		if err != nil {
 			return err
 		}
@@ -125,6 +126,7 @@ func (r *Service) internalStart(p internalStartParams) error {
 			discardStreamCh(ch)
 			return err
 		}
+		info.chunkPool = chunkPool
 		info.SetStream(streamInfo.Qn, streamInfo.IsAudioOnly)
 
 		return r.prepare(p.roomId, ch, strategy, info.ctx, info, p.mode == startModeUser)
@@ -204,9 +206,17 @@ func (r *Service) connectStream(
 	streamInfo bilibili.StreamURLInfo,
 	urlPreview string,
 	idx, total int,
-) (<-chan []byte, rs.StreamRecordStrategy, bool, error) {
+) (<-chan []byte, rs.StreamRecordStrategy, *pool.BucketedBytesPool, bool, error) {
 	var ch <-chan []byte
 	var strategy rs.StreamRecordStrategy
+
+	chunkPool, releaseChunkPool := r.st.AcquireChunkPool(streamInfo.Qn)
+	connected := false
+	defer func() {
+		if !connected {
+			releaseChunkPool()
+		}
+	}()
 
 	switch streamInfo.Format {
 	case "ts", "fmp4":
@@ -286,13 +296,13 @@ func (r *Service) connectStream(
 			return "", nil
 		}
 
-		hlsCh, hlsErr := r.st.ReadHlsStream(fetchM3u8URL, r.bilic.GetLiveHlsPlaylistClient(), r.bilic.GetLiveHlsSegmentClient(), ctx, streamInfo.Qn)
+		hlsCh, hlsErr := r.st.ReadHlsStream(fetchM3u8URL, r.bilic.GetLiveHlsPlaylistClient(), r.bilic.GetLiveHlsSegmentClient(), ctx, streamInfo.Qn, chunkPool, releaseChunkPool)
 		if hlsErr != nil {
 			if errors.Is(hlsErr, context.Canceled) || ctx.Err() != nil {
-				return nil, nil, false, context.Canceled
+				return nil, nil, nil, false, context.Canceled
 			}
 			l.Errorf("cannot start HLS stream: %v, will try next url", hlsErr)
-			return nil, nil, false, nil
+			return nil, nil, nil, false, nil
 		}
 		ch = hlsCh
 		strategy = utils.TernaryFunc(
@@ -300,6 +310,7 @@ func (r *Service) connectStream(
 			func() rs.StreamRecordStrategy { return rs.NewHlsTsStrategy(streamInfo.Qn) },
 			func() rs.StreamRecordStrategy { return rs.NewHlsFmp4Strategy(streamInfo.Qn) },
 		)
+		connected = true
 	case "flv":
 		startTimeFlv := time.Now()
 		resp, err := r.bilic.FetchLiveStreamUrlWithCtx(streamInfo.URL, ctx)
@@ -308,7 +319,7 @@ func (r *Service) connectStream(
 
 		if err != nil {
 			if errors.Is(err, context.Canceled) || ctx.Err() != nil {
-				return nil, nil, false, context.Canceled
+				return nil, nil, nil, false, context.Canceled
 			}
 			l.Errorf("cannot fetch url: %v, will try next url (protocol=%s, format=%s, codec=%s, qn=%d, url=%s)",
 				err,
@@ -318,7 +329,7 @@ func (r *Service) connectStream(
 				streamInfo.Qn,
 				urlPreview,
 			)
-			return nil, nil, false, nil
+			return nil, nil, nil, false, nil
 		} else if resp.StatusCode() != 200 {
 			l.Errorf("non-200 response: %d, will try next url (protocol=%s, format=%s, codec=%s, qn=%d, url=%s)",
 				resp.StatusCode(),
@@ -328,7 +339,7 @@ func (r *Service) connectStream(
 				streamInfo.Qn,
 				urlPreview,
 			)
-			return nil, nil, false, nil
+			return nil, nil, nil, false, nil
 		}
 
 		finalURL := ""
@@ -349,18 +360,19 @@ func (r *Service) connectStream(
 			utils.TruncateString(finalURL, 160),
 		)
 
-		flvCh, flvErr := r.st.ReadFlvStream(resp, ctx, streamInfo.Qn)
+		flvCh, flvErr := r.st.ReadFlvStream(resp, ctx, streamInfo.Qn, chunkPool, releaseChunkPool)
 		if flvErr != nil {
 			l.Errorf("cannot capture url stream: %v, will try next url", flvErr)
-			return nil, nil, false, nil
+			return nil, nil, nil, false, nil
 		}
 		ch = flvCh
 		strategy = rs.NewFlvStrategy(streamInfo.Qn)
+		connected = true
 	default:
-		return nil, nil, false, fmt.Errorf("unsupported format: %s", streamInfo.Format)
+		return nil, nil, nil, false, fmt.Errorf("unsupported format: %s", streamInfo.Format)
 	}
 
-	return ch, strategy, true, nil
+	return ch, strategy, chunkPool, true, nil
 }
 
 func discardStreamCh(ch <-chan []byte) {

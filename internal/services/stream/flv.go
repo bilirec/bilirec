@@ -9,14 +9,27 @@ import (
 	"github.com/go-resty/resty/v2"
 )
 
-func (r *Service) ReadFlvStream(resp *resty.Response, ctx context.Context, qn int) (<-chan []byte, error) {
-	bytesPool, releasePool := r.acquireReadPool(qn)
+func (r *Service) ReadFlvStream(
+	resp *resty.Response,
+	ctx context.Context,
+	qn int,
+	chunkPool *pool.BucketedBytesPool,
+	releasePool func(),
+) (<-chan []byte, error) {
+	readSize := r.readBufSizeForQn(qn)
 	ch := make(chan []byte, r.chanBufferSizeForQn(qn))
-	go r.read(ch, resp.RawBody(), ctx, bytesPool, releasePool)
+	go r.readFlv(ch, resp.RawBody(), ctx, chunkPool, readSize, releasePool)
 	return ch, nil
 }
 
-func (r *Service) read(ch chan<- []byte, stream io.ReadCloser, ctx context.Context, bytesPool *pool.BytesPool, releasePool func()) {
+func (r *Service) readFlv(
+	ch chan<- []byte,
+	stream io.ReadCloser,
+	ctx context.Context,
+	chunkPool *pool.BucketedBytesPool,
+	readSize int,
+	releasePool func(),
+) {
 	defer stream.Close()
 	defer close(ch)
 	defer releasePool()
@@ -25,26 +38,26 @@ func (r *Service) read(ch chan<- []byte, stream io.ReadCloser, ctx context.Conte
 		case <-ctx.Done():
 			return
 		default:
-			buf := bytesPool.GetBytes()
+			buf := chunkPool.GetSized(readSize)
 			n, err := stream.Read(buf)
 			if err == io.EOF {
 				logger.Info("直播流已结束")
-				r.FlushTo(bytesPool, buf)
+				r.putChunk(chunkPool, buf)
 				return
 			} else if err != nil {
 				logger.Errorf("读取直播流失败：%v", err)
-				r.FlushTo(bytesPool, buf)
+				r.putChunk(chunkPool, buf)
 				return
 			}
 			if n > 0 {
 				select {
 				case ch <- buf[:n]:
 				case <-ctx.Done():
-					r.FlushTo(bytesPool, buf)
+					r.putChunk(chunkPool, buf)
 					return
 				}
 			} else {
-				r.FlushTo(bytesPool, buf)
+				r.putChunk(chunkPool, buf)
 				time.Sleep(1 * time.Millisecond)
 			}
 		}

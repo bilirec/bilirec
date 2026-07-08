@@ -44,16 +44,24 @@ jobs:
           BILIBILI_LOGIN_MODE: anonymous
           RECORDER_TEST_PROFILE_DIR: ${{ runner.temp }}/recorder-profiles/integration
         with:
-          testArguments: './... -timeout 2h -skip TestZZZ_Final_Concurrent3WayRecord'
+          testArguments: './... -timeout 2h -skip TestZZZ_Final_'
           omit: successful
 
-      - name: Run concurrent 3-way record soak
+      - name: Run concurrent 3-way FLV record soak
         uses: robherley/go-test-action@v0
         env:
           BILIBILI_LOGIN_MODE: anonymous
           RECORDER_TEST_PROFILE_DIR: ${{ runner.temp }}/recorder-profiles/zzz
         with:
-          testArguments: './internal/services/recorder -timeout 30m -run TestZZZ_Final_Concurrent3WayRecord -count=1'
+          testArguments: './internal/services/recorder -timeout 30m -run TestZZZ_Final_Concurrent3WayFlvRecord -count=1'
+
+      - name: Run concurrent 3-way FMP4 record soak
+        uses: robherley/go-test-action@v0
+        env:
+          BILIBILI_LOGIN_MODE: anonymous
+          RECORDER_TEST_PROFILE_DIR: ${{ runner.temp }}/recorder-profiles/zzz
+        with:
+          testArguments: './internal/services/recorder -timeout 30m -run TestZZZ_Final_Concurrent3WayFmp4Record -count=1'
 
       - name: Upload recorder pprof profiles
         if: always()
