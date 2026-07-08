@@ -200,6 +200,7 @@ func defaultAndroidEnv(basePath string) map[string]string {
 		"DROP_FILE_PAGE_CACHE":                       "true",
 		"SILENT_ACCESS_LOG":                          "true",
 		"SEQUENTIAL_WRITE":                           "false",
+		"CHECK_UPDATE":                               "false",
 	}
 }
 

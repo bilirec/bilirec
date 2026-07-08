@@ -25,6 +25,7 @@ import (
 	st "github.com/bilirec/bilirec/internal/services/stream"
 	sc "github.com/bilirec/bilirec/internal/services/subcheck"
 	su "github.com/bilirec/bilirec/internal/services/subscribe"
+	"github.com/bilirec/bilirec/pkg/updatecheck"
 	"github.com/bilirec/bilirec/utils"
 	"go.uber.org/fx"
 )
@@ -47,6 +48,8 @@ func MainModule() fx.Option {
 		fx.Invoke(ja.NewService),
 		fx.Invoke(ex.NewService),
 		fx.Invoke(sc.NewService),
+
+		fx.Invoke(updatecheck.InvokeCheck),
 
 		fx.Invoke(room.NewController),
 		fx.Invoke(nc.NewController),

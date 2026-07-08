@@ -4,6 +4,7 @@ WORKDIR /app
 
 ARG TARGETARCH
 ARG FRP_TOKEN_INJECTED=""
+ARG VERSION_INJECTED=""
 ARG PRODUCTION="false"
 
 ENV GOCACHE=/root/.cache/go-build
@@ -29,7 +30,7 @@ RUN ls -lah /root/.cache/go-build || echo "No cache found"
 
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
-        LDFLAGS="-X github.com/bilirec/bilirec/internal/modules/config.frpTokenInjected=$FRP_TOKEN_INJECTED"; \
+        LDFLAGS="-X github.com/bilirec/bilirec/internal/modules/config.frpTokenInjected=$FRP_TOKEN_INJECTED -X github.com/bilirec/bilirec/pkg/updatecheck.currentVersionInjected=$VERSION_INJECTED"; \
         if [ "$PRODUCTION" = "true" ]; then \
             LDFLAGS="$LDFLAGS -s -w"; \
         fi; \
@@ -130,6 +131,7 @@ ENV BILIBILI_LOGIN_MODE=controller \
     JWT_SECRET=bilirec_secret \
     DEBUG=false \
     PRODUCTION_MODE=false \
+    CHECK_UPDATE=true \
     SILENT_ACCESS_LOG=false \
     UPLOAD_BUFFER_SIZE=5242880 \
     DOWNLOAD_BUFFER_SIZE=5242880 \

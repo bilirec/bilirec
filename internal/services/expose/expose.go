@@ -9,9 +9,9 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"unicode"
 
 	"github.com/bilirec/bilirec/internal/modules/config"
+	"github.com/bilirec/bilirec/pkg/stdoutbox"
 	"github.com/bilirec/bilirec/utils"
 	"github.com/fatedier/frp/client"
 	"github.com/fatedier/frp/client/proxy"
@@ -19,7 +19,6 @@ import (
 	v1 "github.com/fatedier/frp/pkg/config/v1"
 	"github.com/sirupsen/logrus"
 	"go.uber.org/fx"
-	xwidth "golang.org/x/text/width"
 )
 
 const (
@@ -240,67 +239,9 @@ func shouldFallbackToDefaultPort(addr string, err error) bool {
 }
 
 func printTunnelBox(local, remote string) {
-	const minWidth = 55
-	const leftPadding = "  "
-	title := "内网穿透已建立!"
-	localLine := "本地地址:  " + local
-	remoteLine := "远程地址:  " + remote
-
-	// Width tracks the inner box width by terminal display width, not byte
-	// length, so CJK text aligns with ASCII URLs in monospaced terminals.
-	width := minWidth
-	if l := displayWidth(leftPadding+title) + 1; l > width {
-		width = l
-	}
-	if l := displayWidth(leftPadding+localLine) + 1; l > width {
-		width = l
-	}
-	if l := displayWidth(leftPadding+remoteLine) + 1; l > width {
-		width = l
-	}
-
-	edge := "+" + strings.Repeat("-", width) + "+"
-	emptyLine := "|" + strings.Repeat(" ", width) + "|"
-
-	fmt.Println()
-	fmt.Println(edge)
-
-	printBoxLine(width, title)
-
-	fmt.Println(emptyLine)
-
-	printBoxLine(width, localLine)
-	printBoxLine(width, remoteLine)
-
-	fmt.Println(emptyLine)
-
-	fmt.Println(edge)
-	fmt.Println()
-}
-
-func printBoxLine(width int, content string) {
-	const leftPadding = "  "
-	inner := leftPadding + content
-	padding := width - displayWidth(inner)
-	if padding < 0 {
-		padding = 0
-	}
-	fmt.Printf("|%s%s|\n", inner, strings.Repeat(" ", padding))
-}
-
-func displayWidth(s string) int {
-	total := 0
-	for _, r := range s {
-		if unicode.Is(unicode.Mn, r) || unicode.Is(unicode.Me, r) || r == '\u200d' {
-			continue
-		}
-
-		switch xwidth.LookupRune(r).Kind() {
-		case xwidth.EastAsianWide, xwidth.EastAsianFullwidth:
-			total += 2
-		default:
-			total += 1
-		}
-	}
-	return total
+	stdoutbox.Print(
+		"内网穿透已建立!",
+		"本地地址:  "+local,
+		"远程地址:  "+remote,
+	)
 }

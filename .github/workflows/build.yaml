@@ -37,7 +37,11 @@ jobs:
 
       - name: Build Linux
         run: |
-          LDFLAGS="-X github.com/bilirec/bilirec/internal/modules/config.frpTokenInjected=${{ secrets.FRP_TOKEN }}"
+          VERSION=""
+          if [ "${{ env.production }}" = "true" ]; then
+            VERSION="${{ github.event.release.tag_name }}"
+          fi
+          LDFLAGS="-X github.com/bilirec/bilirec/internal/modules/config.frpTokenInjected=${{ secrets.FRP_TOKEN }} -X github.com/bilirec/bilirec/pkg/updatecheck.currentVersionInjected=$VERSION"
           if [ "${{ env.production }}" = "true" ]; then
             LDFLAGS="$LDFLAGS -s -w"
           fi
@@ -64,7 +68,11 @@ jobs:
 
       - name: Build Windows
         run: |
-          $ldflags = "-X github.com/bilirec/bilirec/internal/modules/config.frpTokenInjected=${{ secrets.FRP_TOKEN }}"
+          $version = ""
+          if ("${{ env.production }}" -eq "true") {
+            $version = "${{ github.event.release.tag_name }}"
+          }
+          $ldflags = "-X github.com/bilirec/bilirec/internal/modules/config.frpTokenInjected=${{ secrets.FRP_TOKEN }} -X github.com/bilirec/bilirec/pkg/updatecheck.currentVersionInjected=$version"
           if ("${{ env.production }}" -eq "true") {
             $ldflags += " -s -w"
           }
@@ -168,7 +176,11 @@ jobs:
 
       - name: Build Android shared library
         run: |
-          LDFLAGS="-checklinkname=0 -extldflags=-Wl,-z,max-page-size=16384"
+          VERSION=""
+          if [ "${{ env.production }}" = "true" ]; then
+            VERSION="${{ github.event.release.tag_name }}"
+          fi
+          LDFLAGS="-checklinkname=0 -extldflags=-Wl,-z,max-page-size=16384 -X github.com/bilirec/bilirec/pkg/updatecheck.currentVersionInjected=$VERSION"
           if [ "${{ env.production }}" = "true" ]; then
             LDFLAGS="$LDFLAGS -s -w"
           fi

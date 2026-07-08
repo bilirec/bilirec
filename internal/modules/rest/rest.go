@@ -134,6 +134,8 @@ func provider(ls fx.Lifecycle, cfg *config.Config) *fiber.App {
 		return err
 	})
 
+	app.Get("/version", getVersionHandler())
+
 	if cfg.Username != "" && cfg.PasswordHash != "" {
 		logger.Info("REST API 已启用 JWT 认证")
 		app.Post("/login",
@@ -173,6 +175,8 @@ func provider(ls fx.Lifecycle, cfg *config.Config) *fiber.App {
 			},
 		}))
 	}
+
+	app.Post("/version/check", postVersionCheckHandler())
 
 	var wg sync.WaitGroup
 
