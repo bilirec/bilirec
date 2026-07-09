@@ -6,10 +6,11 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	hlsutil "github.com/bilirec/bilirec/pkg/hls"
 	"github.com/go-resty/resty/v2"
 )
 
-func TestReadHlsSegmentBody_PooledReuse(t *testing.T) {
+func TestReadSegmentBodyFromPool_PooledReuse(t *testing.T) {
 	payload := bytes.Repeat([]byte{0xAB}, 64*1024)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -23,9 +24,9 @@ func TestReadHlsSegmentBody_PooledReuse(t *testing.T) {
 		t.Fatalf("get: %v", err)
 	}
 
-	data, err := readHlsSegmentBody(chunkPool, resp)
+	data, err := hlsutil.ReadSegmentBodyFromPool(chunkPool, resp)
 	if err != nil {
-		t.Fatalf("readHlsSegmentBody: %v", err)
+		t.Fatalf("ReadSegmentBodyFromPool: %v", err)
 	}
 	if !bytes.Equal(data, payload) {
 		t.Fatalf("payload mismatch: got %d bytes", len(data))
@@ -45,10 +46,6 @@ func TestChunkPool_PutOnlyMatchingBucket(t *testing.T) {
 	buf := chunkPool.GetSized(512 * 1024)
 	chunkPool.Put(buf[:cap(buf)])
 
-	stats := chunkPool.Stats()
-	if stats.Hits == 0 && stats.Misses > 0 {
-		// first Get may count as hit; Put then Get should reuse
-	}
 	reused := chunkPool.GetSized(512 * 1024)
 	if cap(reused) != 512*1024 {
 		t.Fatalf("unexpected cap %d", cap(reused))

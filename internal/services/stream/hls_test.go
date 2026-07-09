@@ -1,6 +1,7 @@
 package stream
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -13,6 +14,9 @@ import (
 	hlsutil "github.com/bilirec/bilirec/pkg/hls"
 	"github.com/go-resty/resty/v2"
 )
+
+type hlsSegment = hlsutil.Segment
+type hlsPlaylist = hlsutil.Playlist
 
 func buildPlaylistBody(segCount int, withMap bool) string {
 	lines := make([]string, 0, segCount*2+4)
@@ -166,7 +170,7 @@ func TestDeriveManifestSyncWait(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := hlsutil.DeriveManifestSyncWait(tt.pl, manifestSyncWaitRate)
+			got := hlsutil.DeriveManifestSyncWait(tt.pl, hlsutil.ManifestSyncWaitRate)
 			if got != tt.want {
 				t.Fatalf("deriveManifestSyncWait()=%v want=%v", got, tt.want)
 			}
@@ -210,13 +214,13 @@ func TestFetchSegmentWithShortRetry(t *testing.T) {
 	}))
 	defer server.Close()
 
-	oldDelay := segmentRetryDelay
-	segmentRetryDelay = 10 * time.Millisecond
-	t.Cleanup(func() { segmentRetryDelay = oldDelay })
+	oldDelay := hlsutil.SegmentRetryDelay
+	hlsutil.SegmentRetryDelay = 10 * time.Millisecond
+	t.Cleanup(func() { hlsutil.SegmentRetryDelay = oldDelay })
 
 	client := resty.New()
 	ctx := t.Context()
-	data, err := hlsutil.FetchSegmentWithRetry(ctx, client, server.URL, segmentRetryAttempts, segmentRetryDelay)
+	data, err := hlsutil.FetchSegmentWithRetry(ctx, client, server.URL, hlsutil.SegmentRetryAttempts, hlsutil.SegmentRetryDelay)
 	if err != nil {
 		t.Fatalf("fetchSegmentWithShortRetry returned error: %v", err)
 	}
@@ -308,6 +312,477 @@ func TestShouldResetSequenceOnRollback(t *testing.T) {
 				t.Fatalf("shouldResetSequenceOnRollback(%d, %d, %d, %d)=%v want=%v", tt.prevBase, tt.baseSeq, tt.segCount, tt.nextSeq, got, tt.want)
 			}
 		})
+	}
+}
+
+func makeFtypInit(brand string) []byte {
+	init := make([]byte, 20)
+	init[0], init[1], init[2], init[3] = 0x00, 0x00, 0x00, 0x14
+	copy(init[4:8], "ftyp")
+	copy(init[8:12], []byte(brand))
+	copy(init[16:20], []byte(brand))
+	return init
+}
+
+func makeMoofSeg() []byte {
+	moof := make([]byte, 16)
+	moof[0], moof[1], moof[2], moof[3] = 0x00, 0x00, 0x00, 0x10
+	copy(moof[4:8], "moof")
+	return moof
+}
+
+func boxTypeOf(data []byte) string {
+	if len(data) < 8 {
+		return ""
+	}
+	return string(data[4:8])
+}
+
+func TestReadHlsStream_MapURIChangeSameInitContinues(t *testing.T) {
+	initStreamTestConfig(t)
+	oldPoll := hlsutil.PlaylistRetryDelay
+	oldDebounce := hlsutil.Fmp4InitDebounceWindow
+	hlsutil.PlaylistRetryDelay = 5 * time.Millisecond
+	hlsutil.Fmp4InitDebounceWindow = 50 * time.Millisecond
+	t.Cleanup(func() {
+		hlsutil.PlaylistRetryDelay = oldPoll
+		hlsutil.Fmp4InitDebounceWindow = oldDebounce
+	})
+
+	var mediaSeq atomic.Int64
+	mediaSeq.Store(1000)
+	var mapName atomic.Value
+	mapName.Store("init-a.mp4")
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/playlist.m3u8":
+			body := strings.Join([]string{
+				"#EXTM3U",
+				"#EXT-X-VERSION:7",
+				"#EXT-X-TARGETDURATION:1",
+				fmt.Sprintf("#EXT-X-MEDIA-SEQUENCE:%d", mediaSeq.Load()),
+				fmt.Sprintf("#EXT-X-MAP:URI=%q", mapName.Load().(string)),
+				"#EXTINF:1.0,",
+				fmt.Sprintf("seg-%d.m4s", mediaSeq.Load()),
+			}, "\n")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(body))
+		case strings.HasPrefix(r.URL.Path, "/init-"):
+			// Same init bytes for both URIs (URI-only change).
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write(makeFtypInit("isom"))
+		case strings.HasPrefix(r.URL.Path, "/seg-"):
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write(makeMoofSeg())
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	svc := &Service{
+		chunkPools:     newTestChunkPools(64*1024, 128*1024),
+		chanBufferSize: 16,
+	}
+	playlistClient := resty.New().SetTimeout(3 * time.Second)
+	segmentClient := resty.New().SetTimeout(5 * time.Second)
+	fetchURL := func() (string, error) { return server.URL + "/playlist.m3u8", nil }
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	chunkPool, releasePool := svc.AcquireChunkPool(10000)
+	ch, err := svc.ReadHlsStream(fetchURL, playlistClient, segmentClient, ctx, 10000, chunkPool, releasePool)
+	if err != nil {
+		t.Fatalf("ReadHlsStream: %v", err)
+	}
+
+	ftypCount := 0
+	moofCount := 0
+	mapSwitched := false
+	deadline := time.After(8 * time.Second)
+	// Live playlist only exposes one segment; keep advancing mediaSeq so the
+	// stream can continue after the URI-only map change.
+	for moofCount < 3 {
+		select {
+		case data, ok := <-ch:
+			if !ok {
+				t.Fatal("channel closed early")
+			}
+			switch boxTypeOf(data) {
+			case "ftyp":
+				ftypCount++
+			case "moof":
+				moofCount++
+				if !mapSwitched {
+					mapName.Store("init-a-cdn.mp4")
+					mapSwitched = true
+				}
+				mediaSeq.Add(1)
+			}
+		case <-deadline:
+			t.Fatalf("timeout (ftyp=%d moof=%d mapSwitched=%v)", ftypCount, moofCount, mapSwitched)
+		}
+	}
+	if !mapSwitched {
+		t.Fatal("expected map URI to switch during the test")
+	}
+	if ftypCount != 1 {
+		t.Fatalf("URI-only map change must not re-deliver init, ftypCount=%d", ftypCount)
+	}
+}
+
+func TestReadHlsStream_ChangedInitSettlesAfterDebounce(t *testing.T) {
+	initStreamTestConfig(t)
+	oldPoll := hlsutil.PlaylistRetryDelay
+	oldDebounce := hlsutil.Fmp4InitDebounceWindow
+	hlsutil.PlaylistRetryDelay = 5 * time.Millisecond
+	hlsutil.Fmp4InitDebounceWindow = 80 * time.Millisecond
+	t.Cleanup(func() {
+		hlsutil.PlaylistRetryDelay = oldPoll
+		hlsutil.Fmp4InitDebounceWindow = oldDebounce
+	})
+
+	var mediaSeq atomic.Int64
+	mediaSeq.Store(1000)
+	var mapName atomic.Value
+	mapName.Store("init-a.mp4")
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/playlist.m3u8":
+			body := strings.Join([]string{
+				"#EXTM3U",
+				"#EXT-X-VERSION:7",
+				"#EXT-X-TARGETDURATION:1",
+				fmt.Sprintf("#EXT-X-MEDIA-SEQUENCE:%d", mediaSeq.Load()),
+				fmt.Sprintf("#EXT-X-MAP:URI=%q", mapName.Load().(string)),
+				"#EXTINF:1.0,",
+				fmt.Sprintf("seg-%d.m4s", mediaSeq.Load()),
+			}, "\n")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(body))
+		case strings.HasPrefix(r.URL.Path, "/init-"):
+			brand := "isom"
+			if strings.Contains(r.URL.Path, "init-b") {
+				brand = "mp42"
+			}
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write(makeFtypInit(brand))
+		case strings.HasPrefix(r.URL.Path, "/seg-"):
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write(makeMoofSeg())
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	svc := &Service{
+		chunkPools:     newTestChunkPools(64*1024, 128*1024),
+		chanBufferSize: 16,
+	}
+	playlistClient := resty.New().SetTimeout(3 * time.Second)
+	segmentClient := resty.New().SetTimeout(5 * time.Second)
+	fetchURL := func() (string, error) { return server.URL + "/playlist.m3u8", nil }
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	chunkPool, releasePool := svc.AcquireChunkPool(10000)
+	ch, err := svc.ReadHlsStream(fetchURL, playlistClient, segmentClient, ctx, 10000, chunkPool, releasePool)
+	if err != nil {
+		t.Fatalf("ReadHlsStream: %v", err)
+	}
+
+	var brands []string
+	sawSecondInit := false
+	deadline := time.After(8 * time.Second)
+	for !sawSecondInit {
+		select {
+		case data, ok := <-ch:
+			if !ok {
+				t.Fatal("channel closed before settled init")
+			}
+			if boxTypeOf(data) == "ftyp" {
+				brand := string(data[8:12])
+				brands = append(brands, brand)
+				if brand == "isom" && mapName.Load().(string) == "init-a.mp4" {
+					mapName.Store("init-b.mp4")
+					mediaSeq.Add(1)
+				}
+				if brand == "mp42" {
+					sawSecondInit = true
+				}
+			}
+			if boxTypeOf(data) == "moof" && mapName.Load().(string) == "init-a.mp4" {
+				mapName.Store("init-b.mp4")
+				mediaSeq.Add(1)
+			}
+		case <-deadline:
+			t.Fatalf("timeout waiting for settled mp42 init, brands=%v", brands)
+		}
+	}
+	if len(brands) < 2 || brands[0] != "isom" || brands[len(brands)-1] != "mp42" {
+		t.Fatalf("expected isom then settled mp42, got %v", brands)
+	}
+}
+
+func TestReadHlsStream_InitChurnBackToConfirmedCancels(t *testing.T) {
+	initStreamTestConfig(t)
+	oldPoll := hlsutil.PlaylistRetryDelay
+	oldDebounce := hlsutil.Fmp4InitDebounceWindow
+	hlsutil.PlaylistRetryDelay = 5 * time.Millisecond
+	// Long window so A→B→A happens before settle.
+	hlsutil.Fmp4InitDebounceWindow = 2 * time.Second
+	t.Cleanup(func() {
+		hlsutil.PlaylistRetryDelay = oldPoll
+		hlsutil.Fmp4InitDebounceWindow = oldDebounce
+	})
+
+	var mediaSeq atomic.Int64
+	mediaSeq.Store(1000)
+	var mapName atomic.Value
+	mapName.Store("init-a.mp4")
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/playlist.m3u8":
+			body := strings.Join([]string{
+				"#EXTM3U",
+				"#EXT-X-VERSION:7",
+				"#EXT-X-TARGETDURATION:1",
+				fmt.Sprintf("#EXT-X-MEDIA-SEQUENCE:%d", mediaSeq.Load()),
+				fmt.Sprintf("#EXT-X-MAP:URI=%q", mapName.Load().(string)),
+				"#EXTINF:1.0,",
+				fmt.Sprintf("seg-%d.m4s", mediaSeq.Load()),
+			}, "\n")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(body))
+		case strings.HasPrefix(r.URL.Path, "/init-"):
+			brand := "isom"
+			if strings.Contains(r.URL.Path, "init-b") {
+				brand = "mp42"
+			}
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write(makeFtypInit(brand))
+		case strings.HasPrefix(r.URL.Path, "/seg-"):
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write(makeMoofSeg())
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	svc := &Service{
+		chunkPools:     newTestChunkPools(64*1024, 128*1024),
+		chanBufferSize: 16,
+	}
+	playlistClient := resty.New().SetTimeout(3 * time.Second)
+	segmentClient := resty.New().SetTimeout(5 * time.Second)
+	fetchURL := func() (string, error) { return server.URL + "/playlist.m3u8", nil }
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	chunkPool, releasePool := svc.AcquireChunkPool(10000)
+	ch, err := svc.ReadHlsStream(fetchURL, playlistClient, segmentClient, ctx, 10000, chunkPool, releasePool)
+	if err != nil {
+		t.Fatalf("ReadHlsStream: %v", err)
+	}
+
+	phase := 0 // 0: wait first media, 1: switched to B, 2: switched back to A
+	ftypBrands := []string{}
+	moofAfterReturn := 0
+	deadline := time.After(8 * time.Second)
+	// While B is pending, media is buffered (not on ch). Drive A→B→A with a
+	// timer: wait past one poll so B enters debounce, then return to A before
+	// the 2s settle window ends.
+	var churnBack <-chan time.Time
+	for moofAfterReturn < 2 {
+		select {
+		case data, ok := <-ch:
+			if !ok {
+				t.Fatal("channel closed early")
+			}
+			switch boxTypeOf(data) {
+			case "ftyp":
+				brand := string(data[8:12])
+				ftypBrands = append(ftypBrands, brand)
+				if brand == "mp42" {
+					t.Fatal("churn back to A must not settle/deliver B init")
+				}
+			case "moof":
+				switch phase {
+				case 0:
+					mapName.Store("init-b.mp4")
+					mediaSeq.Add(1)
+					phase = 1
+					churnBack = time.After(900 * time.Millisecond)
+				case 2:
+					moofAfterReturn++
+					mediaSeq.Add(1)
+				}
+			}
+		case <-churnBack:
+			if phase == 1 {
+				mapName.Store("init-a.mp4")
+				mediaSeq.Add(1)
+				phase = 2
+			}
+			churnBack = nil
+		case <-deadline:
+			t.Fatalf("timeout phase=%d brands=%v moofAfterReturn=%d", phase, ftypBrands, moofAfterReturn)
+		}
+	}
+	if len(ftypBrands) != 1 || ftypBrands[0] != "isom" {
+		t.Fatalf("expected only initial isom init, got %v", ftypBrands)
+	}
+}
+
+func TestReadHlsStream_MapFetchFailureDoesNotSkipSeq(t *testing.T) {
+	initStreamTestConfig(t)
+	oldPoll := hlsutil.PlaylistRetryDelay
+	hlsutil.PlaylistRetryDelay = 5 * time.Millisecond
+	t.Cleanup(func() { hlsutil.PlaylistRetryDelay = oldPoll })
+
+	var mediaSeq atomic.Int64
+	mediaSeq.Store(3000)
+	var mapFailOnce atomic.Bool
+	mapFailOnce.Store(true)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/playlist.m3u8":
+			seq := mediaSeq.Load()
+			body := strings.Join([]string{
+				"#EXTM3U",
+				"#EXT-X-VERSION:7",
+				"#EXT-X-TARGETDURATION:1",
+				fmt.Sprintf("#EXT-X-MEDIA-SEQUENCE:%d", seq),
+				`#EXT-X-MAP:URI="init.mp4"`,
+				"#EXTINF:1.0,",
+				fmt.Sprintf("seg-%d.m4s", seq),
+			}, "\n")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(body))
+		case r.URL.Path == "/init.mp4":
+			if mapFailOnce.Load() {
+				mapFailOnce.Store(false)
+				w.WriteHeader(http.StatusServiceUnavailable)
+				return
+			}
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write(makeFtypInit("isom"))
+		case strings.HasPrefix(r.URL.Path, "/seg-"):
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write(makeMoofSeg())
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	svc := &Service{
+		chunkPools:     newTestChunkPools(64*1024, 128*1024),
+		chanBufferSize: 16,
+	}
+	playlistClient := resty.New().SetTimeout(3 * time.Second)
+	segmentClient := resty.New().SetTimeout(5 * time.Second)
+	fetchURL := func() (string, error) { return server.URL + "/playlist.m3u8", nil }
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	chunkPool, releasePool := svc.AcquireChunkPool(10000)
+	ch, err := svc.ReadHlsStream(fetchURL, playlistClient, segmentClient, ctx, 10000, chunkPool, releasePool)
+	if err != nil {
+		t.Fatalf("ReadHlsStream: %v", err)
+	}
+
+	sawInit := false
+	sawMedia := false
+	deadline := time.After(8 * time.Second)
+	for !sawInit || !sawMedia {
+		select {
+		case data, ok := <-ch:
+			if !ok {
+				t.Fatal("channel closed early")
+			}
+			switch boxTypeOf(data) {
+			case "ftyp":
+				sawInit = true
+			case "moof":
+				sawMedia = true
+			}
+		case <-deadline:
+			t.Fatalf("timeout sawInit=%v sawMedia=%v mapFailOnce=%v", sawInit, sawMedia, mapFailOnce.Load())
+		}
+	}
+	// Playlist seq never advanced; after map recovers we still deliver that seq's media.
+	if mediaSeq.Load() != 3000 {
+		t.Fatalf("test fixture should keep mediaSeq at 3000, got %d", mediaSeq.Load())
+	}
+}
+
+func TestReadHlsStream_TSWithoutMapUnaffected(t *testing.T) {
+	initStreamTestConfig(t)
+
+	var mediaSeq atomic.Int64
+	mediaSeq.Store(2000)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/playlist.m3u8":
+			seq := mediaSeq.Load()
+			body := strings.Join([]string{
+				"#EXTM3U",
+				"#EXT-X-VERSION:3",
+				"#EXT-X-TARGETDURATION:1",
+				fmt.Sprintf("#EXT-X-MEDIA-SEQUENCE:%d", seq),
+				"#EXTINF:1.0,",
+				fmt.Sprintf("seg-%d.ts", seq),
+			}, "\n")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(body))
+			mediaSeq.Add(1)
+		case strings.HasPrefix(r.URL.Path, "/seg-"):
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte{0x47, 0x00, 0x00, 0x00}) // fake TS sync
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	svc := &Service{
+		chunkPools:     newTestChunkPools(64*1024, 128*1024),
+		chanBufferSize: 16,
+	}
+	playlistClient := resty.New().SetTimeout(3 * time.Second)
+	segmentClient := resty.New().SetTimeout(5 * time.Second)
+	fetchURL := func() (string, error) { return server.URL + "/playlist.m3u8", nil }
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	chunkPool, releasePool := svc.AcquireChunkPool(10000)
+	ch, err := svc.ReadHlsStream(fetchURL, playlistClient, segmentClient, ctx, 10000, chunkPool, releasePool)
+	if err != nil {
+		t.Fatalf("ReadHlsStream: %v", err)
+	}
+
+	got := 0
+	deadline := time.After(5 * time.Second)
+	for got < 2 {
+		select {
+		case data, ok := <-ch:
+			if !ok {
+				t.Fatal("channel closed early")
+			}
+			if boxTypeOf(data) == "ftyp" {
+				t.Fatal("TS playlist must not deliver fMP4 init")
+			}
+			got++
+		case <-deadline:
+			t.Fatalf("timeout waiting for TS segments, got=%d", got)
+		}
 	}
 }
 

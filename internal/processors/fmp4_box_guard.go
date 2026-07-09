@@ -48,6 +48,9 @@ func (e *Fmp4DiscontinuityError) Is(target error) bool {
 //
 // "styp" is treated as a media-fragment prefix (styp+moof+mdat) and does NOT
 // trigger a discontinuity reset — only "ftyp" does.
+//
+// MapURI / init churn is settled upstream in the HLS reader (compare + debounce);
+// this processor remains the last-line rotate signal on a changed ftyp.
 type Fmp4BoxGuardProcessor struct {
 	seenMedia bool
 	bases     *map[uint32]uint64

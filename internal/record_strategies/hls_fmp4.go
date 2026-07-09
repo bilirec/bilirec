@@ -20,6 +20,10 @@ const fmp4StatePendingInit = "pendingInit"
 //
 // Appending all segments in order produces a valid fragmented MP4 source file
 // (.fmp4), which can then be remuxed to seek-friendly .mp4 in finalize flow.
+//
+// MapURI / init churn is settled upstream in the HLS reader (byte compare +
+// short hold-and-settle). A changed ftyp that still reaches this pipeline
+// triggers an immediate file rotation with that init prepended.
 type HlsFmp4Strategy struct {
 	bases             map[uint32]uint64
 	lastInit          []byte
