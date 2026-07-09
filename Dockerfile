@@ -53,6 +53,7 @@ RUN git clone --depth 1 --branch n8.1.1 https://github.com/FFmpeg/FFmpeg.git .
 
 # input accept: flv, mp4, mov, mpegts (ts), live_flv
 # output: mp4, mov
+# decoders: required for TS AAC remux (probe sample_rate/channels from ADTS frames)
 RUN ./configure \
     --prefix=/build \
     --disable-everything \
@@ -63,6 +64,7 @@ RUN ./configure \
     --enable-demuxer=mov,mp4,flv,mpegts,live_flv \
     --enable-protocol=file \
     --enable-parser=h264,aac,hevc \
+    --enable-decoder=h264,aac,aac_latm \
     --enable-bsf=aac_adtstoasc,h264_mp4toannexb,hevc_mp4toannexb \
     --disable-doc \
     --disable-htmlpages \

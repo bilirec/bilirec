@@ -239,6 +239,7 @@ func (f *ffmpegConvertManager) processTask(ctx context.Context, queue *TaskQueue
 
 	if err := ffmpeg.Run(ctx, taskLog,
 		"-hide_banner",
+		"-y",
 		"-i",
 		queue.InputPath,
 		"-map",
