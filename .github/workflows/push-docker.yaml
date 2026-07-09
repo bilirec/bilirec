@@ -19,6 +19,7 @@ on:
       - '**/*.go'
       - 'Dockerfile'
       - '.github/workflows/push-docker.yaml'
+      - '.github/actions/prepare-build-version/**'
   workflow_dispatch:
 
 jobs:
@@ -73,6 +74,12 @@ jobs:
             type=ref,event=branch
             type=sha,event=branch
             type=ref,event=tag
+      - name: Prepare build version
+        id: version
+        uses: ./.github/actions/prepare-build-version
+        with:
+          event_name: ${{ github.event_name }}
+          ref: ${{ github.ref }}
       - name: Build and push
         id: docker_build
         uses: docker/build-push-action@v6
@@ -87,3 +94,4 @@ jobs:
           build-args: |
             FRP_TOKEN_INJECTED=${{ secrets.FRP_TOKEN }}
             PRODUCTION=${{ env.production }}
+            VERSION_INJECTED=${{ steps.version.outputs.version }}
