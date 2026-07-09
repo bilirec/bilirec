@@ -1,0 +1,33 @@
+name: Prepare build version
+description: Resolve bilirec release version for ldflags / Docker build-args.
+
+inputs:
+  event_name:
+    description: GitHub event name (e.g. push, release).
+    required: true
+  ref:
+    description: Git ref (e.g. refs/heads/main, refs/tags/v0.1.8).
+    required: true
+  release_tag:
+    description: Release tag name when event is release.
+    required: false
+    default: ""
+
+outputs:
+  version:
+    description: Resolved version tag (e.g. v0.1.8)
+    value: ${{ steps.prepare.outputs.version }}
+
+runs:
+  using: composite
+  steps:
+    - id: prepare
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        VERSION=$(bash "${{ github.action_path }}/prepare-build-version.sh" \
+          "${{ inputs.event_name }}" \
+          "${{ inputs.ref }}" \
+          "${{ inputs.release_tag }}")
+        echo "version=$VERSION" >> "$GITHUB_OUTPUT"
