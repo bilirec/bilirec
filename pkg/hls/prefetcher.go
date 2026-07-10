@@ -17,12 +17,14 @@ type SegmentPrefetcher struct {
 	attempts int
 	delay    time.Duration
 	readBody SegmentBodyReader
+	release  BytesReleaser
 	started  map[int64]chan SegmentFetchResult
 	mu       sync.Mutex
 	sem      chan struct{}
 }
 
 // NewSegmentPrefetcher creates a prefetcher using fixed retry settings.
+// release may be nil; when set, abandoned / cancel-orphaned segment bodies are returned to the pool.
 func NewSegmentPrefetcher(
 	ctx context.Context,
 	client *resty.Client,
@@ -31,9 +33,13 @@ func NewSegmentPrefetcher(
 	delay time.Duration,
 	maxConcurrent int,
 	readBody SegmentBodyReader,
+	release BytesReleaser,
 ) *SegmentPrefetcher {
 	if maxConcurrent < 1 {
 		maxConcurrent = 1
+	}
+	if release == nil {
+		release = func([]byte) {}
 	}
 	return &SegmentPrefetcher{
 		ctx:      ctx,
@@ -42,8 +48,35 @@ func NewSegmentPrefetcher(
 		attempts: attempts,
 		delay:    delay,
 		readBody: readBody,
+		release:  release,
 		started:  make(map[int64]chan SegmentFetchResult),
 		sem:      make(chan struct{}, maxConcurrent),
+	}
+}
+
+func (p *SegmentPrefetcher) releaseData(data []byte) {
+	if len(data) == 0 && cap(data) == 0 {
+		return
+	}
+	p.release(data)
+}
+
+// Abandon drops all in-flight and completed-but-unconsumed prefetch results,
+// releasing any owned segment bodies. Safe to call when replacing the prefetcher.
+func (p *SegmentPrefetcher) Abandon() {
+	if p == nil {
+		return
+	}
+	p.mu.Lock()
+	pending := p.started
+	p.started = make(map[int64]chan SegmentFetchResult)
+	p.mu.Unlock()
+	for _, resultCh := range pending {
+		ch := resultCh
+		go func() {
+			result := <-ch
+			p.releaseData(result.Data)
+		}()
 	}
 }
 
@@ -97,6 +130,11 @@ func (p *SegmentPrefetcher) Wait(seq int64, segmentURI string) ([]byte, error) {
 	case result := <-resultCh:
 		return result.Data, result.Err
 	case <-p.ctx.Done():
+		// Fetch goroutine may still complete; drain so pool buffers are released.
+		go func() {
+			result := <-resultCh
+			p.releaseData(result.Data)
+		}()
 		return nil, p.ctx.Err()
 	}
 }

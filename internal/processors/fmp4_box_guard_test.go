@@ -294,10 +294,25 @@ func TestFmp4BoxGuard_DiscontinuityScenario(t *testing.T) {
 		t.Fatalf("Identical init re-send should be skipped: %v", err)
 	}
 
-	// Changed init should trigger discontinuity.
+	// Changed init should trigger discontinuity immediately.
 	init2 := makeDifferentInitSegment()
 	_, err := processor.Process(ctx, log, init2)
 	if !errors.Is(err, ErrFmp4Discontinuity) {
 		t.Fatalf("Expected ErrFmp4Discontinuity on changed init, got %v", err)
+	}
+}
+
+func TestFmp4BoxGuard_ChangedInitRotatesImmediately(t *testing.T) {
+	processor, _ := newFmp4BoxGuardForTest()
+	ctx := context.Background()
+	log := logrus.NewEntry(logrus.New())
+	_ = processor.Open(ctx, log)
+
+	_, _ = processor.Process(ctx, log, makeInitSegment())
+	_, _ = processor.Process(ctx, log, makeMediaFragment())
+
+	_, err := processor.Process(ctx, log, makeDifferentInitSegment())
+	if !errors.Is(err, ErrFmp4Discontinuity) {
+		t.Fatalf("expected immediate discontinuity on changed init, got %v", err)
 	}
 }

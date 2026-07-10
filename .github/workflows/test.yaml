@@ -51,6 +51,7 @@ jobs:
         uses: robherley/go-test-action@v0
         env:
           BILIBILI_LOGIN_MODE: anonymous
+          OUTPUT_DIR: ${{ runner.temp }}/recorder-records/zzz
           RECORDER_TEST_PROFILE_DIR: ${{ runner.temp }}/recorder-profiles/zzz
         with:
           testArguments: './internal/services/recorder -timeout 30m -run TestZZZ_Final_Concurrent3WayFlvRecord -count=1'
@@ -59,6 +60,7 @@ jobs:
         uses: robherley/go-test-action@v0
         env:
           BILIBILI_LOGIN_MODE: anonymous
+          OUTPUT_DIR: ${{ runner.temp }}/recorder-records/zzz
           RECORDER_TEST_PROFILE_DIR: ${{ runner.temp }}/recorder-profiles/zzz
         with:
           testArguments: './internal/services/recorder -timeout 30m -run TestZZZ_Final_Concurrent3WayFmp4Record -count=1'
@@ -69,5 +71,14 @@ jobs:
         with:
           name: recorder-pprof-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/recorder-profiles/
+          if-no-files-found: ignore
+          retention-days: 30
+
+      - name: Upload ZZZ recorder records
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: recorder-records-zzz-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/recorder-records/
           if-no-files-found: ignore
           retention-days: 30

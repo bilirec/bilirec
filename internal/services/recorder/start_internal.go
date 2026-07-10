@@ -107,7 +107,7 @@ func (r *Service) internalStart(p internalStartParams) error {
 		}
 
 		if !r.sessionReadyForConfirm(p) {
-			discardStreamCh(ch)
+			discardStreamCh(ch, chunkPool)
 			if err := ctx.Err(); err != nil {
 				return err
 			}
@@ -123,7 +123,7 @@ func (r *Service) internalStart(p internalStartParams) error {
 
 		info, err := r.commitSession(p, txn, roomInfo, now, maxDuration)
 		if err != nil {
-			discardStreamCh(ch)
+			discardStreamCh(ch, chunkPool)
 			return err
 		}
 		info.chunkPool = chunkPool
@@ -375,12 +375,15 @@ func (r *Service) connectStream(
 	return ch, strategy, chunkPool, true, nil
 }
 
-func discardStreamCh(ch <-chan []byte) {
+func discardStreamCh(ch <-chan []byte, chunkPool *pool.BucketedBytesPool) {
 	if ch == nil {
 		return
 	}
 	go func() {
-		for range ch {
+		for data := range ch {
+			if chunkPool != nil && data != nil && cap(data) > 0 {
+				chunkPool.Put(data[:cap(data)])
+			}
 		}
 	}()
 }
