@@ -61,6 +61,7 @@ type PlaylistSessionOptions struct {
 	PlaylistClient *resty.Client
 	SegmentClient  *resty.Client
 	ReadBody       SegmentBodyReader
+	ReleaseBytes   BytesReleaser
 	Log            *logrus.Entry
 	OnURLRefresh   func()
 }
@@ -73,6 +74,7 @@ type PlaylistSession struct {
 	playlistClient *resty.Client
 	segmentClient  *resty.Client
 	readBody       SegmentBodyReader
+	release        BytesReleaser
 	log            *logrus.Entry
 	onURLRefresh   func()
 
@@ -95,12 +97,16 @@ func NewPlaylistSession(ctx context.Context, opt PlaylistSessionOptions) (*Playl
 	if opt.ReadBody == nil {
 		opt.ReadBody = readSegmentBody
 	}
+	if opt.ReleaseBytes == nil {
+		opt.ReleaseBytes = func([]byte) {}
+	}
 	return &PlaylistSession{
 		ctx:            ctx,
 		fetchURL:       opt.FetchURL,
 		playlistClient: opt.PlaylistClient,
 		segmentClient:  opt.SegmentClient,
 		readBody:       opt.ReadBody,
+		release:        opt.ReleaseBytes,
 		log:            opt.Log,
 		onURLRefresh:   opt.OnURLRefresh,
 	}, nil
@@ -137,9 +143,12 @@ func (s *PlaylistSession) RefreshURL(reason string) error {
 		s.log.Warnf("hls：由于 %s 已刷新 m3u8 URL", reason)
 	}
 
+	if s.prefetcher != nil {
+		s.prefetcher.Abandon()
+	}
 	s.m3u8URL = nextURL
 	s.resolver = nextResolver
-	s.prefetcher = NewSegmentPrefetcher(s.ctx, s.segmentClient, s.resolver, SegmentRetryAttempts, SegmentRetryDelay, SegmentFetchWorkers, s.readBody)
+	s.prefetcher = NewSegmentPrefetcher(s.ctx, s.segmentClient, s.resolver, SegmentRetryAttempts, SegmentRetryDelay, SegmentFetchWorkers, s.readBody, s.release)
 	s.lastEtag = ""
 	s.lastModified = ""
 	s.cachedPlaylist = nil

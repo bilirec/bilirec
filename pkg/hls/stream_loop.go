@@ -158,10 +158,17 @@ func (r *StreamRunner) acceptMap(mapData []byte) bool {
 }
 
 func (r *StreamRunner) run() {
-	defer close(r.ch)
-	if r.onClose != nil {
-		defer r.onClose()
-	}
+	// close before onClose so consumers see EOF before the pool lease is released.
+	// Abandon unconsumed prefetches so pooled segment bodies return before the lease drops.
+	defer func() {
+		close(r.ch)
+		if p := r.session.Prefetcher(); p != nil {
+			p.Abandon()
+		}
+		if r.onClose != nil {
+			r.onClose()
+		}
+	}()
 
 	ticker := time.NewTicker(r.pollInterval)
 	defer ticker.Stop()
@@ -292,10 +299,12 @@ func (r *StreamRunner) onTick(
 					if isCanceled(refreshFetchErr, r.ctx) || r.ctx.Err() == context.Canceled {
 						return false
 					}
-					r.log.Warnf("hls：刷新 m3u8 后拉取播放列表失败：%v", refreshFetchErr)
-				} else {
-					pl = refreshedPl
+					// Session already points at the new URL/resolver; do not deliver
+					// the stale playlist from before refresh against that new base.
+					r.log.Warnf("hls：刷新 m3u8 后拉取播放列表失败：%v（本轮跳过投递，等待下次轮询）", refreshFetchErr)
+					return true
 				}
+				pl = refreshedPl
 			}
 		}
 	}
@@ -427,6 +436,7 @@ func (r *StreamRunner) deliverWindow(
 				break
 			}
 			if mapResp.StatusCode() != 200 {
+				closeSegmentResponseBody(mapResp)
 				r.log.Warnf("hls：map 状态码 %d", mapResp.StatusCode())
 				break
 			}

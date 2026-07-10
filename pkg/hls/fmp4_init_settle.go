@@ -63,6 +63,7 @@ func (s *InitSettle) cancel(reason string) {
 	}
 	s.dropBuf(reason)
 	s.active = false
+	s.release(s.pending)
 	s.pending = nil
 }
 
@@ -104,7 +105,9 @@ type AcceptMapResult struct {
 }
 
 // AcceptMap decides whether to deliver, hold, or skip an init segment.
-// It takes ownership of mapData: either returns it in DeliverNow, or releases it.
+// It takes ownership of mapData: returns it in DeliverNow, holds it as
+// pending (until Settle transfers ownership or Cancel/Reset releases it),
+// or releases it. confirmed always keeps a private copy for Equal checks.
 func (s *InitSettle) AcceptMap(mapData []byte) AcceptMapResult {
 	if s.active {
 		switch {
@@ -118,8 +121,8 @@ func (s *InitSettle) AcceptMap(mapData []byte) AcceptMapResult {
 			return AcceptMapResult{ArmTimer: true}
 		default:
 			s.dropBuf("pending init 被更新")
-			s.pending = append(s.pending[:0], mapData...)
-			s.release(mapData)
+			s.release(s.pending)
+			s.pending = mapData
 			s.Log.Infof("hls：fMP4 init 防抖期间 init 内容再次变更，已更新 pending 并重置 %v 窗口", s.window())
 			return AcceptMapResult{ArmTimer: true}
 		}
@@ -136,8 +139,7 @@ func (s *InitSettle) AcceptMap(mapData []byte) AcceptMapResult {
 		return AcceptMapResult{DeliverNow: mapData}
 	}
 
-	s.pending = append(s.pending[:0], mapData...)
-	s.release(mapData)
+	s.pending = mapData
 	s.active = true
 	s.buf = nil
 	s.Log.Infof("hls：检测到 fMP4 init 内容变更（%d B），进入 %v 防抖；媒体将缓冲至窗口结束", len(s.pending), s.window())
@@ -145,12 +147,13 @@ func (s *InitSettle) AcceptMap(mapData []byte) AcceptMapResult {
 }
 
 // Settle ends an active hold and returns pending init + buffered media.
-// Caller owns the returned slices. Safe to call when inactive (returns nils).
+// Caller owns the returned slices (pending is transferred, not copied).
+// Safe to call when inactive (returns nils).
 func (s *InitSettle) Settle() (init []byte, media [][]byte) {
 	if !s.active {
 		return nil, nil
 	}
-	init = append([]byte(nil), s.pending...)
+	init = s.pending
 	media = s.buf
 	s.active = false
 	s.pending = nil

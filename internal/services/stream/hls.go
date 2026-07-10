@@ -43,6 +43,7 @@ func (r *Service) ReadHlsStream(
 		PlaylistClient: playlistClient,
 		SegmentClient:  segmentClient,
 		ReadBody:       readBody,
+		ReleaseBytes:   release,
 		Log:            logger,
 		OnURLRefresh: func() {
 			settle.Reset("m3u8 URL 已刷新")

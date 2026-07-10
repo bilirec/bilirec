@@ -45,7 +45,8 @@ func TestInitSettle_ChangedInitHoldsThenSettles(t *testing.T) {
 	s := &InitSettle{Window: 50 * time.Millisecond, Release: func([]byte) {}, Log: testLog()}
 
 	_ = s.AcceptMap([]byte("INIT-A"))
-	res := s.AcceptMap([]byte("INIT-B"))
+	pending := []byte("INIT-B")
+	res := s.AcceptMap(pending)
 	if !res.ArmTimer || res.DeliverNow != nil {
 		t.Fatalf("changed init should hold, got %+v", res)
 	}
@@ -59,6 +60,9 @@ func TestInitSettle_ChangedInitHoldsThenSettles(t *testing.T) {
 	if !bytes.Equal(initOut, []byte("INIT-B")) {
 		t.Fatalf("settle init=%q", initOut)
 	}
+	if &initOut[0] != &pending[0] {
+		t.Fatal("settle should transfer held pending buffer, not copy")
+	}
 	if len(media) != 2 {
 		t.Fatalf("expected 2 media, got %d", len(media))
 	}
@@ -69,13 +73,20 @@ func TestInitSettle_ChangedInitHoldsThenSettles(t *testing.T) {
 
 func TestInitSettle_ChurnBackToConfirmedDropsBuf(t *testing.T) {
 	var released int
+	var releasedPending bool
+	pendingB := []byte("INIT-B")
 	s := &InitSettle{
-		Window:  2 * time.Second,
-		Release: func([]byte) { released++ },
-		Log:     testLog(),
+		Window: 2 * time.Second,
+		Release: func(b []byte) {
+			released++
+			if len(b) > 0 && &b[0] == &pendingB[0] {
+				releasedPending = true
+			}
+		},
+		Log: testLog(),
 	}
 	_ = s.AcceptMap([]byte("INIT-A"))
-	_ = s.AcceptMap([]byte("INIT-B"))
+	_ = s.AcceptMap(pendingB)
 	s.BufferMedia([]byte("MOOF-B"))
 
 	res := s.AcceptMap([]byte("INIT-A"))
@@ -85,7 +96,10 @@ func TestInitSettle_ChurnBackToConfirmedDropsBuf(t *testing.T) {
 	if s.Active() {
 		t.Fatal("expected inactive after cancel")
 	}
-	if released < 1 {
-		t.Fatal("buffered media should be released on cancel")
+	if released < 2 {
+		t.Fatal("pending init and buffered media should be released on cancel")
+	}
+	if !releasedPending {
+		t.Fatal("held pending init should be released on cancel")
 	}
 }
