@@ -1,6 +1,6 @@
 module github.com/bilirec/bilirec
 
-go 1.26.3
+go 1.26.5
 
 require (
 	github.com/CuteReimu/bilibili/v2 v2.5.1
@@ -125,7 +125,7 @@ require (
 	go.uber.org/dig v1.19.0 // indirect
 	go.uber.org/fx v1.24.0
 	go.uber.org/multierr v1.10.0 // indirect
-	go.uber.org/zap v1.26.0 // indirect
+	go.uber.org/zap v1.26.0
 	golang.org/x/crypto v0.51.0
 	golang.org/x/net v0.54.0 // indirect
 	golang.org/x/sync v0.20.0
