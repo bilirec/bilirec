@@ -16,7 +16,8 @@ type Info struct {
 	bytesRead   atomic.Uint64
 	actualQn    atomic.Int32
 	isAudioOnly atomic.Bool
-	startTime   time.Time
+	startTime   time.Time // duration / stats (ElapsedSeconds, max recording)
+	fileTime    time.Time // rotateFilePath filename timestamp
 	outputPath  ds.Atomic[string]
 	maxDuration time.Duration // internal runtime semantics: 0 = unlimited
 

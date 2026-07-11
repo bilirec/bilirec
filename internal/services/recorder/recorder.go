@@ -314,9 +314,10 @@ func (r *Service) checkRecordingDurationPeriodically(roomId int, ctx context.Con
 	}
 }
 
-// Note: Each recovery attempt creates a NEW file with a new timestamp.
-// This is intentional - we want separate files for each recording segment
-// rather than appending to the same file. Multiple files per session is expected.
+// Note: Each recovery attempt creates a NEW file with a new fileTime stamp
+// (second-granularity, strictly after the previous fileTime). Duration still
+// uses startTime; -N suffixes are only for live rotation within one fileTime.
+// Multiple files per session is expected.
 func (r *Service) recover(roomId int) {
 	l := logger.WithField("room", roomId)
 	info, ok := r.recording.Load(roomId)
@@ -460,16 +461,17 @@ func (r *Service) stopAndPublish(roomId int, info *Info) {
 	r.nt.PublishLiveState(roomId, info.room.Uname, info.room.Title, notify.LiveStateRecordStopped)
 }
 
-// the time should be the time you start the record, not live start
+// fileTime is used for the filename timestamp; startTime is for duration accounting.
 func (r *Service) rotateFilePath(info *Info, segment int, ext string) (string, error) {
 	dirPath := fmt.Sprintf("%s/%s-%d", r.cfg.OutputDir, info.room.Uname, info.room.RoomID)
 	if err := os.MkdirAll(dirPath, 0755); err != nil {
 		return "", err
 	}
 	safeTitle := utils.TruncateString(utils.SanitizeFilename(info.room.Title), 20)
+	stamp := info.fileTime.Format("20060102_150405")
 	if segment == 0 {
-		return fmt.Sprintf("%s/%s-%s%s", dirPath, safeTitle, info.startTime.Format("20060102_150405"), ext), nil
+		return fmt.Sprintf("%s/%s-%s%s", dirPath, safeTitle, stamp, ext), nil
 	} else {
-		return fmt.Sprintf("%s/%s-%s-%d%s", dirPath, safeTitle, info.startTime.Format("20060102_150405"), segment, ext), nil
+		return fmt.Sprintf("%s/%s-%s-%d%s", dirPath, safeTitle, stamp, segment, ext), nil
 	}
 }

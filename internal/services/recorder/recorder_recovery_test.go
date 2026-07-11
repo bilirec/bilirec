@@ -3,6 +3,8 @@ package recorder
 import (
 	"context"
 	"errors"
+	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -180,10 +182,12 @@ func TestCommitSession_RecoveryPreserveStartTime(t *testing.T) {
 	defer cancel()
 
 	originalStart := time.Now().Add(-10 * time.Minute)
+	originalFile := time.Now().Add(-10 * time.Minute).Truncate(time.Second)
 	info := &Info{
 		ctx:       ctx,
 		cancel:    cancel,
 		startTime: originalStart,
+		fileTime:  originalFile,
 		backoff:   backoff.NewSequence(1 * time.Second),
 		room:      &bilibili.LiveRoomInfoDetail{RoomID: 1},
 	}
@@ -208,6 +212,10 @@ func TestCommitSession_RecoveryPreserveStartTime(t *testing.T) {
 	if got.startTime != originalStart {
 		t.Fatalf("expected startTime preserved, got %v want %v", got.startTime, originalStart)
 	}
+	wantFile := nextFileTime(originalFile, now)
+	if !got.fileTime.Equal(wantFile) {
+		t.Fatalf("expected fileTime %v, got %v", wantFile, got.fileTime)
+	}
 }
 
 func TestCommitSession_RecoveryResetStartTime(t *testing.T) {
@@ -218,10 +226,12 @@ func TestCommitSession_RecoveryResetStartTime(t *testing.T) {
 	defer cancel()
 
 	originalStart := time.Now().Add(-10 * time.Minute)
+	originalFile := time.Now().Add(-10 * time.Minute).Truncate(time.Second)
 	info := &Info{
 		ctx:       ctx,
 		cancel:    cancel,
 		startTime: originalStart,
+		fileTime:  originalFile,
 		backoff:   backoff.NewSequence(1 * time.Second),
 		room:      &bilibili.LiveRoomInfoDetail{RoomID: 1},
 	}
@@ -245,5 +255,112 @@ func TestCommitSession_RecoveryResetStartTime(t *testing.T) {
 
 	if !got.startTime.Equal(now) {
 		t.Fatalf("expected startTime reset to %v, got %v", now, got.startTime)
+	}
+	wantFile := nextFileTime(originalFile, now)
+	if !got.fileTime.Equal(wantFile) {
+		t.Fatalf("expected fileTime %v, got %v", wantFile, got.fileTime)
+	}
+}
+
+func TestNextFileTime_SameSecondAdvances(t *testing.T) {
+	prev := time.Date(2026, 7, 11, 16, 4, 5, 123, time.Local)
+	now := time.Date(2026, 7, 11, 16, 4, 5, 999, time.Local)
+	got := nextFileTime(prev, now)
+	want := prev.Truncate(time.Second).Add(time.Second)
+	if !got.Equal(want) {
+		t.Fatalf("expected %v, got %v", want, got)
+	}
+}
+
+func TestNextFileTime_AfterPrevUsesNow(t *testing.T) {
+	prev := time.Date(2026, 7, 11, 16, 4, 5, 0, time.Local)
+	now := time.Date(2026, 7, 11, 16, 4, 7, 500, time.Local)
+	got := nextFileTime(prev, now)
+	want := now.Truncate(time.Second)
+	if !got.Equal(want) {
+		t.Fatalf("expected %v, got %v", want, got)
+	}
+}
+
+func TestRotateFilePath_UsesFileTimeNotStartTime(t *testing.T) {
+	r := newTestRecorderService(t)
+	start := time.Date(2026, 7, 11, 16, 0, 0, 0, time.Local)
+	file := time.Date(2026, 7, 11, 16, 4, 5, 0, time.Local)
+	info := &Info{
+		startTime: start,
+		fileTime:  file,
+		room: &bilibili.LiveRoomInfoDetail{
+			RoomID: 12345,
+			Uname:  "testuser",
+			Title:  "直播标题",
+		},
+	}
+
+	path, err := r.rotateFilePath(info, 0, ".flv")
+	if err != nil {
+		t.Fatalf("rotateFilePath: %v", err)
+	}
+	if !strings.Contains(path, "20260711_160405") {
+		t.Fatalf("expected path to use fileTime stamp, got %q", path)
+	}
+	if strings.Contains(path, "20260711_160000") {
+		t.Fatalf("path unexpectedly used startTime, got %q", path)
+	}
+}
+
+func TestRotateFilePath_RecoveryPreserveNoOverwrite(t *testing.T) {
+	r := newTestRecorderService(t)
+	t0 := time.Date(2026, 7, 11, 16, 4, 5, 0, time.Local)
+	info := &Info{
+		startTime: t0,
+		fileTime:  t0,
+		room: &bilibili.LiveRoomInfoDetail{
+			RoomID: 12345,
+			Uname:  "testuser",
+			Title:  "直播标题",
+		},
+	}
+
+	path0, err := r.rotateFilePath(info, 0, ".flv")
+	if err != nil {
+		t.Fatalf("rotateFilePath: %v", err)
+	}
+	if err := os.WriteFile(path0, []byte("original"), 0o644); err != nil {
+		t.Fatalf("write original file: %v", err)
+	}
+
+	info.fileTime = nextFileTime(info.fileTime, t0) // same-second recovery
+	path1, err := r.rotateFilePath(info, 0, ".flv")
+	if err != nil {
+		t.Fatalf("rotateFilePath after recovery: %v", err)
+	}
+	if path0 == path1 {
+		t.Fatalf("paths collided: %q", path0)
+	}
+
+	f, err := os.Create(path1)
+	if err != nil {
+		t.Fatalf("create recovered file: %v", err)
+	}
+	if _, err := f.WriteString("recovered"); err != nil {
+		_ = f.Close()
+		t.Fatalf("write recovered file: %v", err)
+	}
+	_ = f.Close()
+
+	original, err := os.ReadFile(path0)
+	if err != nil {
+		t.Fatalf("read original file: %v", err)
+	}
+	if string(original) != "original" {
+		t.Fatalf("original file overwritten, content=%q", original)
+	}
+
+	recovered, err := os.ReadFile(path1)
+	if err != nil {
+		t.Fatalf("read recovered file: %v", err)
+	}
+	if string(recovered) != "recovered" {
+		t.Fatalf("recovered file content=%q", recovered)
 	}
 }

@@ -157,6 +157,7 @@ func (r *Service) commitSession(
 	if p.mode == startModeRecovery {
 		info := p.session
 		info.room = roomInfo
+		info.fileTime = nextFileTime(info.fileTime, now)
 		if r.cfg.RecordingRecoveryDuration == "reset" {
 			info.startTime = now
 		}
@@ -178,6 +179,7 @@ func (r *Service) commitSession(
 		cancel:       p.cancel,
 		startOptions: snapshotStartOptions(p.opts),
 		startTime:    now,
+		fileTime:     now,
 		room:         roomInfo,
 		maxDuration:  maxDuration,
 		backoff: backoff.NewSequence(
@@ -197,6 +199,17 @@ func (r *Service) commitSession(
 	})
 
 	return info, nil
+}
+
+// nextFileTime returns a second-granularity stamp strictly after prev when now
+// would otherwise collide with prev's filename second.
+func nextFileTime(prev, now time.Time) time.Time {
+	stamp := now.Truncate(time.Second)
+	prevStamp := prev.Truncate(time.Second)
+	if !stamp.After(prevStamp) {
+		return prevStamp.Add(time.Second)
+	}
+	return stamp
 }
 
 func (r *Service) connectStream(
