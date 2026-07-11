@@ -21,6 +21,9 @@ dist
 *.jsonl
 *.db
 
+tmp*/*
+.tmp*/*
+
 .vscode/
 
 .env.local
