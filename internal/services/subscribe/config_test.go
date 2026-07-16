@@ -13,6 +13,7 @@ func TestRoomConfigRoundTrip(t *testing.T) {
 		RecordDurationMinutes: 180,
 		Qn:                    int(bilibili.QualityHigh),
 		OnlyAudio:             true,
+		StreamProfiles:        []string{string(bilibili.ProfileHLSFMP4), string(bilibili.ProfileHLSTS)},
 	}
 
 	data, err := roomConfigSerializer.Serialize(original)
@@ -29,7 +30,10 @@ func TestRoomConfigRoundTrip(t *testing.T) {
 		parsed.Notify != original.Notify ||
 		parsed.RecordDurationMinutes != original.RecordDurationMinutes ||
 		parsed.Qn != original.Qn ||
-		parsed.OnlyAudio != original.OnlyAudio {
+		parsed.OnlyAudio != original.OnlyAudio ||
+		len(parsed.StreamProfiles) != len(original.StreamProfiles) ||
+		parsed.StreamProfiles[0] != original.StreamProfiles[0] ||
+		parsed.StreamProfiles[1] != original.StreamProfiles[1] {
 		t.Fatalf("round trip mismatch: got %+v want %+v", parsed, original)
 	}
 }
@@ -50,5 +54,8 @@ func TestParseRoomConfigDefaultsNewFields(t *testing.T) {
 	}
 	if parsed.OnlyAudio {
 		t.Fatal("expected default onlyAudio false")
+	}
+	if len(parsed.StreamProfiles) != 0 {
+		t.Fatalf("expected default stream_profiles empty, got %v", parsed.StreamProfiles)
 	}
 }

@@ -21,6 +21,12 @@ func TestFilter(t *testing.T) {
 	assert.Equal(t, []int{2, 4}, result)
 }
 
+func TestUnique(t *testing.T) {
+	result := Unique([]string{"a", "b", "a", "c", "b"})
+	assert.Equal(t, []string{"a", "b", "c"}, result)
+	assert.Nil(t, Unique[int](nil))
+}
+
 func TestFlatMap(t *testing.T) {
 	result := FlatMap([]int{1, 2, 3}, func(v int) []int {
 		return []int{v, v * 10}

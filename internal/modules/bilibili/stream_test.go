@@ -12,7 +12,6 @@ import (
 
 	"github.com/bilirec/bilirec/internal/modules/config"
 	"github.com/bilirec/bilirec/internal/testutil"
-	"github.com/bilirec/bilirec/utils"
 	"go.uber.org/fx"
 	"go.uber.org/fx/fxtest"
 )
@@ -279,102 +278,8 @@ func logParamDiff(t *testing.T, normal, audio map[string][]string) {
 }
 
 func simulateGetStreamURLsV2(t *testing.T, client *Client, roomID int, opts ...GetStreamURLsOption) ([]StreamURLInfo, error) {
-	req := client.liveClient.R()
-	options := defaultGetStreamURLsOptions()
-	for _, opt := range opts {
-		if opt != nil {
-			opt(&options)
-		}
-	}
-
-	for _, profile := range options.profiles {
-		if !profile.IsValid() {
-			return nil, ErrInvalidStreamProfile
-		}
-	}
-
-	for _, codec := range options.codecs {
-		if !codec.IsValid() {
-			return nil, ErrInvalidStreamCodec
-		}
-	}
-
-	if !options.qn.IsValid() {
-		return nil, ErrInvalidStreamQuality
-	}
-
-	protocolRaw, formatRaw := profileQueryParams(options.profiles)
-	protocolStr := utils.EmptyOrElse(protocolRaw, "0,1")
-	formatStr := utils.EmptyOrElse(formatRaw, "0,1,2")
-	codecStr := utils.EmptyOrElse(joinCodecs(options.codecs), "0,1,2")
-
-	params := map[string]string{
-		"room_id":      fmt.Sprint(roomID),
-		"qn":           fmt.Sprint(int(options.qn)),
-		"no_playurl":   "0",
-		"mask":         "1",
-		"platform":     "web",
-		"protocol":     protocolStr,
-		"format":       formatStr,
-		"codec":        codecStr,
-		"dolby":        "5",
-		"panorama":     "1",
-		"hdr_type":     "0,1",
-		"web_location": "444.8",
-		"only_audio":   utils.Ternary(options.onlyAudio, "1", "0"),
-	}
-
-	req.SetQueryParams(params)
-	newQueryParam, err := client.wbi.SignQuery(req.QueryParam, time.Now())
-	if err != nil {
-		return nil, fmt.Errorf("无法签名 wbi：%v", err)
-	}
-	req.QueryParam = newQueryParam
-
-	resp, err := req.Get(v2StreamAPI)
-	if err != nil {
-		return nil, err
-	}
-	if resp.StatusCode() != 200 {
-		return nil, fmt.Errorf("状态码：%d", resp.StatusCode())
-	}
-
-	var sr StreamResponseV2
-	if err := json.Unmarshal(resp.Body(), &sr); err != nil {
-		return nil, err
-	} else if sr.Code != 0 {
-		return nil, mapStreamAPIError(sr.Code, sr.Message)
-	}
-
-	if sr.Data.PlayurlInfo == nil || sr.Data.PlayurlInfo.Playurl == nil {
-		return []StreamURLInfo{}, nil
-	}
-
-	streamInfos := make([]StreamURLInfo, 0)
-	for _, stream := range sr.Data.PlayurlInfo.Playurl.Streams {
-		for _, format := range stream.Formats {
-			if !containFormat(options.profiles, format.FormatName) {
-				continue
-			}
-			for _, codec := range format.Codecs {
-				for _, urlInfo := range codec.UrlInfos {
-					fullURL := urlInfo.Host + codec.BaseUrl + urlInfo.Extra
-					audioOnlyStream := isAudioOnlyStreamURL(fullURL)
-					streamInfos = append(streamInfos, StreamURLInfo{
-						Protocol:    stream.ProtocolName,
-						Format:      format.FormatName,
-						Codec:       codec.CodecName,
-						URL:         fullURL,
-						Qn:          codec.CurrentQn,
-						AcceptQn:    codec.AcceptQn,
-						IsAudioOnly: audioOnlyStream,
-					})
-				}
-			}
-		}
-	}
-
-	return streamInfos, nil
+	t.Helper()
+	return client.GetStreamURLsV2(roomID, opts...)
 }
 
 func equalStringSlice(a, b []string) bool {

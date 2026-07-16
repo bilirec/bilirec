@@ -85,6 +85,52 @@ func TestSortStreams_QnFirst(t *testing.T) {
 	}
 }
 
+func TestParseStreamProfiles(t *testing.T) {
+	t.Run("empty", func(t *testing.T) {
+		got, err := ParseStreamProfiles("")
+		if err != nil || got != nil {
+			t.Fatalf("got=%v err=%v", got, err)
+		}
+	})
+
+	t.Run("single", func(t *testing.T) {
+		got, err := ParseStreamProfiles("hls-fmp4")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(got) != 1 || got[0] != ProfileHLSFMP4 {
+			t.Fatalf("got=%v", got)
+		}
+	})
+
+	t.Run("multi dedupe", func(t *testing.T) {
+		got, err := ParseStreamProfiles("hls-fmp4, http-flv, hls-fmp4")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(got) != 2 || got[0] != ProfileHLSFMP4 || got[1] != ProfileHTTPFLV {
+			t.Fatalf("got=%v", got)
+		}
+	})
+
+	t.Run("invalid", func(t *testing.T) {
+		_, err := ParseStreamProfiles("hls-fmp4,dash")
+		if err == nil {
+			t.Fatal("expected error")
+		}
+	})
+}
+
+func TestNormalizeStreamProfiles(t *testing.T) {
+	got, err := NormalizeStreamProfiles([]string{" hls-fmp4 ", "http-flv", "hls-fmp4"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 || got[0] != ProfileHLSFMP4 || got[1] != ProfileHTTPFLV {
+		t.Fatalf("got=%v", got)
+	}
+}
+
 func streamSortTestURLs(streams []StreamURLInfo) []string {
 	out := make([]string, len(streams))
 	for i, s := range streams {

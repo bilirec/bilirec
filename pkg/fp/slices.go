@@ -39,6 +39,23 @@ func Filter[T any](items []T, predicate func(T) bool) []T {
 	return out
 }
 
+// Unique returns items with duplicates removed, preserving first-seen order.
+func Unique[T comparable](items []T) []T {
+	if items == nil {
+		return nil
+	}
+	seen := make(map[T]struct{}, len(items))
+	out := make([]T, 0, len(items))
+	for _, item := range items {
+		if _, ok := seen[item]; ok {
+			continue
+		}
+		seen[item] = struct{}{}
+		out = append(out, item)
+	}
+	return out
+}
+
 func FlatMap[T any, R any](items []T, mapper func(T) []R) []R {
 	if items == nil {
 		return nil

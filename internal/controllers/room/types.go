@@ -19,18 +19,20 @@ type SubscribeList struct {
 }
 
 type RoomConfigResponse struct {
-	RoomId                int  `json:"room_id"`
-	AutoRecord            bool `json:"auto_record"`
-	Notify                bool `json:"notify"`
-	RecordDurationMinutes int  `json:"record_duration_minutes"`
-	Qn                    int  `json:"qn"`
-	OnlyAudio             bool `json:"only_audio"`
+	RoomId                int      `json:"room_id"`
+	AutoRecord            bool     `json:"auto_record"`
+	Notify                bool     `json:"notify"`
+	RecordDurationMinutes int      `json:"record_duration_minutes"`
+	Qn                    int      `json:"qn"`
+	OnlyAudio             bool     `json:"only_audio"`
+	StreamProfiles        []string `json:"stream_profiles"`
 }
 
 type UpdateRoomConfigRequest struct {
-	AutoRecord            bool `json:"auto_record"`
-	Notify                bool `json:"notify"`
-	RecordDurationMinutes int  `json:"record_duration_minutes"`
-	Qn                    int  `json:"qn"`
-	OnlyAudio             bool `json:"only_audio"`
+	AutoRecord            bool     `json:"auto_record"`
+	Notify                bool     `json:"notify"`
+	RecordDurationMinutes int      `json:"record_duration_minutes"`
+	Qn                    int      `json:"qn"`
+	OnlyAudio             bool     `json:"only_audio"`
+	StreamProfiles        []string `json:"stream_profiles"`
 }

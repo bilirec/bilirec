@@ -300,6 +300,7 @@ func (r *Controller) getRoomConfig(ctx fiber.Ctx) error {
 		RecordDurationMinutes: cfg.RecordDurationMinutes,
 		Qn:                    cfg.Qn,
 		OnlyAudio:             cfg.OnlyAudio,
+		StreamProfiles:        cfg.StreamProfiles,
 	})
 }
 
@@ -330,12 +331,19 @@ func (r *Controller) updateRoomConfig(ctx fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusBadRequest, "无效的请求数据")
 	}
 
+	profiles, parseErr := bilibili.NormalizeStreamProfiles(req.StreamProfiles)
+	if parseErr != nil {
+		return fiber.NewError(fiber.StatusBadRequest, "无效的 stream_profiles 参数")
+	}
+	streamProfiles := bilibili.StreamProfilesToStrings(profiles)
+
 	if err := r.subSvc.UpdateConfig(roomId, &subscribe.RoomConfig{
 		AutoRecord:            req.AutoRecord,
 		Notify:                req.Notify,
 		RecordDurationMinutes: req.RecordDurationMinutes,
 		Qn:                    req.Qn,
 		OnlyAudio:             req.OnlyAudio,
+		StreamProfiles:        streamProfiles,
 	}); err != nil {
 		logger.Errorf("更新房间 %d 配置失败：%v", roomId, err)
 		if err == subscribe.ErrRoomNotSubscribed {
@@ -351,5 +359,6 @@ func (r *Controller) updateRoomConfig(ctx fiber.Ctx) error {
 		RecordDurationMinutes: req.RecordDurationMinutes,
 		Qn:                    req.Qn,
 		OnlyAudio:             req.OnlyAudio,
+		StreamProfiles:        streamProfiles,
 	})
 }

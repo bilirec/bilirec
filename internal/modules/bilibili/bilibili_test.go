@@ -147,7 +147,7 @@ func TestGetStreamUrlsV2WithProfiles(t *testing.T) {
 
 	roomID := testutil.LiveRoomID(t)
 
-	t.Run("http-flv profile", func(t *testing.T) {
+	t.Run("http-flv profile filter", func(t *testing.T) {
 		urls, err := client.GetStreamURLsV2(roomID,
 			bilibili.WithProfiles(bilibili.ProfileHTTPFLV),
 		)
@@ -172,7 +172,7 @@ func TestGetStreamUrlsV2WithProfiles(t *testing.T) {
 		}
 	})
 
-	t.Run("hls-ts profile", func(t *testing.T) {
+	t.Run("hls-ts profile filter", func(t *testing.T) {
 		urls, err := client.GetStreamURLsV2(roomID,
 			bilibili.WithProfiles(bilibili.ProfileHLSTS),
 		)
@@ -197,7 +197,7 @@ func TestGetStreamUrlsV2WithProfiles(t *testing.T) {
 		}
 	})
 
-	t.Run("hls-fmp4 profile", func(t *testing.T) {
+	t.Run("hls-fmp4 profile filter", func(t *testing.T) {
 		urls, err := client.GetStreamURLsV2(roomID,
 			bilibili.WithProfiles(bilibili.ProfileHLSFMP4),
 		)
@@ -208,17 +208,38 @@ func TestGetStreamUrlsV2WithProfiles(t *testing.T) {
 			t.Fatal(err)
 		}
 		if len(urls) == 0 {
-			t.Skip("no hls-ts stream urls available currently")
+			t.Skip("no hls-fmp4 stream urls available currently")
 		}
 		for _, streamInfo := range urls {
 			lower := strings.ToLower(streamInfo.URL)
 			if strings.Contains(lower, ".flv") {
-				t.Fatalf("unexpected flv url in hls-ts profile result: %s", streamInfo.URL)
+				t.Fatalf("unexpected flv url in hls-fmp4 profile result: %s", streamInfo.URL)
 			}
 			if !strings.Contains(lower, ".m3u8") {
-				t.Fatalf("expected .m3u8 url in hls-ts profile result: %s", streamInfo.URL)
+				t.Fatalf("expected .m3u8 url in hls-fmp4 profile result: %s", streamInfo.URL)
 			}
-			t.Logf("expected hls-ts stream url: %s (protocol=%s, format=%s, codec=%s, qn=%d)", streamInfo.URL, streamInfo.Protocol, streamInfo.Format, streamInfo.Codec, streamInfo.Qn)
+			t.Logf("expected hls-fmp4 stream url: %s (protocol=%s, format=%s, codec=%s, qn=%d)", streamInfo.URL, streamInfo.Protocol, streamInfo.Format, streamInfo.Codec, streamInfo.Qn)
+		}
+	})
+
+	t.Run("multi profile allow-list", func(t *testing.T) {
+		urls, err := client.GetStreamURLsV2(roomID,
+			bilibili.WithProfiles(bilibili.ProfileHLSFMP4, bilibili.ProfileHLSTS),
+		)
+		if err != nil {
+			if bilibili.IsErrRoomNotFound(err) {
+				t.Skip("room not found, skipped")
+			}
+			t.Fatal(err)
+		}
+		if len(urls) == 0 {
+			t.Skip("no stream urls available currently")
+		}
+		for _, streamInfo := range urls {
+			if streamInfo.Format != "fmp4" && streamInfo.Format != "ts" {
+				t.Fatalf("unexpected format %q in multi-profile result: %s", streamInfo.Format, streamInfo.URL)
+			}
+			t.Logf("multi-profile stream url: %s (protocol=%s, format=%s, codec=%s, qn=%d)", streamInfo.URL, streamInfo.Protocol, streamInfo.Format, streamInfo.Codec, streamInfo.Qn)
 		}
 	})
 }

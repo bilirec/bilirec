@@ -141,6 +141,9 @@ func WithOnlyAudio(onlyAudio bool) GetStreamURLsOption {
 	}
 }
 
+// WithProfiles sets a strict allow-list of stream formats for API query and result filtering.
+// Omit or leave empty to use the default (all formats). Order does not change sort priority
+// beyond the fixed flv → fmp4 → ts tiebreak at the same qn.
 func WithProfiles(profiles ...StreamProfile) GetStreamURLsOption {
 	return func(o *getStreamURLsOptions) {
 		o.profiles = profiles
@@ -150,6 +153,67 @@ func WithProfiles(profiles ...StreamProfile) GetStreamURLsOption {
 func WithCodecs(codecs ...Codec) GetStreamURLsOption {
 	return func(o *getStreamURLsOptions) {
 		o.codecs = codecs
+	}
+}
+
+// NormalizeStreamProfiles validates and deduplicates a list of profile tokens.
+// Empty / all-blank input returns (nil, nil). Any invalid token returns an error.
+func NormalizeStreamProfiles(raw []string) ([]StreamProfile, error) {
+	if len(raw) == 0 {
+		return nil, nil
+	}
+	trimmed := fp.Filter(fp.Map(raw, strings.TrimSpace), func(s string) bool {
+		return s != ""
+	})
+	if len(trimmed) == 0 {
+		return nil, nil
+	}
+	profiles, err := fp.MapErr(trimmed, func(s string) (StreamProfile, error) {
+		profile := StreamProfile(s)
+		if !profile.IsValid() {
+			return "", ErrInvalidStreamProfile
+		}
+		return profile, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	out := fp.Unique(profiles)
+	if len(out) == 0 {
+		return nil, nil
+	}
+	return out, nil
+}
+
+// ParseStreamProfiles parses a comma-separated stream_profile query value into a
+// deduplicated allow-list. Empty / whitespace-only input returns (nil, nil).
+func ParseStreamProfiles(raw string) ([]StreamProfile, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil, nil
+	}
+	return NormalizeStreamProfiles(strings.Split(raw, ","))
+}
+
+// StreamProfilesToStrings converts profiles to plain strings for JSON / storage.
+func StreamProfilesToStrings(profiles []StreamProfile) []string {
+	if len(profiles) == 0 {
+		return nil
+	}
+	return fp.Map(profiles, func(p StreamProfile) string { return string(p) })
+}
+
+// FormatNameForProfile maps a StreamProfile to the playurl format_name, or "" if unknown.
+func FormatNameForProfile(profile StreamProfile) string {
+	switch profile {
+	case ProfileHTTPFLV:
+		return "flv"
+	case ProfileHLSTS:
+		return "ts"
+	case ProfileHLSFMP4:
+		return "fmp4"
+	default:
+		return ""
 	}
 }
 

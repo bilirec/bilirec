@@ -23,6 +23,10 @@ func TestStreamOptionsFromRoomConfig(t *testing.T) {
 		{name: "quality", cfg: &subscribe.RoomConfig{Qn: int(bilibili.QualityHigh)}, want: 1},
 		{name: "quality and audio", cfg: &subscribe.RoomConfig{Qn: int(bilibili.QualityHigh), OnlyAudio: true}, want: 2},
 		{name: "invalid quality ignored", cfg: &subscribe.RoomConfig{Qn: 999}, want: 0},
+		{name: "stream profile", cfg: &subscribe.RoomConfig{StreamProfiles: []string{string(bilibili.ProfileHLSFMP4)}}, want: 1},
+		{name: "multi stream profiles", cfg: &subscribe.RoomConfig{StreamProfiles: []string{"hls-fmp4", "hls-ts"}}, want: 1},
+		{name: "invalid stream profile ignored", cfg: &subscribe.RoomConfig{StreamProfiles: []string{"dash"}}, want: 0},
+		{name: "profile quality audio", cfg: &subscribe.RoomConfig{Qn: int(bilibili.QualityHigh), OnlyAudio: true, StreamProfiles: []string{string(bilibili.ProfileHLSTS)}}, want: 3},
 	}
 
 	for _, tt := range tests {

@@ -257,7 +257,10 @@ func (r *Service) connectStream(
 				return url, nil
 			}
 
-			latestStreams, fetchErr := r.bilic.GetStreamURLsV2(roomId, bilibili.WithProfiles(profile))
+			latestStreams, fetchErr := r.bilic.GetStreamURLsV2(roomId,
+				bilibili.WithProfiles(profile),
+				bilibili.WithQn(bilibili.Quality(streamInfo.Qn)),
+			)
 			if fetchErr != nil {
 				return "", fetchErr
 			} else if len(latestStreams) == 0 {

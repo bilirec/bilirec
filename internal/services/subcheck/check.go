@@ -284,6 +284,9 @@ func streamOptionsFromRoomConfig(cfg *subscribe.RoomConfig) []bilibili.GetStream
 	if cfg.OnlyAudio {
 		opts = append(opts, bilibili.WithOnlyAudio(true))
 	}
+	if profiles, err := bilibili.NormalizeStreamProfiles(cfg.StreamProfiles); err == nil && len(profiles) > 0 {
+		opts = append(opts, bilibili.WithProfiles(profiles...))
+	}
 	return opts
 }
 

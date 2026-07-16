@@ -38,7 +38,7 @@ func NewController(app *fiber.App, service *recorder.Service) *Controller {
 // @Produce json
 // @Param roomID path int true "Room ID"
 // @Param duration_minutes query int false "Recording duration in minutes. 0 = system default, -1 = unlimited, >0 = stop after N minutes, omit = system default (MAX_RECORDING_HOURS)"
-// @Param stream_profile query string false "Preferred stream profile: http-flv | hls-ts | hls-fmp4"
+// @Param stream_profile query string false "Allowed stream profiles (comma-separated): http-flv | hls-ts | hls-fmp4; empty = all"
 // @Param qn query int false "Stream quality code: 80,150,250,400,10000,20000,30000"
 // @Param only_audio query bool false "Whether to request only audio stream"
 // @Success 200 "Recording started successfully"
@@ -69,7 +69,13 @@ func (r *Controller) startRecording(ctx fiber.Ctx) error {
 	streamOptions := []bilibili.GetStreamURLsOption{}
 	streamProfileRaw := strings.TrimSpace(fiber.Query(ctx, "stream_profile", ""))
 	if streamProfileRaw != "" {
-		streamOptions = append(streamOptions, bilibili.WithProfiles(bilibili.StreamProfile(streamProfileRaw)))
+		profiles, parseErr := bilibili.ParseStreamProfiles(streamProfileRaw)
+		if parseErr != nil {
+			return fiber.NewError(fiber.StatusBadRequest, "无效的 stream_profile 参数")
+		}
+		if len(profiles) > 0 {
+			streamOptions = append(streamOptions, bilibili.WithProfiles(profiles...))
+		}
 	}
 
 	qnRaw := strings.TrimSpace(fiber.Query(ctx, "qn", ""))
