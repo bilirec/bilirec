@@ -16,6 +16,7 @@ type Stats struct {
 	OutputPath     string       `json:"output_path"`
 	ActualQn       int          `json:"actual_qn"`
 	IsAudioOnly    bool         `json:"is_audio_only"`
+	RoomTitle      string       `json:"room_title"`
 }
 
 func (r *Service) GetStatus(roomId int) RecordStatus {
@@ -50,6 +51,10 @@ func (r *Service) GetStats(roomId int) (*Stats, bool) {
 		return nil, false
 	}
 	status := r.GetStatus(roomId)
+	roomTitle := ""
+	if info.room != nil {
+		roomTitle = info.room.Title
+	}
 	return &Stats{
 		BytesWritten:   info.bytesRead.Load(),
 		Status:         status,
@@ -58,6 +63,7 @@ func (r *Service) GetStats(roomId int) (*Stats, bool) {
 		OutputPath:     info.OutputPath(),
 		ActualQn:       info.ActualQn(),
 		IsAudioOnly:    info.IsAudioOnly(),
+		RoomTitle:      roomTitle,
 	}, true
 }
 
