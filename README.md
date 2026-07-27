@@ -97,6 +97,9 @@ docker run -d --name bilirec -p 8080:8080 \
 - 库接口与构建：`make android` → `dist/android/<abi>/libbilirec.so`
 - 说明见 [Android 指南](https://www.bilirec.org/zh-cn/guides/android/) · [Android 库接口](https://www.bilirec.org/zh-cn/guides/android-library/)
 
+> [!IMPORTANT]
+> 请关闭电池优化并允许通知。华为 / 鸿蒙、OPPO / ColorOS、小米 / HyperOS、vivo / OriginOS 等大陆国产系统还可能在锁屏、切换应用或清理多任务时终止 Bilirec，造成录制中断；这类设备请按 [国产手机后台设置](https://www.bilirec.org/zh-cn/guides/android-mainland/) 额外放行后台活动并锁定多任务卡片。
+
 ## 生态
 
 | 项目 | 说明 |
