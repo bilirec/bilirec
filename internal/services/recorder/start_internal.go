@@ -196,6 +196,7 @@ func (r *Service) commitSession(
 	txn.ConfirmWith(p.roomId, func() {
 		info.status.Store(recordingPtr)
 		r.recording.Store(p.roomId, info)
+		r.m.RecordingStarted(p.roomId, roomInfo.Uname)
 	})
 
 	return info, nil

@@ -10,6 +10,7 @@ import (
 
 	"github.com/bilirec/bilirec/internal/modules/bilibili"
 	"github.com/bilirec/bilirec/internal/modules/config"
+	"github.com/bilirec/bilirec/internal/modules/metrics"
 	"github.com/bilirec/bilirec/pkg/backoff"
 	"github.com/bilirec/bilirec/pkg/ds"
 	"github.com/bilirec/bilirec/pkg/tx"
@@ -19,6 +20,7 @@ import (
 func newTestRecorderService(t *testing.T) *Service {
 	t.Helper()
 	r := &Service{
+		m:         &metrics.Exporter{},
 		recording: xsync.NewMap[int, *Info](),
 		cfg: &config.Config{
 			OutputDir:               t.TempDir(),

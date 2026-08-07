@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/bilirec/bilirec/internal/modules/bilibili"
+	"github.com/bilirec/bilirec/internal/modules/metrics"
 	"github.com/bilirec/bilirec/internal/services/subscribe"
 	"github.com/bilirec/bilirec/pkg/db"
 	"github.com/puzpuzpuz/xsync/v4"
@@ -305,6 +306,7 @@ func newTestServiceWithBucket(t *testing.T) *Service {
 	}
 
 	return &Service{
+		m:           &metrics.Exporter{},
 		bucket:      bucket,
 		sessionKeys: xsync.NewMap[int, string](),
 	}

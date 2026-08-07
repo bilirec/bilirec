@@ -28,6 +28,10 @@ type Config struct {
 	Port              string
 	TrustedProxies    []string
 
+	MetricsEnabled bool
+	MetricsHost    string
+	MetricsPort    string
+
 	FRPEnabled     bool
 	FRPServer      string
 	FRPToken       string
@@ -155,6 +159,9 @@ func provider(lc fx.Lifecycle) (*Config, error) {
 		Host:                    strings.TrimSpace(os.Getenv("HOST")),
 		Port:                    utils.EmptyOrElse(os.Getenv("PORT"), "8080"),
 		TrustedProxies:          parseCommaSeparatedValues(utils.EmptyOrElse(os.Getenv("TRUSTED_PROXIES"), "161.33.159.26")),
+		MetricsEnabled:          os.Getenv("METRICS_ENABLED") == "true",
+		MetricsHost:             strings.TrimSpace(os.Getenv("METRICS_HOST")),
+		MetricsPort:             utils.EmptyOrElse(os.Getenv("METRICS_PORT"), "9090"),
 		FRPEnabled:              os.Getenv("FRP_ENABLED") == "true",
 		FRPServer:               frpServer,
 		FRPToken:                frpToken,

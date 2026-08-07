@@ -11,6 +11,7 @@ import (
 
 	"github.com/bilirec/bilirec/internal/modules/bilibili"
 	"github.com/bilirec/bilirec/internal/modules/config"
+	"github.com/bilirec/bilirec/internal/modules/metrics"
 	rs "github.com/bilirec/bilirec/internal/record_strategies"
 	"github.com/bilirec/bilirec/internal/services/convert"
 	"github.com/bilirec/bilirec/internal/services/notify"
@@ -58,6 +59,7 @@ type Service struct {
 	cv           *convert.Service
 	nt           *notify.Service
 	bilic        *bilibili.Client
+	m            *metrics.Exporter
 	recording    *xsync.Map[int, *Info]
 	writingFiles ds.Set[string]
 	pipes        *xsync.Map[int, *pipeline.Pipe[[]byte]]
@@ -75,6 +77,7 @@ func NewService(
 	nt *notify.Service,
 	bilic *bilibili.Client,
 	cfg *config.Config,
+	m *metrics.Exporter,
 ) *Service {
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -84,6 +87,7 @@ func NewService(
 		cv:           cv,
 		nt:           nt,
 		bilic:        bilic,
+		m:            m,
 		recording:    xsync.NewMap[int, *Info](),
 		writingFiles: ds.NewSyncedSet[string](),
 		pipes:        xsync.NewMap[int, *pipeline.Pipe[[]byte]](),
@@ -161,6 +165,7 @@ func (r *Service) Stop(roomId int) bool {
 
 	if hasRecording {
 		info.cancel()
+		r.m.RecordingStopped(roomId)
 	} else {
 		logger.Warnf("未找到房间 %d 的录制任务", roomId)
 	}
@@ -259,6 +264,7 @@ func (r *Service) rev(roomId int, ch <-chan []byte, info *Info, ctx context.Cont
 	}()
 	for data := range ch {
 		info.bytesRead.Add(uint64(len(data)))
+		r.m.AddStreamBytes(roomId, len(data))
 		result, err := pipe.Process(ctx, data)
 		if info.chunkPool != nil && cap(data) > 0 {
 			info.chunkPool.Put(data[:cap(data)])
@@ -367,6 +373,11 @@ func (r *Service) recover(roomId int) {
 			if _, ok := r.recording.Load(roomId); !ok || errors.Is(err, context.Canceled) {
 				l.Infof("重试期间录制任务已移除，不再恢复")
 				return
+			}
+
+			// ErrStreamNotLive 是正常下播後的重試，不算斷線恢復
+			if err != ErrStreamNotLive {
+				r.m.AddRecovery(roomId)
 			}
 
 			nextSleep := info.backoff.Next()

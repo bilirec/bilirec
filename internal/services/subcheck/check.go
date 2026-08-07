@@ -12,6 +12,7 @@ import (
 
 	"github.com/bilirec/bilirec/internal/modules/bilibili"
 	"github.com/bilirec/bilirec/internal/modules/config"
+	"github.com/bilirec/bilirec/internal/modules/metrics"
 	"github.com/bilirec/bilirec/internal/services/notify"
 	"github.com/bilirec/bilirec/internal/services/recorder"
 	"github.com/bilirec/bilirec/internal/services/room"
@@ -33,6 +34,7 @@ type Service struct {
 	roomSvc     *room.Service
 	recSvc      *recorder.Service
 	notifySvc   *notify.Service
+	m           *metrics.Exporter
 	bucket      *db.Bucket
 	sessionKeys *xsync.Map[int, string]
 	coordinator *coordinator.RoundRobin
@@ -51,13 +53,14 @@ type Service struct {
 	wg     sync.WaitGroup
 }
 
-func NewService(lc fx.Lifecycle, cfg *config.Config, subSvc *subscribe.Service, roomSvc *room.Service, recSvc *recorder.Service, notifySvc *notify.Service) *Service {
+func NewService(lc fx.Lifecycle, cfg *config.Config, subSvc *subscribe.Service, roomSvc *room.Service, recSvc *recorder.Service, notifySvc *notify.Service, m *metrics.Exporter) *Service {
 	ctx, cancel := context.WithCancel(context.Background())
 	s := &Service{
 		subSvc:      subSvc,
 		roomSvc:     roomSvc,
 		recSvc:      recSvc,
 		notifySvc:   notifySvc,
+		m:           m,
 		sessionKeys: xsync.NewMap[int, string](),
 		ctx:         ctx,
 		cancel:      cancel,
@@ -219,6 +222,9 @@ func (s *Service) tryStartShardAutoRecordRooms(shardIndex, shardCount int) {
 		isLive := info.LiveStatus == 1
 		currentSessionKey := resolveLiveSessionKey(info)
 
+		// 每輪無條件更新 live_status gauge（自愈設計：重啟後不需依賴開播事件），順帶更新 room_info
+		s.m.SetLiveStatus(roomID, info.Uname, isLive)
+
 		if !isLive || currentSessionKey == "" {
 			s.clearSessionState(roomID)
 			continue
@@ -230,6 +236,7 @@ func (s *Service) tryStartShardAutoRecordRooms(shardIndex, shardCount int) {
 		}
 
 		logger.Debugf("new live session detected for room %d (%s), key: %s", roomID, info.Uname, currentSessionKey)
+		s.m.LiveSessionDetected(roomID)
 		state := notify.LiveStateLiveDetected
 
 		if cfg.AutoRecord {
@@ -317,6 +324,7 @@ func (s *Service) invalidateStaleRooms(rooms map[int]*subscribe.RoomConfig) {
 	})
 	for _, roomID := range staleRooms {
 		s.clearSessionState(roomID)
+		s.m.DeleteRoom(roomID)
 		logger.Debugf("removed stale session state for room: %v", roomID)
 	}
 }

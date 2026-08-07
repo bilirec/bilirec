@@ -13,6 +13,7 @@ import (
 	"github.com/bilirec/bilirec/internal/controllers/room"
 	"github.com/bilirec/bilirec/internal/modules/bilibili"
 	"github.com/bilirec/bilirec/internal/modules/config"
+	"github.com/bilirec/bilirec/internal/modules/metrics"
 	"github.com/bilirec/bilirec/internal/modules/rest"
 	co "github.com/bilirec/bilirec/internal/services/convert"
 	ex "github.com/bilirec/bilirec/internal/services/expose"
@@ -38,6 +39,7 @@ func MainModule() fx.Option {
 		config.Module,
 		bilibili.Module,
 		rest.Module,
+		metrics.Module,
 
 		fx.Provide(pa.NewService),
 		fx.Provide(co.NewService),

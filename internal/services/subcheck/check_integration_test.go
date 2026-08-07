@@ -10,6 +10,7 @@ import (
 
 	"github.com/bilirec/bilirec/internal/modules/bilibili"
 	"github.com/bilirec/bilirec/internal/modules/config"
+	"github.com/bilirec/bilirec/internal/modules/metrics"
 	"github.com/bilirec/bilirec/internal/services/convert"
 	"github.com/bilirec/bilirec/internal/services/notify"
 	"github.com/bilirec/bilirec/internal/services/path"
@@ -97,6 +98,7 @@ func newSubcheckIntegrationSession(t *testing.T) *subcheckIntegrationSession {
 	app := fxtest.New(t,
 		config.Module,
 		bilibili.Module,
+		metrics.Module,
 		fx.Provide(path.NewService),
 		fx.Provide(stream.NewService),
 		fx.Provide(convert.NewService),

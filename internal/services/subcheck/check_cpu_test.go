@@ -16,6 +16,7 @@ import (
 
 	"github.com/bilirec/bilirec/internal/modules/bilibili"
 	"github.com/bilirec/bilirec/internal/modules/config"
+	"github.com/bilirec/bilirec/internal/modules/metrics"
 	"github.com/bilirec/bilirec/internal/services/notify"
 	"github.com/bilirec/bilirec/internal/services/room"
 	"github.com/bilirec/bilirec/internal/services/subscribe"
@@ -245,6 +246,7 @@ func newSubcheckTestSession(t *testing.T) *subcheckTestSession {
 	}
 
 	service := &Service{
+		m:           &metrics.Exporter{},
 		subSvc:      subSvc,
 		roomSvc:     roomSvc,
 		notifySvc:   notifySvc,
