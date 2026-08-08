@@ -20,6 +20,13 @@ const (
 	defaultReadStreamChanBufferSizeHigh                  = 48
 	defaultLiveStreamWriterBytesPoolSizeHigh             = 1024 * 1024
 	defaultSkipSmallFlushThreshold                       = 1 * 1024 * 1024
+	defaultDanmakuWriterBufferSize                       = 256 * 1024 // 256KB: absorb busy-room bursts without mid-interval flush
+	defaultDanmakuWriterMinPeriodicFlushBytes            = 16 * 1024  // skip tiny periodic flushes that contend with video I/O
+	defaultDanmakuWriterFlushPeriodSecs                  = 15
+	defaultDanmakuWriterSyncPeriodSecs                   = 0 // Disable periodic sync to reduce SD card wear; data syncs only on Close()
+	defaultDanmakuChanBufferSize                         = 256
+	defaultDanmakuBytesPoolSize                          = 4 * 1024 // 4KB per danmaku fragment buffer
+	defaultDanmakuOverflowPolicy                         = "drop"
 )
 
 // for global readonly access
@@ -137,6 +144,61 @@ func (g *GlobalReadOnly) DropFilePageCache() bool {
 	return g.config.dropFilePageCache
 }
 
+func (g *GlobalReadOnly) DanmakuWriterBufferSize() int {
+	if g.config.danmakuWriterBufferSize <= 0 {
+		return defaultDanmakuWriterBufferSize
+	}
+	return g.config.danmakuWriterBufferSize
+}
+
+func (g *GlobalReadOnly) DanmakuWriterMinPeriodicFlushBytes() int {
+	if g.config.danmakuWriterMinPeriodicFlushBytes <= 0 {
+		return defaultDanmakuWriterMinPeriodicFlushBytes
+	}
+	return g.config.danmakuWriterMinPeriodicFlushBytes
+}
+
+func (g *GlobalReadOnly) DanmakuWriterFlushPeriodSecs() int {
+	if g.config.danmakuWriterFlushPeriod <= 0 {
+		return defaultDanmakuWriterFlushPeriodSecs
+	}
+	return g.config.danmakuWriterFlushPeriod
+}
+
+// DanmakuOverflowPolicy returns how the per-room message channel behaves when
+// full: "drop" (default) or "block".
+func (g *GlobalReadOnly) DanmakuOverflowPolicy() string {
+	switch g.config.DanmakuOverflowPolicy {
+	case "block":
+		return "block"
+	case "drop":
+		return "drop"
+	default:
+		return defaultDanmakuOverflowPolicy
+	}
+}
+
+func (g *GlobalReadOnly) DanmakuWriterSyncPeriodSecs() int {
+	if g.config.danmakuWriterSyncPeriod < 0 {
+		return defaultDanmakuWriterSyncPeriodSecs
+	}
+	return g.config.danmakuWriterSyncPeriod
+}
+
+func (g *GlobalReadOnly) DanmakuChanBufferSize() int {
+	if g.config.danmakuChanBufferSize <= 0 {
+		return defaultDanmakuChanBufferSize
+	}
+	return g.config.danmakuChanBufferSize
+}
+
+func (g *GlobalReadOnly) DanmakuBytesPoolSize() int {
+	if g.config.danmakuBytesPoolSize <= 0 {
+		return defaultDanmakuBytesPoolSize
+	}
+	return g.config.danmakuBytesPoolSize
+}
+
 func (g *GlobalReadOnly) RestAuthEnabled() bool {
 	return g.config.Username != "" && g.config.PasswordHash != ""
 }
@@ -206,6 +268,16 @@ func (g *GlobalReadOnly) Validate() error {
 	default:
 		return fmt.Errorf("配置无效：RECORDING_RECOVERY_DURATION 仅支持 preserve、reset，当前值：%s", g.config.RecordingRecoveryDuration)
 	}
+	switch g.config.DanmakuOutputFormat {
+	case "jsonl", "xml":
+	default:
+		return fmt.Errorf("配置无效：DANMAKU_OUTPUT_FORMAT 仅支持 jsonl、xml，当前值：%s", g.config.DanmakuOutputFormat)
+	}
+	switch g.config.DanmakuOverflowPolicy {
+	case "", "drop", "block":
+	default:
+		return fmt.Errorf("配置无效：DANMAKU_OVERFLOW_POLICY 仅支持 drop、block，当前值：%s", g.config.DanmakuOverflowPolicy)
+	}
 	if g.config.CloudConvertCheckIntervalSecs <= 0 {
 		logger.Warnf("CLOUDCONVERT_CHECK_INTERVAL_SECS 无效（%d），使用默认值 %d 秒", g.config.CloudConvertCheckIntervalSecs, defaultCloudConvertCheckIntervalSecs)
 	}
@@ -252,6 +324,24 @@ func (g *GlobalReadOnly) Validate() error {
 	if g.config.liveStreamWriterBytesPoolSizeHigh <= 0 {
 		logger.Warnf("LIVE_STREAM_WRITER_BYTES_POOL_SIZE_HIGH 无效（%d），使用默认值 %d 字节", g.config.liveStreamWriterBytesPoolSizeHigh, defaultLiveStreamWriterBytesPoolSizeHigh)
 	}
+	if g.config.danmakuWriterBufferSize <= 0 {
+		logger.Warnf("DANMAKU_WRITER_BUFFER_SIZE 无效（%d），使用默认值 %d 字节", g.config.danmakuWriterBufferSize, defaultDanmakuWriterBufferSize)
+	}
+	if g.config.danmakuWriterMinPeriodicFlushBytes <= 0 {
+		logger.Warnf("DANMAKU_WRITER_MIN_PERIODIC_FLUSH_BYTES 无效（%d），使用默认值 %d 字节", g.config.danmakuWriterMinPeriodicFlushBytes, defaultDanmakuWriterMinPeriodicFlushBytes)
+	}
+	if g.config.danmakuWriterFlushPeriod <= 0 {
+		logger.Warnf("DANMAKU_WRITER_FLUSH_PERIOD_SECS 无效（%d），使用默认值 %d 秒", g.config.danmakuWriterFlushPeriod, defaultDanmakuWriterFlushPeriodSecs)
+	}
+	if g.config.danmakuWriterSyncPeriod < 0 {
+		logger.Warnf("DANMAKU_WRITER_SYNC_PERIOD_SECS 无效（%d），使用默认值 %d 秒", g.config.danmakuWriterSyncPeriod, defaultDanmakuWriterSyncPeriodSecs)
+	}
+	if g.config.danmakuChanBufferSize <= 0 {
+		logger.Warnf("DANMAKU_CHAN_BUFFER_SIZE 无效（%d），使用默认值 %d", g.config.danmakuChanBufferSize, defaultDanmakuChanBufferSize)
+	}
+	if g.config.danmakuBytesPoolSize <= 0 {
+		logger.Warnf("DANMAKU_BYTES_POOL_SIZE 无效（%d），使用默认值 %d 字节", g.config.danmakuBytesPoolSize, defaultDanmakuBytesPoolSize)
+	}
 	// Reject protocol-mismatch configs between FRP backend mode and Fiber listener mode.
 	if g.config.ServerCrt != "" && g.config.ServerKey != "" && g.config.FRPEnabled && !g.config.FRPHttps {
 		return fmt.Errorf("配置无效：SERVER_CRT 和 SERVER_KEY 启用仅 HTTPS 服务器，但 FRP_ENABLED=true 且 FRP_HTTPS=false 会将 FRP 后端配置为 HTTP；协议不匹配会导致 FRP 失败。请设置 FRP_HTTPS=true，或禁用 HTTPS 证书（SERVER_CRT/SERVER_KEY），或禁用 FRP")
@@ -268,4 +358,10 @@ func NewGlobalReadOnlyForTest(dropFilePageCache bool, liveStreamWriterColdCacheR
 		dropFilePageCache:                      dropFilePageCache,
 		liveStreamWriterColdCacheReleasePeriod: liveStreamWriterColdCacheReleaseSecs,
 	}}
+}
+
+// NewGlobalReadOnlyWithDanmakuOverflowForTest builds read-only config with a
+// specific DANMAKU_OVERFLOW_POLICY for unit tests.
+func NewGlobalReadOnlyWithDanmakuOverflowForTest(policy string) *GlobalReadOnly {
+	return &GlobalReadOnly{config: &Config{DanmakuOverflowPolicy: policy}}
 }

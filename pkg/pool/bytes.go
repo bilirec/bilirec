@@ -35,3 +35,22 @@ func (p *BytesPool) GetBytes() []byte {
 func (p *BytesPool) PutBytes(buf []byte) {
 	p.slot.put(buf)
 }
+
+// GetSized returns a buffer that can hold size bytes. Requests up to the
+// configured fixed size reuse the pool; larger requests fall back to a
+// one-off allocation.
+func (p *BytesPool) GetSized(size int) []byte {
+	if size <= 0 {
+		return []byte{}
+	}
+	if size <= p.BufferSize {
+		return p.GetBytes()[:size]
+	}
+	return make([]byte, size)
+}
+
+// Put returns a buffer obtained from GetSized to the pool when it belongs to
+// this fixed-size pool. Oversized one-off allocations are ignored.
+func (p *BytesPool) Put(buf []byte) {
+	p.PutBytes(buf)
+}

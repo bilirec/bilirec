@@ -13,6 +13,13 @@ const (
 	defaultBucketCount = 5
 )
 
+// SizedBytesPool is the common interface used by buffered writers that need
+// variable-sized reusable byte slices.
+type SizedBytesPool interface {
+	GetSized(size int) []byte
+	Put(buf []byte)
+}
+
 type BucketedBytesPool struct {
 	bucketSizes []int
 	slots       []*boundablePool[[]byte]

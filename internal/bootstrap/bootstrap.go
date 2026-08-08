@@ -16,6 +16,7 @@ import (
 	"github.com/bilirec/bilirec/internal/modules/metrics"
 	"github.com/bilirec/bilirec/internal/modules/rest"
 	co "github.com/bilirec/bilirec/internal/services/convert"
+	dm "github.com/bilirec/bilirec/internal/services/danmaku"
 	ex "github.com/bilirec/bilirec/internal/services/expose"
 	fi "github.com/bilirec/bilirec/internal/services/file"
 	ja "github.com/bilirec/bilirec/internal/services/janitor"
@@ -43,6 +44,7 @@ func MainModule() fx.Option {
 
 		fx.Provide(pa.NewService),
 		fx.Provide(co.NewService),
+		fx.Provide(dm.NewService),
 		fx.Provide(st.NewService),
 		fx.Provide(re.NewService),
 		fx.Provide(ro.NewService),

@@ -24,6 +24,7 @@ import (
 	"github.com/bilirec/bilirec/internal/modules/config"
 	"github.com/bilirec/bilirec/internal/modules/metrics"
 	"github.com/bilirec/bilirec/internal/services/convert"
+	"github.com/bilirec/bilirec/internal/services/danmaku"
 	"github.com/bilirec/bilirec/internal/services/notify"
 	"github.com/bilirec/bilirec/internal/services/path"
 	"github.com/bilirec/bilirec/internal/services/recorder"
@@ -59,6 +60,7 @@ type recorderTestSession struct {
 	app      *fxtest.App
 	Recorder *recorder.Service
 	Room     *room.Service
+	Danmaku  *danmaku.Service
 	Monitor  *recorderTestMonitor
 }
 
@@ -68,6 +70,7 @@ func newRecorderTestSession(t *testing.T) *recorderTestSession {
 	monitor := newRecorderTestMonitor(t)
 	var recorderService *recorder.Service
 	var roomService *room.Service
+	var danmakuService *danmaku.Service
 
 	app := fxtest.New(t,
 		config.Module,
@@ -78,8 +81,9 @@ func newRecorderTestSession(t *testing.T) *recorderTestSession {
 		fx.Provide(room.NewService),
 		fx.Provide(convert.NewService),
 		fx.Provide(notify.NewService),
+		fx.Provide(danmaku.NewService),
 		fx.Provide(recorder.NewService),
-		fx.Populate(&recorderService, &roomService),
+		fx.Populate(&recorderService, &roomService, &danmakuService),
 	)
 	app.RequireStart()
 
@@ -88,6 +92,7 @@ func newRecorderTestSession(t *testing.T) *recorderTestSession {
 		app:      app,
 		Recorder: recorderService,
 		Room:     roomService,
+		Danmaku:  danmakuService,
 		Monitor:  monitor,
 	}
 	t.Cleanup(sess.close)

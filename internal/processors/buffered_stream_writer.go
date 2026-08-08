@@ -79,17 +79,17 @@ type BufferedStreamWriterProcessor struct {
 	logger                  *logrus.Entry
 	locker                  tryLocker
 
-	dataCh       chan []byte
-	stopCh       chan struct{} // Signal to stop periodicIOWorker
-	wait         sync.WaitGroup
-	bytesWritten int64
+	dataCh          chan []byte
+	stopCh          chan struct{} // Signal to stop periodicIOWorker
+	wait            sync.WaitGroup
+	bytesWritten    int64
 	releasedThrough int64
 	// bufferedBytes mirrors writer.Buffered() for cross-goroutine reads (e.g. periodic ready).
 	bufferedBytes atomic.Int64
 
 	// bytesPool is used to reduce allocations when copying incoming data.
 	// When nil, fallback to direct allocation via make().
-	bytesPool     *pool.BucketedBytesPool
+	bytesPool     pool.SizedBytesPool
 	pendingChunks [][]byte
 	pendingBytes  int
 
@@ -130,7 +130,7 @@ func NewBufferedStreamWriter(path string, opts ...BufferedStreamWriterOptions) *
 		processor.bytesPool = pool.NewBucketedBytesPool(defaultChanBufferSize * 1024)
 	}
 	if processor.minPeriodicFlushBytes <= 0 {
-		processor.minPeriodicFlushBytes = max(processor.bufferSize / 4, 64 * 1024)
+		processor.minPeriodicFlushBytes = max(processor.bufferSize/4, 64*1024)
 	}
 	processor.locker = utils.TernaryFunc(
 		processor.sequentialWrite,
@@ -172,15 +172,15 @@ func (w *BufferedStreamWriterProcessor) Open(ctx context.Context, log *logrus.En
 	}
 
 	// Start the periodic writer goroutine.
-	w.wait.Add(1)
-	go w.writePeriodically()
+	w.wait.Go(w.writePeriodically)
 
 	// If periodic fsync or cold-cache release is enabled, start the I/O worker goroutine.
 	periodicMode, periodicPeriod := w.periodicIOConfig()
 	if periodicMode != periodicIODisabled {
 		w.stopCh = make(chan struct{})
-		w.wait.Add(1)
-		go w.periodicIOWorker(periodicMode, periodicPeriod)
+		w.wait.Go(func() {
+			w.periodicIOWorker(periodicMode, periodicPeriod)
+		})
 	}
 
 	return nil
@@ -290,7 +290,6 @@ func (w *BufferedStreamWriterProcessor) Close() error {
 // When dataCh is closed by Close(), it drains any remaining queued data before returning
 // so Close can perform a final flush+sync safely.
 func (w *BufferedStreamWriterProcessor) writePeriodically() {
-	defer w.wait.Done()
 	if w.sequentialWrite && w.periodicSignalCh != nil {
 		w.writePeriodicallyCoordinated()
 		return
@@ -449,7 +448,6 @@ func (w *BufferedStreamWriterProcessor) createFileAndWriter() error {
 // goroutine to avoid blocking the main writer loop on slow I/O.
 func (w *BufferedStreamWriterProcessor) periodicIOWorker(mode periodicIOMode, period time.Duration) {
 	ticker := time.NewTicker(period)
-	defer w.wait.Done()
 	defer ticker.Stop()
 
 	for {
@@ -605,13 +603,13 @@ func WithChanBufferSize(size int) BufferedStreamWriterOptions {
 	}
 }
 
-// WithBytesPool configures a bucketed bytes pool to reuse buffers during copying,
-// reducing GC pressure. Buckets are typically computed from
-// LIVE_STREAM_WRITER_BYTES_POOL_SIZE and include several nearby sizes.
+// WithBytesPool configures a sized byte pool to reuse buffers during copying,
+// reducing GC pressure. It accepts both the normal bucketed pool and the
+// fixed-size pool used by lightweight writers such as danmaku recording.
 //
 //	pool := pool.NewBucketedBytesPool(512 * 1024)
 //	writer := NewBufferedStreamWriter(path, WithBytesPool(pool))
-func WithBytesPool(bp *pool.BucketedBytesPool) BufferedStreamWriterOptions {
+func WithBytesPool(bp pool.SizedBytesPool) BufferedStreamWriterOptions {
 	return func(p *BufferedStreamWriterProcessor) {
 		p.bytesPool = bp
 	}
