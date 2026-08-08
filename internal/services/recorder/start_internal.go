@@ -127,7 +127,7 @@ func (r *Service) internalStart(p internalStartParams) error {
 			return err
 		}
 		info.chunkPool = chunkPool
-		info.SetStream(streamInfo.Qn, streamInfo.IsAudioOnly)
+		info.SetStream(streamInfo.Qn, streamInfo.IsAudioOnly, streamInfo.Format)
 
 		return r.prepare(p.roomId, ch, strategy, info.ctx, info, p.mode == startModeUser)
 	}

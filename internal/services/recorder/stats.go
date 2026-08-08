@@ -14,8 +14,9 @@ type Stats struct {
 	StartTime      int64        `json:"start_time"`
 	ElapsedSeconds int64        `json:"elapsed_seconds"`
 	OutputPath     string       `json:"output_path"`
-	ActualQn       int          `json:"actual_qn"`
-	IsAudioOnly    bool         `json:"is_audio_only"`
+	ActualQn            int    `json:"actual_qn"`
+	ActualStreamFormat string `json:"actual_stream_format,omitempty"`
+	IsAudioOnly         bool   `json:"is_audio_only"`
 	RoomTitle      string       `json:"room_title"`
 }
 
@@ -61,8 +62,9 @@ func (r *Service) GetStats(roomId int) (*Stats, bool) {
 		StartTime:      info.startTime.Unix(),
 		ElapsedSeconds: int64(time.Since(info.startTime).Seconds()),
 		OutputPath:     info.OutputPath(),
-		ActualQn:       info.ActualQn(),
-		IsAudioOnly:    info.IsAudioOnly(),
+		ActualQn:            info.ActualQn(),
+		ActualStreamFormat: info.ActualStreamFormat(),
+		IsAudioOnly:         info.IsAudioOnly(),
 		RoomTitle:      roomTitle,
 	}, true
 }
