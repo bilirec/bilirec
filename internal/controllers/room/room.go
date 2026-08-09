@@ -26,6 +26,7 @@ func NewController(app *fiber.App, roomSvc *room.Service, subSvc *subscribe.Serv
 	}
 	room := app.Group("/room")
 	room.Get("/:roomID/info", rc.getRoomInfo)
+	room.Get("/:roomID/resolve", rc.resolveRoomID)
 	room.Post("/infos", rc.getRoomInfos)
 	room.Get("/:roomID/live", rc.getLiveStatus)
 	room.Post("/lives", rc.getLiveStatuses)
@@ -69,6 +70,40 @@ func (r *Controller) getRoomInfo(ctx fiber.Ctx) error {
 	}
 
 	return ctx.JSON(res)
+}
+
+// @Summary Resolve room ID
+// @Description Resolve a short room ID to the real room_id (long ID). Long IDs are returned unchanged.
+// @Tags room
+// @Security BearerAuth
+// @Accept json
+// @Produce json
+// @Param roomID path int true "Room ID (short or long)"
+// @Success 200 {object} ResolveRoomIDResponse "Resolved room IDs"
+// @Failure 400 {string} string "Invalid room ID"
+// @Failure 404 {string} string "Room not found"
+// @Failure 500 {string} string "Internal server error"
+// @Router /room/{roomID}/resolve [get]
+func (r *Controller) resolveRoomID(ctx fiber.Ctx) error {
+	roomId, err := strconv.Atoi(ctx.Params("roomID"))
+	if err != nil {
+		logger.Warnf("无法将 roomId 解析为整数：%v", err)
+		return fiber.NewError(fiber.StatusBadRequest, "无效的房间 ID")
+	}
+	info, err := r.roomSvc.GetLiveRoomInfo(roomId)
+	if err != nil {
+		logger.Errorf("解析房间 %d 失败：%v", roomId, err)
+		return utils.Ternary(
+			bilibili.IsErrRoomNotFound(err),
+			fiber.NewError(fiber.StatusNotFound, "房间不存在"),
+			fiber.ErrInternalServerError,
+		)
+	}
+	return ctx.JSON(ResolveRoomIDResponse{
+		QueryID: roomId,
+		RoomID:  int(info.RoomID),
+		ShortID: int(info.ShortID),
+	})
 }
 
 // @Summary Get multiple room informations

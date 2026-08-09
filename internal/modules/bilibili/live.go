@@ -102,12 +102,30 @@ func decodeLiveRoomInfos(res *resty.Response) (map[string]*LiveRoomInfoDetail, e
 	return resp.Data.ByRoomIDs, nil
 }
 
+// FindRoomInfo resolves a query that may be a real room_id or a short_id.
+// getRoomBaseInfo keys by_room_ids by the real room_id even when queried by short_id.
+func FindRoomInfo(infos map[string]*LiveRoomInfoDetail, queryID int) (*LiveRoomInfoDetail, bool) {
+	if info, ok := infos[strconv.Itoa(queryID)]; ok && info != nil {
+		return info, true
+	}
+	q := int64(queryID)
+	for _, info := range infos {
+		if info == nil {
+			continue
+		}
+		if info.RoomID == q || (info.ShortID > 0 && info.ShortID == q) {
+			return info, true
+		}
+	}
+	return nil, false
+}
+
 func (c *Client) GetLiveRoomInfo(roomID int) (*LiveRoomInfoDetail, error) {
 	infos, err := c.GetLiveRoomInfos(roomID)
 	if err != nil {
 		return nil, err
 	}
-	info, ok := infos[strconv.Itoa(roomID)]
+	info, ok := FindRoomInfo(infos, roomID)
 	if !ok {
 		return nil, ErrRoomNotFound
 	}

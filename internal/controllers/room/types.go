@@ -5,6 +5,12 @@ type LiveInfo struct {
 	IsLive bool `json:"is_live"`
 }
 
+type ResolveRoomIDResponse struct {
+	QueryID int `json:"query_id"`
+	RoomID  int `json:"room_id"`
+	ShortID int `json:"short_id"`
+}
+
 type BatchRoomIDsRequest struct {
 	RoomIDs []int `json:"roomIDs"`
 }
