@@ -45,6 +45,7 @@ type Client struct {
 	liveHlsPlaylistClient *resty.Client
 	hlsSegmentClientOnce  sync.Once
 	liveHlsSegmentClient  *resty.Client
+	danmakuOnce           sync.Once
 
 	// Auth session management for controller mode
 	qrcodeHolding atomic.Bool

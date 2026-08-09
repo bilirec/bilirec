@@ -11,9 +11,10 @@ import (
 type RoomConfig struct {
 	AutoRecord            bool
 	Notify                bool
-	RecordDurationMinutes int    // 0 = system default, -1 = unlimited, >0 = custom minutes
-	Qn                    int    // 0 = backend default (原画); see bilibili.Quality
-	OnlyAudio             bool   // request audio-only stream when starting recording
+	RecordDurationMinutes int      // 0 = system default, -1 = unlimited, >0 = custom minutes
+	Qn                    int      // 0 = backend default (原画); see bilibili.Quality
+	OnlyAudio             bool     // request audio-only stream when starting recording
+	RecordDanmaku         bool     // record live chat sidecar alongside video when starting recording
 	StreamProfiles        []string // empty/nil = auto (all formats); allow-list of http-flv|hls-ts|hls-fmp4
 }
 

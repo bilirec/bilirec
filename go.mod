@@ -5,7 +5,10 @@ go 1.26.5
 require (
 	github.com/CuteReimu/bilibili/v2 v2.5.1
 	github.com/SherClockHolmes/webpush-go v1.4.0
+	github.com/VictoriaMetrics/metrics v1.44.0
+	github.com/andybalholm/brotli v1.2.2
 	github.com/fatedier/frp v0.68.1
+	github.com/gobwas/ws v1.4.0
 	github.com/gofiber/contrib/v3/jwt v1.0.0-rc.1
 	github.com/gofiber/fiber/v3 v3.3.0
 	github.com/grafov/m3u8 v0.12.1
@@ -16,6 +19,7 @@ require (
 	github.com/stretchr/testify v1.11.1
 	github.com/swaggo/swag v1.16.6
 	github.com/tcnksm/go-latest v0.0.0-20170313132115-e3007ae9052e
+	github.com/tidwall/gjson v1.19.0
 	go.etcd.io/bbolt v1.4.3
 	golang.org/x/text v0.37.0
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1
@@ -25,8 +29,6 @@ require (
 	github.com/Azure/go-ntlmssp v0.1.0 // indirect
 	github.com/KyleBanks/depth v1.2.1 // indirect
 	github.com/MicahParks/keyfunc/v2 v2.1.0 // indirect
-	github.com/VictoriaMetrics/metrics v1.44.0 // indirect
-	github.com/andybalholm/brotli v1.2.1 // indirect
 	github.com/armon/go-socks5 v0.0.0-20160902184237-e75332964ef5 // indirect
 	github.com/asaskevich/govalidator v0.0.0-20230301143203-a9d515a09cc2 // indirect
 	github.com/coreos/go-oidc/v3 v3.14.1 // indirect
@@ -54,6 +56,8 @@ require (
 	github.com/go-openapi/swag/yamlutils v0.25.1 // indirect
 	github.com/go-openapi/validate v0.25.0 // indirect
 	github.com/go-viper/mapstructure/v2 v2.4.0 // indirect
+	github.com/gobwas/httphead v0.1.0 // indirect
+	github.com/gobwas/pool v0.2.1 // indirect
 	github.com/gofiber/schema v1.7.1 // indirect
 	github.com/gofiber/utils/v2 v2.0.6 // indirect
 	github.com/golang/snappy v0.0.4 // indirect
@@ -85,6 +89,8 @@ require (
 	github.com/spf13/pflag v1.0.6 // indirect
 	github.com/templexxx/cpu v0.1.1 // indirect
 	github.com/templexxx/xorsimd v0.4.3 // indirect
+	github.com/tidwall/match v1.1.1 // indirect
+	github.com/tidwall/pretty v1.2.0 // indirect
 	github.com/tinylib/msgp v1.6.4 // indirect
 	github.com/tjfoc/gmsm v1.4.1 // indirect
 	github.com/tklauser/go-sysconf v0.3.16 // indirect

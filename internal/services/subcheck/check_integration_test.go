@@ -12,6 +12,7 @@ import (
 	"github.com/bilirec/bilirec/internal/modules/config"
 	"github.com/bilirec/bilirec/internal/modules/metrics"
 	"github.com/bilirec/bilirec/internal/services/convert"
+	"github.com/bilirec/bilirec/internal/services/danmaku"
 	"github.com/bilirec/bilirec/internal/services/notify"
 	"github.com/bilirec/bilirec/internal/services/path"
 	"github.com/bilirec/bilirec/internal/services/recorder"
@@ -105,6 +106,7 @@ func newSubcheckIntegrationSession(t *testing.T) *subcheckIntegrationSession {
 		fx.Provide(room.NewService),
 		fx.Provide(subscribe.NewService),
 		fx.Provide(notify.NewService),
+		fx.Provide(danmaku.NewService),
 		fx.Provide(recorder.NewService),
 		fx.Provide(NewService),
 		fx.Populate(&roomSvc, &subSvc, &recSvc, &subcheckSvc),

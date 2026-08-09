@@ -70,7 +70,40 @@ func (r *Service) GetStats(roomId int) (*Stats, bool) {
 }
 
 func (r *Service) IsRecording(path string) bool {
-	return r.writingFiles.Contains(filepath.Base(path))
+	base := filepath.Base(path)
+	if r.writingFiles.Contains(base) {
+		return true
+	}
+	if !isDanmakuSidecarExt(filepath.Ext(base)) {
+		return false
+	}
+	queryStem := recordingFileStem(base)
+	if queryStem == "" {
+		return false
+	}
+	for _, active := range r.writingFiles.ToSlice() {
+		if recordingFileStem(active) == queryStem {
+			return true
+		}
+	}
+	return false
+}
+
+func isDanmakuSidecarExt(ext string) bool {
+	switch strings.ToLower(ext) {
+	case ".jsonl", ".xml":
+		return true
+	default:
+		return false
+	}
+}
+
+func recordingFileStem(name string) string {
+	ext := filepath.Ext(name)
+	if ext == "" {
+		return ""
+	}
+	return strings.TrimSuffix(name, ext)
 }
 
 func (r *Service) GetStatuses(roomIds []int) map[string]RecordStatus {

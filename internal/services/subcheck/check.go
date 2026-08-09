@@ -255,6 +255,9 @@ func (s *Service) tryStartShardAutoRecordRooms(shardIndex, shardCount int) {
 				if len(streamOptions) > 0 {
 					autoRecordArgs = append(autoRecordArgs, recorder.WithStreamOptions(streamOptions...))
 				}
+				if cfg.RecordDanmaku {
+					autoRecordArgs = append(autoRecordArgs, recorder.WithRecordDanmaku(true))
+				}
 
 				err := s.recSvc.Start(roomID, autoRecordArgs...)
 				switch err {

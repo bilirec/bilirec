@@ -14,6 +14,7 @@ import (
 	"github.com/bilirec/bilirec/internal/modules/metrics"
 	rs "github.com/bilirec/bilirec/internal/record_strategies"
 	"github.com/bilirec/bilirec/internal/services/convert"
+	"github.com/bilirec/bilirec/internal/services/danmaku"
 	"github.com/bilirec/bilirec/internal/services/notify"
 	"github.com/bilirec/bilirec/internal/services/stream"
 	"github.com/bilirec/bilirec/pkg/ds"
@@ -26,6 +27,18 @@ import (
 )
 
 var logger = logrus.WithField("service", "recorder")
+
+func danmakuRoomMeta(room *bilibili.LiveRoomInfoDetail) danmaku.RoomMeta {
+	if room == nil {
+		return danmaku.RoomMeta{}
+	}
+	return danmaku.RoomMeta{
+		RoomID:  room.RoomID,
+		ShortID: room.ShortID,
+		Uname:   room.Uname,
+		Title:   room.Title,
+	}
+}
 
 type RecordStatus string
 
@@ -58,6 +71,7 @@ type Service struct {
 	st           *stream.Service
 	cv           *convert.Service
 	nt           *notify.Service
+	dm           *danmaku.Service
 	bilic        *bilibili.Client
 	m            *metrics.Exporter
 	recording    *xsync.Map[int, *Info]
@@ -75,6 +89,7 @@ func NewService(
 	st *stream.Service,
 	cv *convert.Service,
 	nt *notify.Service,
+	dm *danmaku.Service,
 	bilic *bilibili.Client,
 	cfg *config.Config,
 	m *metrics.Exporter,
@@ -86,6 +101,7 @@ func NewService(
 		st:           st,
 		cv:           cv,
 		nt:           nt,
+		dm:           dm,
 		bilic:        bilic,
 		m:            m,
 		recording:    xsync.NewMap[int, *Info](),
@@ -182,7 +198,7 @@ func (r *Service) prepare(roomId int, ch <-chan []byte, strategy rs.StreamRecord
 
 	r.wg.Go(func() {
 		defer r.recover(roomId)
-		err := r.rotate(roomId, ch, strategy, info, ctx)
+		err := r.rotate(roomId, ch, strategy, info, ctx, scheduleDurationCheck)
 		if err != nil {
 			logger.Errorf("轮转录制失败：%v", err)
 		}
@@ -194,7 +210,7 @@ func (r *Service) prepare(roomId int, ch <-chan []byte, strategy rs.StreamRecord
 	return nil
 }
 
-func (r *Service) rotate(roomId int, ch <-chan []byte, strategy rs.StreamRecordStrategy, info *Info, ctx context.Context) error {
+func (r *Service) rotate(roomId int, ch <-chan []byte, strategy rs.StreamRecordStrategy, info *Info, ctx context.Context, userStart bool) error {
 	l := logger.WithField("room", roomId)
 	defer strategy.Close()
 
@@ -208,6 +224,10 @@ func (r *Service) rotate(roomId int, ch <-chan []byte, strategy rs.StreamRecordS
 		}
 		info.SetOutputPath(outputPath)
 
+		// 弹幕录制与视频管道完全解耦：仅在此非阻塞地启动/轮换，
+		// 失败或缺失不影响录播。userStart 仅在使用者发起的首次分段为 true，
+		// recovery 的首个分段走 Rotate（原弹幕 session 随 info.ctx 存活）。
+		// segmentStart 尽量贴近 pipe.Open 之后、首包写入之前，减少开录缓冲造成的偏移。
 		pipe, err := strategy.BuildPipeline(ctx, outputPath, state)
 		if err != nil {
 			return fmt.Errorf("无法构建管道：%v", err)
@@ -219,6 +239,15 @@ func (r *Service) rotate(roomId int, ch <-chan []byte, strategy rs.StreamRecordS
 			return fmt.Errorf("无法打开管道：%v", err)
 		}
 		startCancel()
+
+		if info.startOptions.recordDanmaku {
+			segStart := time.Now()
+			if segment == 0 && userStart {
+				r.dm.StartSession(roomId, info.ctx, outputPath, danmakuRoomMeta(info.room), segStart)
+			} else {
+				r.dm.Rotate(roomId, outputPath, segStart)
+			}
+		}
 
 		r.writingFiles.Add(filepath.Base(info.OutputPath()))
 		r.pipes.Store(roomId, pipe)

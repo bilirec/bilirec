@@ -11,6 +11,7 @@ import (
 
 	"github.com/bilirec/bilirec/internal/modules/rest"
 	"github.com/bilirec/bilirec/internal/services/convert"
+	"github.com/bilirec/bilirec/internal/services/danmaku"
 	"github.com/bilirec/bilirec/internal/services/file"
 	"github.com/bilirec/bilirec/internal/services/path"
 	"github.com/bilirec/bilirec/internal/services/recorder"
@@ -44,6 +45,7 @@ func NewController(
 
 	files.Get("/browse/*", fc.listFiles)
 	files.Get("/playback/*", fc.playbackFile)
+	files.Get("/danmaku/*", fc.fetchDanmaku)
 	files.Get("/download/*", fc.downloadFile)
 	files.Get("/tempdownload", fc.presignedDownload)
 	files.Get("/disk-space", fc.getDiskSpace)
@@ -89,6 +91,58 @@ func (c *Controller) playbackFile(ctx fiber.Ctx) error {
 		"inline; filename=\""+filepath.Base(fullPath)+"\"",
 	)
 
+	return c.sendFileWithIdleCacheRelease(ctx, fullPath, fiber.SendFile{ByteRange: true})
+}
+
+// @Summary Fetch danmaku for a video
+// @Description Stream the danmaku sidecar paired with a video segment (.jsonl preferred, then .xml)
+// @Tags files
+// @Security BearerAuth
+// @Accept json
+// @Produce application/x-ndjson
+// @Produce application/xml
+// @Param path path string true "Video file path"
+// @Success 200 {file} binary "Danmaku stream"
+// @Failure 400 {string} string "Bad request"
+// @Failure 403 {string} string "Forbidden"
+// @Failure 404 {string} string "Not found"
+// @Router /files/danmaku/{path} [get]
+func (c *Controller) fetchDanmaku(ctx fiber.Ctx) error {
+	raw := ctx.Params("*", "/")
+	videoPath, err := url.PathUnescape(raw)
+	if err != nil {
+		return fiber.ErrBadRequest
+	}
+	if c.recorderSvc.IsRecording(videoPath) {
+		return fiber.NewError(fiber.StatusBadRequest, "无法获取正在录制分段的弹幕")
+	}
+
+	var fullPath string
+	for _, cand := range danmaku.SidecarCandidates(videoPath) {
+		fp, err := c.pathSvc.ValidatePath(cand)
+		if err != nil {
+			continue
+		}
+		st, err := os.Stat(fp)
+		if err != nil || st.IsDir() {
+			continue
+		}
+		fullPath = fp
+		break
+	}
+	if fullPath == "" {
+		return fiber.NewError(fiber.StatusNotFound, "弹幕文件不存在")
+	}
+
+	contentType := "application/x-ndjson; charset=utf-8"
+	if strings.EqualFold(filepath.Ext(fullPath), ".xml") {
+		contentType = "application/xml; charset=utf-8"
+	}
+	ctx.Set(fiber.HeaderContentType, contentType)
+	ctx.Set(
+		fiber.HeaderContentDisposition,
+		"inline; filename=\""+filepath.Base(fullPath)+"\"",
+	)
 	return c.sendFileWithIdleCacheRelease(ctx, fullPath, fiber.SendFile{ByteRange: true})
 }
 

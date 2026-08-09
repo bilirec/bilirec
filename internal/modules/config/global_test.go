@@ -6,6 +6,7 @@ func TestLiveStreamWriterColdCacheReleaseSecs_WithSync(t *testing.T) {
 	g := &GlobalReadOnly{config: &Config{
 		BilibiliLoginMode:                      "controller",
 		RecordingRecoveryDuration:              "preserve",
+		DanmakuOutputFormat:                    "jsonl",
 		liveStreamWriterSyncPeriod:             45,
 		liveStreamWriterColdCacheReleasePeriod: 60,
 	}}
@@ -62,6 +63,7 @@ func TestValidate_RecordingRecoveryDuration_Invalid(t *testing.T) {
 	g := &GlobalReadOnly{config: &Config{
 		BilibiliLoginMode:         "controller",
 		RecordingRecoveryDuration: "invalid",
+		DanmakuOutputFormat:       "jsonl",
 	}}
 	if err := g.Validate(); err == nil {
 		t.Fatal("expected Validate error for invalid RECORDING_RECOVERY_DURATION")
@@ -73,9 +75,73 @@ func TestValidate_RecordingRecoveryDuration_Valid(t *testing.T) {
 		g := &GlobalReadOnly{config: &Config{
 			BilibiliLoginMode:         "controller",
 			RecordingRecoveryDuration: mode,
+			DanmakuOutputFormat:       "jsonl",
 		}}
 		if err := g.Validate(); err != nil {
 			t.Fatalf("Validate(%q): %v", mode, err)
 		}
+	}
+}
+
+func TestValidate_DanmakuOutputFormat_Invalid(t *testing.T) {
+	g := &GlobalReadOnly{config: &Config{
+		BilibiliLoginMode:         "controller",
+		RecordingRecoveryDuration: "preserve",
+		DanmakuOutputFormat:       "yaml",
+	}}
+	if err := g.Validate(); err == nil {
+		t.Fatal("expected Validate error for invalid DANMAKU_OUTPUT_FORMAT")
+	}
+}
+
+func TestValidate_DanmakuOutputFormat_Valid(t *testing.T) {
+	for _, format := range []string{"jsonl", "xml"} {
+		g := &GlobalReadOnly{config: &Config{
+			BilibiliLoginMode:         "controller",
+			RecordingRecoveryDuration: "preserve",
+			DanmakuOutputFormat:       format,
+		}}
+		if err := g.Validate(); err != nil {
+			t.Fatalf("Validate(%q): %v", format, err)
+		}
+	}
+}
+
+func TestValidate_DanmakuOverflowPolicy_Invalid(t *testing.T) {
+	g := &GlobalReadOnly{config: &Config{
+		BilibiliLoginMode:         "controller",
+		RecordingRecoveryDuration: "preserve",
+		DanmakuOutputFormat:       "jsonl",
+		DanmakuOverflowPolicy:     "queue",
+	}}
+	if err := g.Validate(); err == nil {
+		t.Fatal("expected Validate error for invalid DANMAKU_OVERFLOW_POLICY")
+	}
+}
+
+func TestValidate_DanmakuOverflowPolicy_Valid(t *testing.T) {
+	for _, policy := range []string{"", "drop", "block"} {
+		g := &GlobalReadOnly{config: &Config{
+			BilibiliLoginMode:         "controller",
+			RecordingRecoveryDuration: "preserve",
+			DanmakuOutputFormat:       "jsonl",
+			DanmakuOverflowPolicy:     policy,
+		}}
+		if err := g.Validate(); err != nil {
+			t.Fatalf("Validate(%q): %v", policy, err)
+		}
+	}
+}
+
+func TestDanmakuOverflowPolicy_Default(t *testing.T) {
+	g := NewGlobalReadOnlyForTest(false, 0)
+	if got := g.DanmakuOverflowPolicy(); got != "drop" {
+		t.Fatalf("DanmakuOverflowPolicy() = %q, want drop", got)
+	}
+	if got := g.DanmakuWriterBufferSize(); got != 256*1024 {
+		t.Fatalf("DanmakuWriterBufferSize() = %d, want 262144", got)
+	}
+	if got := g.DanmakuWriterMinPeriodicFlushBytes(); got != 16*1024 {
+		t.Fatalf("DanmakuWriterMinPeriodicFlushBytes() = %d, want 16384", got)
 	}
 }

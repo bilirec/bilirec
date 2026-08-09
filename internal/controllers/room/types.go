@@ -25,6 +25,7 @@ type RoomConfigResponse struct {
 	RecordDurationMinutes int      `json:"record_duration_minutes"`
 	Qn                    int      `json:"qn"`
 	OnlyAudio             bool     `json:"only_audio"`
+	RecordDanmaku         bool     `json:"record_danmaku"`
 	StreamProfiles        []string `json:"stream_profiles"`
 }
 
@@ -34,5 +35,6 @@ type UpdateRoomConfigRequest struct {
 	RecordDurationMinutes int      `json:"record_duration_minutes"`
 	Qn                    int      `json:"qn"`
 	OnlyAudio             bool     `json:"only_audio"`
+	RecordDanmaku         bool     `json:"record_danmaku"`
 	StreamProfiles        []string `json:"stream_profiles"`
 }

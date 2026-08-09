@@ -10,6 +10,7 @@ type RecordStartOptions struct {
 	hasDuration   bool
 	duration      time.Duration
 	streamOptions []bilibili.GetStreamURLsOption
+	recordDanmaku bool
 }
 
 type RecordStartOption func(*RecordStartOptions)
@@ -29,6 +30,14 @@ func WithDuration(d time.Duration) RecordStartOption {
 func WithStreamOptions(opts ...bilibili.GetStreamURLsOption) RecordStartOption {
 	return func(o *RecordStartOptions) {
 		o.streamOptions = opts
+	}
+}
+
+// WithRecordDanmaku enables or disables live-chat sidecar recording for this start.
+// Default is false when the option is omitted.
+func WithRecordDanmaku(enabled bool) RecordStartOption {
+	return func(o *RecordStartOptions) {
+		o.recordDanmaku = enabled
 	}
 }
 

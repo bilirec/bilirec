@@ -41,6 +41,7 @@ func NewController(app *fiber.App, service *recorder.Service) *Controller {
 // @Param stream_profile query string false "Allowed stream profiles (comma-separated): http-flv | hls-ts | hls-fmp4; empty = all"
 // @Param qn query int false "Stream quality code: 80,150,250,400,10000,20000,30000"
 // @Param only_audio query bool false "Whether to request only audio stream"
+// @Param record_danmaku query bool false "Whether to record live chat sidecar alongside video"
 // @Success 200 "Recording started successfully"
 // @Failure 400 {string} string "Invalid room ID"
 // @Failure 403 {string} string "Forbidden"
@@ -94,6 +95,12 @@ func (r *Controller) startRecording(ctx fiber.Ctx) error {
 	}
 
 	startArgs = append(startArgs, recorder.WithStreamOptions(streamOptions...))
+
+	recordDanmakuRaw := strings.TrimSpace(strings.ToLower(fiber.Query(ctx, "record_danmaku", "false")))
+	if recordDanmaku, _ := strconv.ParseBool(recordDanmakuRaw); recordDanmaku {
+		startArgs = append(startArgs, recorder.WithRecordDanmaku(true))
+	}
+
 	err = r.service.Start(roomId, startArgs...)
 	if err != nil {
 		logger.Errorf("为房间 %d 开始录制失败：%v", roomId, err)

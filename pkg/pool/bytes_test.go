@@ -45,3 +45,19 @@ func TestBytesPool_PutRejectsWrongCap(t *testing.T) {
 		t.Fatalf("expected fresh allocation, got len=%d", len(got))
 	}
 }
+
+func TestBytesPool_GetSized(t *testing.T) {
+	p := NewBytesPool(1024)
+
+	small := p.GetSized(128)
+	if len(small) != 128 || cap(small) != 1024 {
+		t.Fatalf("unexpected small buffer: len=%d cap=%d", len(small), cap(small))
+	}
+	p.Put(small)
+
+	large := p.GetSized(2048)
+	if len(large) != 2048 || cap(large) != 2048 {
+		t.Fatalf("unexpected oversized buffer: len=%d cap=%d", len(large), cap(large))
+	}
+	p.Put(large)
+}

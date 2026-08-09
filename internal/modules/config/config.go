@@ -52,8 +52,19 @@ type Config struct {
 	ConvertToMp4             bool
 	DeleteSourceAfterConvert bool
 	NoConvertIfInvalid       bool
-	CloudConvertThreshold    int64
-	CloudConvertApiKey       string
+
+	// DanmakuOutputFormat selects the sidecar file format: jsonl or xml (default: jsonl).
+	// Whether to record danmaku is per start option / room config (RecordDanmaku),
+	// not a global switch; the bilibili danmaku protocol capability itself is always
+	// available for other consumers (e.g. future websocket-based subcheck).
+	DanmakuOutputFormat string
+	// DanmakuOverflowPolicy controls the per-room message channel when full:
+	// "drop" (default; never blocks the websocket) or "block" (wait for space;
+	// prefer completeness, but a stalled disk may stall the danmaku connection).
+	DanmakuOverflowPolicy string
+
+	CloudConvertThreshold int64
+	CloudConvertApiKey    string
 
 	PublicBaseUrl      string
 	FrontendURL        *url.URL
@@ -110,6 +121,14 @@ type Config struct {
 	skipSmallFlush                         bool
 	sequentialWrite                        bool
 	dropFilePageCache                      bool
+
+	// danmaku recording performances
+	danmakuWriterBufferSize            int
+	danmakuWriterMinPeriodicFlushBytes int
+	danmakuWriterFlushPeriod           int
+	danmakuWriterSyncPeriod            int
+	danmakuChanBufferSize              int
+	danmakuBytesPoolSize               int
 }
 
 var logger = logrus.WithField("module", "config")
@@ -183,6 +202,8 @@ func provider(lc fx.Lifecycle) (*Config, error) {
 		ConvertToMp4:                       os.Getenv("CONVERT_TO_MP4") == "true" || os.Getenv("CONVERT_FLV_TO_MP4") == "true",
 		NoConvertIfInvalid:                 os.Getenv("NO_CONVERT_IF_INVALID") == "true",
 		DeleteSourceAfterConvert:           os.Getenv("DELETE_SOURCE_AFTER_CONVERT") == "true" || os.Getenv("DELETE_FLV_AFTER_CONVERT") == "true",
+		DanmakuOutputFormat:                strings.ToLower(strings.TrimSpace(utils.EmptyOrElse(os.Getenv("DANMAKU_OUTPUT_FORMAT"), "jsonl"))),
+		DanmakuOverflowPolicy:              strings.ToLower(strings.TrimSpace(utils.EmptyOrElse(os.Getenv("DANMAKU_OVERFLOW_POLICY"), "drop"))),
 		FrontendURL:                        url,
 		PublicBaseUrl:                      utils.EmptyOrElse(os.Getenv("PUBLIC_BASE_URL"), utils.EmptyOrElse(os.Getenv("BACKEND_HOST"), "")),
 		WebPushSubscriber:                  utils.EmptyOrElse(os.Getenv("WEBPUSH_SUBSCRIBER"), "mailto:webpush@example.com"),
@@ -234,6 +255,14 @@ func provider(lc fx.Lifecycle) (*Config, error) {
 		skipSmallFlush:                         os.Getenv("SKIP_SMALL_FLUSH") != "false",                                                           // enabled by default; when true, SD-card protection mode is enabled
 		sequentialWrite:                        os.Getenv("SEQUENTIAL_WRITE") != "false",                                                           // enabled by default; set false to disable global flush serialization
 		dropFilePageCache:                      os.Getenv("DROP_FILE_PAGE_CACHE") != "false",
+
+		// danmaku recording performance configs (defaults tuned for Raspberry Pi 4B + SD card)
+		danmakuWriterBufferSize:            utils.MustAtoi(utils.EmptyOrElse(os.Getenv("DANMAKU_WRITER_BUFFER_SIZE"), "262144")),              // 256KB: absorb bursts; fewer mid-interval flushes on SD
+		danmakuWriterMinPeriodicFlushBytes: utils.MustAtoi(utils.EmptyOrElse(os.Getenv("DANMAKU_WRITER_MIN_PERIODIC_FLUSH_BYTES"), "16384")), // 16KB: skip tiny periodic flushes that contend with video
+		danmakuWriterFlushPeriod:           utils.MustAtoi(utils.EmptyOrElse(os.Getenv("DANMAKU_WRITER_FLUSH_PERIOD_SECS"), "15")),            // align with video flush period to reduce SD card flush frequency
+		danmakuWriterSyncPeriod:            utils.MustAtoi(utils.EmptyOrElse(os.Getenv("DANMAKU_WRITER_SYNC_PERIOD_SECS"), "0")),              // 0 = disabled; sync only on Close() to minimize SD card wear
+		danmakuChanBufferSize:              utils.MustAtoi(utils.EmptyOrElse(os.Getenv("DANMAKU_CHAN_BUFFER_SIZE"), "256")),                   // message slots per room; overflow policy decides drop vs block
+		danmakuBytesPoolSize:               utils.MustAtoi(utils.EmptyOrElse(os.Getenv("DANMAKU_BYTES_POOL_SIZE"), "4096")),                   // 4KB per fragment buffer
 	}
 
 	ReadOnly = &GlobalReadOnly{config: c}

@@ -300,6 +300,7 @@ func (r *Controller) getRoomConfig(ctx fiber.Ctx) error {
 		RecordDurationMinutes: cfg.RecordDurationMinutes,
 		Qn:                    cfg.Qn,
 		OnlyAudio:             cfg.OnlyAudio,
+		RecordDanmaku:         cfg.RecordDanmaku,
 		StreamProfiles:        cfg.StreamProfiles,
 	})
 }
@@ -343,6 +344,7 @@ func (r *Controller) updateRoomConfig(ctx fiber.Ctx) error {
 		RecordDurationMinutes: req.RecordDurationMinutes,
 		Qn:                    req.Qn,
 		OnlyAudio:             req.OnlyAudio,
+		RecordDanmaku:         req.RecordDanmaku,
 		StreamProfiles:        streamProfiles,
 	}); err != nil {
 		logger.Errorf("更新房间 %d 配置失败：%v", roomId, err)
@@ -359,6 +361,7 @@ func (r *Controller) updateRoomConfig(ctx fiber.Ctx) error {
 		RecordDurationMinutes: req.RecordDurationMinutes,
 		Qn:                    req.Qn,
 		OnlyAudio:             req.OnlyAudio,
+		RecordDanmaku:         req.RecordDanmaku,
 		StreamProfiles:        streamProfiles,
 	})
 }
