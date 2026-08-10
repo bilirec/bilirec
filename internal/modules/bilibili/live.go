@@ -87,6 +87,9 @@ func decodeLiveRoomInfos(res *resty.Response) (map[string]*LiveRoomInfoDetail, e
 		return nil, err
 	}
 	if resp.Code != 0 {
+		if resp.Code == 1 {
+			return nil, ErrRoomNotFound
+		}
 		return nil, &APIError{
 			HTTPStatus: res.StatusCode(),
 			Code:       resp.Code,
