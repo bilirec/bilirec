@@ -41,6 +41,7 @@ type session struct {
 
 	segmentStartNano atomic.Int64
 	dropped          atomic.Uint64
+	bytesWritten     atomic.Uint64
 
 	// writer state owned by writeLoop; nil between segments.
 	writer    *pipeline.Pipe[[]byte]
@@ -268,6 +269,8 @@ func (s *session) openSegment(req rotateRequest) {
 	if len(h) > 0 {
 		if _, err := s.writer.Process(s.writerCtx, h); err != nil {
 			logger.Errorf("房间 %d 写入弹幕文件头失败：%v", s.roomID, err)
+		} else {
+			s.bytesWritten.Add(uint64(len(h)))
 		}
 	}
 	s.svc.pool.PutBytes(h)
@@ -282,6 +285,8 @@ func (s *session) finalizeSegment() {
 	if len(f) > 0 {
 		if _, err := s.writer.Process(s.writerCtx, f); err != nil {
 			logger.Errorf("房间 %d 写入弹幕文件尾失败：%v", s.roomID, err)
+		} else {
+			s.bytesWritten.Add(uint64(len(f)))
 		}
 	}
 	s.svc.pool.PutBytes(f)
@@ -297,6 +302,8 @@ func (s *session) writeFragment(frag []byte) {
 	if s.writer != nil {
 		if _, err := s.writer.Process(s.writerCtx, frag); err != nil {
 			logger.Errorf("房间 %d 写入弹幕失败：%v", s.roomID, err)
+		} else {
+			s.bytesWritten.Add(uint64(len(frag)))
 		}
 	}
 	s.svc.pool.PutBytes(frag)

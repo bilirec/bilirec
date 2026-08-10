@@ -9,15 +9,17 @@ import (
 )
 
 type Stats struct {
-	BytesWritten   uint64       `json:"bytes_written"`
-	Status         RecordStatus `json:"status"`
-	StartTime      int64        `json:"start_time"`
-	ElapsedSeconds int64        `json:"elapsed_seconds"`
-	OutputPath     string       `json:"output_path"`
-	ActualQn            int    `json:"actual_qn"`
-	ActualStreamFormat string `json:"actual_stream_format,omitempty"`
-	IsAudioOnly         bool   `json:"is_audio_only"`
-	RoomTitle      string       `json:"room_title"`
+	BytesWritten        uint64       `json:"bytes_written"`
+	DanmakuBytesWritten uint64       `json:"danmaku_bytes_written"`
+	RecordDanmaku       bool         `json:"record_danmaku"`
+	Status              RecordStatus `json:"status"`
+	StartTime           int64        `json:"start_time"`
+	ElapsedSeconds      int64        `json:"elapsed_seconds"`
+	OutputPath          string       `json:"output_path"`
+	ActualQn            int          `json:"actual_qn"`
+	ActualStreamFormat  string       `json:"actual_stream_format,omitempty"`
+	IsAudioOnly         bool         `json:"is_audio_only"`
+	RoomTitle           string       `json:"room_title"`
 }
 
 func (r *Service) GetStatus(roomId int) RecordStatus {
@@ -57,15 +59,17 @@ func (r *Service) GetStats(roomId int) (*Stats, bool) {
 		roomTitle = info.room.Title
 	}
 	return &Stats{
-		BytesWritten:   info.bytesRead.Load(),
-		Status:         status,
-		StartTime:      info.startTime.Unix(),
-		ElapsedSeconds: int64(time.Since(info.startTime).Seconds()),
-		OutputPath:     info.OutputPath(),
+		BytesWritten:        info.bytesRead.Load(),
+		DanmakuBytesWritten: r.dm.GetBytesWritten(roomId),
+		RecordDanmaku:       info.startOptions.recordDanmaku,
+		Status:              status,
+		StartTime:           info.startTime.Unix(),
+		ElapsedSeconds:      int64(time.Since(info.startTime).Seconds()),
+		OutputPath:          info.OutputPath(),
 		ActualQn:            info.ActualQn(),
-		ActualStreamFormat: info.ActualStreamFormat(),
+		ActualStreamFormat:  info.ActualStreamFormat(),
 		IsAudioOnly:         info.IsAudioOnly(),
-		RoomTitle:      roomTitle,
+		RoomTitle:           roomTitle,
 	}, true
 }
 

@@ -88,6 +88,16 @@ func (s *Service) ActiveSessions() int {
 	return s.sessions.Size()
 }
 
+// GetBytesWritten returns the total encoded bytes accepted by the danmaku
+// writer for the room's current session. It returns zero when no session exists.
+func (s *Service) GetBytesWritten(roomID int) uint64 {
+	sess, ok := s.sessions.Load(roomID)
+	if !ok {
+		return 0
+	}
+	return sess.bytesWritten.Load()
+}
+
 // removeSession deletes the mapping only if it still points at sess.
 func (s *Service) removeSession(roomID int, sess *session) {
 	s.sessions.Compute(roomID, func(old *session, loaded bool) (*session, xsync.ComputeOp) {

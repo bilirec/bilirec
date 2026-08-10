@@ -161,7 +161,8 @@ func (r *Service) commitSession(
 		if r.cfg.RecordingRecoveryDuration == "reset" {
 			info.startTime = now
 		}
-		info.startOptions = snapshotStartOptions(p.opts)
+		// Recovery reuses the session's existing options. Keep them immutable
+		// after the session is published so concurrent stats reads stay safe.
 		txn.ConfirmWith(p.roomId, func() {
 			info.status.Store(recordingPtr)
 		})
