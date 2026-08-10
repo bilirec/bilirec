@@ -66,9 +66,9 @@ func (r *Service) GetStats(roomId int) (*Stats, bool) {
 		StartTime:           info.startTime.Unix(),
 		ElapsedSeconds:      int64(time.Since(info.startTime).Seconds()),
 		OutputPath:          info.OutputPath(),
-		ActualQn:            info.ActualQn(),
-		ActualStreamFormat:  info.ActualStreamFormat(),
-		IsAudioOnly:         info.IsAudioOnly(),
+		ActualQn:            int(info.actualQn.Load()),
+		ActualStreamFormat:  info.actualStreamFormat.LoadOr(""),
+		IsAudioOnly:         info.isAudioOnly.Load(),
 		RoomTitle:           roomTitle,
 	}, true
 }
