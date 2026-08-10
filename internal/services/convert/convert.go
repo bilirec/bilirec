@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sync"
 
 	"github.com/bilirec/bilirec/internal/modules/config"
@@ -107,6 +108,16 @@ func (s *Service) Enqueue(path, format string, deleteSource bool) (*TaskQueue, e
 	if err := s.checkAvailableManagers(); err != nil {
 		return nil, err
 	}
+	// Normalize to a canonical absolute path so the same file produces the
+	// same InputPath string regardless of source. The recorder builds paths
+	// with forward slashes via fmt.Sprintf while the path service uses
+	// filepath.Abs/Clean which yields OS-native separators; without this
+	// the IsInQueue dedup check fails to match them on Windows.
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return nil, err
+	}
+	path = absPath
 	fileInfo, err := os.Stat(path)
 	if err != nil {
 		return nil, err
@@ -134,8 +145,9 @@ func (s *Service) IsInQueue(fullPath string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
+	cleanFullPath := filepath.Clean(fullPath)
 	for _, q := range queues {
-		if q.InputPath == fullPath {
+		if filepath.Clean(q.InputPath) == cleanFullPath {
 			return true, nil
 		}
 	}
