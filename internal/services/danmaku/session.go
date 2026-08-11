@@ -14,6 +14,13 @@ import (
 	"github.com/bilirec/bilirec/pkg/pipeline"
 )
 
+const (
+	danmakuEventType   = "danmaku"
+	superChatEventType = "super_chat"
+	giftEventType      = "gift"
+	guardEventType     = "guard"
+)
+
 // rotateRequest asks the writer goroutine to finalize the current danmaku file
 // and start a new one paired with the next video segment.
 type rotateRequest struct {
@@ -93,12 +100,19 @@ func (s *session) supervise() {
 	defer close(s.msgCh)
 
 	bo := backoff.NewSequence(2*time.Second, 2*time.Second, 2*time.Second, 5*time.Second, 10*time.Second, 15*time.Second)
+	attempt := 0
 	for {
 		if s.ctx.Err() != nil {
 			return
 		}
+		s.svc.metrics.DanmakuConnectionAttempt(s.roomID)
+		if attempt > 0 {
+			s.svc.metrics.DanmakuReconnect(s.roomID)
+		}
+		attempt++
 		connectedAt := time.Now()
 		err := s.runOnce()
+		s.svc.metrics.DanmakuConnectionActive(s.roomID, false)
 		if s.ctx.Err() != nil {
 			return
 		}
@@ -131,6 +145,7 @@ func (s *session) runOnce() error {
 	client.HandleFunc("SEND_GIFT", s.handleGift)
 	client.HandleFunc("GUARD_BUY", s.handleGuard)
 
+	s.svc.metrics.DanmakuConnectionActive(s.roomID, true)
 	// Like BililiveRecorder, use the first candidate host; the reconnect loop
 	// refetches a fresh host list on every cycle.
 	return client.Run(s.ctx, info.HostList[0], info.Token)
@@ -139,32 +154,37 @@ func (s *session) runOnce() error {
 func (s *session) handleDanmaku(raw []byte) {
 	e, ok := parseDanmaku(raw)
 	if !ok {
+		s.svc.metrics.DanmakuParseError(s.roomID)
 		return
 	}
+	s.svc.metrics.DanmakuMessageReceived(s.roomID, danmakuEventType)
 	s.enqueue(func(buf []byte, ts string) []byte {
 		return s.encoder.AppendDanmaku(buf, e, ts)
-	})
+	}, danmakuEventType)
 }
 
 func (s *session) handleSuperChat(raw []byte) {
 	e := parseSuperChat(raw)
+	s.svc.metrics.DanmakuMessageReceived(s.roomID, superChatEventType)
 	s.enqueue(func(buf []byte, ts string) []byte {
 		return s.encoder.AppendSuperChat(buf, e, ts)
-	})
+	}, superChatEventType)
 }
 
 func (s *session) handleGift(raw []byte) {
 	e := parseGift(raw)
+	s.svc.metrics.DanmakuMessageReceived(s.roomID, giftEventType)
 	s.enqueue(func(buf []byte, ts string) []byte {
 		return s.encoder.AppendGift(buf, e, ts)
-	})
+	}, giftEventType)
 }
 
 func (s *session) handleGuard(raw []byte) {
 	e := parseGuard(raw)
+	s.svc.metrics.DanmakuMessageReceived(s.roomID, guardEventType)
 	s.enqueue(func(buf []byte, ts string) []byte {
 		return s.encoder.AppendGuard(buf, e, ts)
-	})
+	}, guardEventType)
 }
 
 type fragmentBuilder func(buf []byte, ts string) []byte
@@ -172,7 +192,7 @@ type fragmentBuilder func(buf []byte, ts string) []byte
 // enqueue builds a fragment into a pooled buffer and hands it to the writer
 // goroutine. With the default "drop" policy a full channel discards the
 // fragment; with "block" it waits until space is available or the session ends.
-func (s *session) enqueue(build fragmentBuilder) {
+func (s *session) enqueue(build fragmentBuilder, eventType string) {
 	buf := s.svc.pool.GetBytes()
 	frag := build(buf[:0], formatRelativeTS(s.segmentStart(), time.Now()))
 	if len(frag) == 0 {
@@ -190,6 +210,7 @@ func (s *session) enqueue(build fragmentBuilder) {
 		case s.msgCh <- frag:
 		default:
 			s.svc.pool.PutBytes(frag)
+			s.svc.metrics.DanmakuMessageDropped(s.roomID, eventType)
 			if dropped := s.dropped.Add(1); dropped == 1 || dropped%1000 == 0 {
 				logger.Warnf("房间 %d 弹幕写入通道已满，已累计丢弃 %d 条消息", s.roomID, dropped)
 			}
@@ -271,6 +292,7 @@ func (s *session) openSegment(req rotateRequest) {
 			logger.Errorf("房间 %d 写入弹幕文件头失败：%v", s.roomID, err)
 		} else {
 			s.bytesWritten.Add(uint64(len(h)))
+			s.svc.metrics.AddDanmakuBytes(s.roomID, len(h))
 		}
 	}
 	s.svc.pool.PutBytes(h)
@@ -287,6 +309,7 @@ func (s *session) finalizeSegment() {
 			logger.Errorf("房间 %d 写入弹幕文件尾失败：%v", s.roomID, err)
 		} else {
 			s.bytesWritten.Add(uint64(len(f)))
+			s.svc.metrics.AddDanmakuBytes(s.roomID, len(f))
 		}
 	}
 	s.svc.pool.PutBytes(f)
@@ -304,6 +327,7 @@ func (s *session) writeFragment(frag []byte) {
 			logger.Errorf("房间 %d 写入弹幕失败：%v", s.roomID, err)
 		} else {
 			s.bytesWritten.Add(uint64(len(frag)))
+			s.svc.metrics.AddDanmakuBytes(s.roomID, len(frag))
 		}
 	}
 	s.svc.pool.PutBytes(frag)

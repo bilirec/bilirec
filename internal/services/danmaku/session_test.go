@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/bilirec/bilirec/internal/modules/config"
+	"github.com/bilirec/bilirec/internal/modules/metrics"
 	"github.com/bilirec/bilirec/pkg/pool"
 	"github.com/puzpuzpuz/xsync/v4"
 )
@@ -28,6 +29,7 @@ func newTestService() *Service {
 	return &Service{
 		outputFormat: "jsonl",
 		sessions:     xsync.NewMap[int, *session](),
+		metrics:      &metrics.Exporter{},
 		pool:         pool.NewBytesPool(4096),
 	}
 }

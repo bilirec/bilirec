@@ -39,6 +39,18 @@ func TestExporterDisabledNoop(t *testing.T) {
 	e.SetLiveStatus(123, "uname", true)
 	e.LiveSessionDetected(123)
 	e.AddRecovery(123)
+	e.DanmakuSessionStarted(123)
+	e.DanmakuSessionStopped(123)
+	e.DanmakuConnectionAttempt(123)
+	e.DanmakuConnectionActive(123, true)
+	e.DanmakuConnectionActive(123, false)
+	e.DanmakuReconnect(123)
+	e.DanmakuMessageReceived(123, eventTypeDanmaku)
+	e.DanmakuMessageDropped(123, eventTypeDanmaku)
+	e.DanmakuParseError(123)
+	e.AddDanmakuBytes(123, 1)
+	e.DanmakuRotation(123)
+	e.DanmakuRotationDropped(123)
 	e.DeleteRoom(123)
 }
 
@@ -50,6 +62,16 @@ func TestExporterEnabled(t *testing.T) {
 	e.SetLiveStatus(123, "主播A", true)
 	e.LiveSessionDetected(123)
 	e.AddRecovery(123)
+	e.DanmakuSessionStarted(123)
+	e.DanmakuConnectionAttempt(123)
+	e.DanmakuConnectionActive(123, true)
+	e.DanmakuReconnect(123)
+	e.DanmakuMessageReceived(123, eventTypeDanmaku)
+	e.DanmakuMessageDropped(123, eventTypeSuperChat)
+	e.DanmakuParseError(123)
+	e.AddDanmakuBytes(123, 1024)
+	e.DanmakuRotation(123)
+	e.DanmakuRotationDropped(123)
 
 	out := e.scrape()
 	for _, want := range []string{
@@ -61,6 +83,17 @@ func TestExporterEnabled(t *testing.T) {
 		`bilirec_room_stream_recovery_total{room_id="123"} 1`,
 		`bilirec_room_info{room_id="123",uname="主播A"} 1`,
 		`bilirec_active_recordings 1`,
+		`bilirec_danmaku_recording_active{room_id="123"} 1`,
+		`bilirec_danmaku_sessions_total{room_id="123"} 1`,
+		`bilirec_danmaku_connection_active{room_id="123"} 1`,
+		`bilirec_danmaku_connection_attempts_total{room_id="123"} 1`,
+		`bilirec_danmaku_reconnects_total{room_id="123"} 1`,
+		`bilirec_danmaku_messages_total{room_id="123",event_type="danmaku"} 1`,
+		`bilirec_danmaku_messages_dropped_total{room_id="123",event_type="super_chat"} 1`,
+		`bilirec_danmaku_parse_errors_total{room_id="123"} 1`,
+		`bilirec_danmaku_bytes_total{room_id="123"} 1024`,
+		`bilirec_danmaku_rotations_total{room_id="123"} 1`,
+		`bilirec_danmaku_rotation_dropped_total{room_id="123"} 1`,
 		`go_goroutines`,
 		`process_resident_memory_bytes`,
 		`process_cpu_seconds_total`,
@@ -72,11 +105,14 @@ func TestExporterEnabled(t *testing.T) {
 
 	// Stop recording, go offline, and rename: gauges self-heal, old info series replaced.
 	e.RecordingStopped(123)
+	e.DanmakuSessionStopped(123)
 	e.SetLiveStatus(123, "主播B", false)
 
 	out = e.scrape()
 	for _, want := range []string{
 		`bilirec_room_recording_active{room_id="123"} 0`,
+		`bilirec_danmaku_recording_active{room_id="123"} 0`,
+		`bilirec_danmaku_connection_active{room_id="123"} 0`,
 		`bilirec_room_live_status{room_id="123"} 0`,
 		`bilirec_active_recordings 0`,
 		`bilirec_room_info{room_id="123",uname="主播B"} 1`,
