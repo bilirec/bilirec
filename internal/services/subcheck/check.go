@@ -327,7 +327,7 @@ func (s *Service) invalidateStaleRooms(rooms map[int]*subscribe.RoomConfig) {
 	})
 	for _, roomID := range staleRooms {
 		s.clearSessionState(roomID)
-		s.m.DeleteRoom(roomID)
+		s.m.UnregisterLiveRoom(roomID)
 		logger.Debugf("removed stale session state for room: %v", roomID)
 	}
 }

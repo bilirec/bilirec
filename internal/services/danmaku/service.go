@@ -118,7 +118,7 @@ func (s *Service) removeSession(roomID int, sess *session) {
 		return old, xsync.CancelOp
 	})
 	if removed {
-		s.metrics.DanmakuSessionStopped(roomID)
+		s.metrics.UnregisterDanmakuRoom(roomID)
 	}
 }
 

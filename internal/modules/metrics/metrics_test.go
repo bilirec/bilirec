@@ -29,8 +29,8 @@ func newExporter(t *testing.T, enabled bool) *Exporter {
 
 func TestExporterDisabledNoop(t *testing.T) {
 	e := newExporter(t, false)
-	if e.set != nil {
-		t.Fatal("disabled exporter must have nil set")
+	if e.registry != nil {
+		t.Fatal("disabled exporter must have nil registry")
 	}
 	// All methods must be safe no-ops.
 	e.AddStreamBytes(123, 1024)
@@ -129,6 +129,46 @@ func TestExporterEnabled(t *testing.T) {
 	e.DeleteRoom(123)
 	if out = e.scrape(); strings.Contains(out, `room_id="123"`) {
 		t.Errorf("DeleteRoom should remove all series of room 123:\n%s", out)
+	}
+}
+
+func TestExporterDeleteRoomClearsAllSpecs(t *testing.T) {
+	registry := newRoomRegistry()
+	e := &Exporter{
+		set:      registry.set,
+		registry: registry,
+	}
+
+	e.AddStreamBytes(123, 1)
+	e.RecordingStarted(123, "主播")
+	e.RecordingStopped(123)
+	e.SetLiveStatus(123, "主播", false)
+	e.LiveSessionDetected(123)
+	e.AddRecovery(123)
+	e.DanmakuSessionStarted(123)
+	e.DanmakuSessionStopped(123)
+	e.DanmakuConnectionAttempt(123)
+	e.DanmakuConnectionActive(123, true)
+	e.DanmakuReconnect(123)
+	for _, eventType := range danmakuEventTypes {
+		e.DanmakuMessageReceived(123, eventType)
+		e.DanmakuMessageDropped(123, eventType)
+	}
+	e.DanmakuParseError(123)
+	e.AddDanmakuBytes(123, 1)
+	e.DanmakuRotation(123)
+	e.DanmakuRotationDropped(123)
+
+	if out := e.scrape(); !strings.Contains(out, `room_id="123"`) {
+		t.Fatal("test setup did not create any room series")
+	}
+
+	e.DeleteRoom(123)
+	if out := e.scrape(); strings.Contains(out, `room_id="123"`) {
+		t.Fatalf("DeleteRoom should unregister every room series:\n%s", out)
+	}
+	if got := registry.counters.Size(); got != 0 {
+		t.Fatalf("DeleteRoom should clear room counter cache, got %d entries", got)
 	}
 }
 

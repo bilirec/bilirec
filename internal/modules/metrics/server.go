@@ -6,11 +6,12 @@ import (
 	"net"
 	"net/http"
 
+	"github.com/bilirec/bilirec/internal/modules/config"
 	"go.uber.org/fx"
 )
 
 // registerServer 在獨立 port 暴露 /metrics，不掛進主 API server，完全不影響原有路由與認證。
-func (e *Exporter) registerServer(lc fx.Lifecycle) {
+func (e *Exporter) registerServer(lc fx.Lifecycle, cfg *config.Config) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/metrics", func(w http.ResponseWriter, _ *http.Request) {
 		e.set.WritePrometheus(w)
@@ -19,7 +20,7 @@ func (e *Exporter) registerServer(lc fx.Lifecycle) {
 
 	lc.Append(fx.StartStopHook(
 		func(context.Context) error {
-			addr := net.JoinHostPort(e.cfg.MetricsHost, e.cfg.MetricsPort)
+			addr := net.JoinHostPort(cfg.MetricsHost, cfg.MetricsPort)
 			ln, err := net.Listen("tcp", addr)
 			if err != nil {
 				return err

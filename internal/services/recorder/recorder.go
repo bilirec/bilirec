@@ -182,6 +182,7 @@ func (r *Service) Stop(roomId int) bool {
 	if hasRecording {
 		info.cancel()
 		r.m.RecordingStopped(roomId)
+		r.m.UnregisterRecorderRoom(roomId)
 	} else {
 		logger.Warnf("未找到房间 %d 的录制任务", roomId)
 	}
