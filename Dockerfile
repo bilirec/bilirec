@@ -98,6 +98,9 @@ ENV BILIBILI_LOGIN_MODE=controller \
     HOST= \
     PORT=8080 \
     TRUSTED_PROXIES=161.33.159.26 \
+    METRICS_ENABLED=false \
+    METRICS_HOST= \
+    METRICS_PORT=9090 \
     FRP_ENABLED=false \
     FRP_SERVER=tunnel.bilirec.org:7000 \
     FRP_TOKEN= \
@@ -108,6 +111,7 @@ ENV BILIBILI_LOGIN_MODE=controller \
     MAX_RECORDING_HOURS=5 \
     MAX_RECOVERY_ATTEMPTS=15 \
     MAX_RETRY_MINUTES=10 \
+    RECORDING_RECOVERY_DURATION=preserve \
     OUTPUT_DIR=records \
     SECRET_DIR=secrets \
     DATABASE_DIR=database \
@@ -125,11 +129,16 @@ ENV BILIBILI_LOGIN_MODE=controller \
     FFMPEG_ALLOW_DURING_RECORDING=false \
     FFMPEG_ALLOW_DURING_RECORDING_MAX_ACTIVE_RECORDINGS=1 \
     SUBCHECK_ROOMS_PER_SHARD=50 \
+    SUBCHECK_TICK_SECS=10 \
+    SUBCHECK_MIN_INTERVAL_SECS=60 \
+    SUBCHECK_MAX_INTERVAL_SECS=300 \
+    SUBCHECK_MAX_SHARDS=32 \
     SUBCHECK_JITTER_SECS=2 \
     MIN_DISK_SPACE_BYTES=5368709120 \
     FRONTEND_URL=https://app.bilirec.org \
     PUBLIC_BASE_URL= \
     WEBPUSH_SUBSCRIBER=mailto:webpush@example.com \
+    NOTIFY_SSE_TOKEN= \
     JWT_SECRET=bilirec_secret \
     DEBUG=false \
     PRODUCTION_MODE=false \
@@ -162,12 +171,23 @@ ENV BILIBILI_LOGIN_MODE=controller \
     DANMAKU_CHAN_BUFFER_SIZE=256 \
     DANMAKU_BYTES_POOL_SIZE=4096
 
+# Optional REST API authentication (USERNAME, PASSWORD, VIEWER_USERNAME, VIEWER_PASSWORD):
+# When unset, API authentication is disabled.
+# Example in docker run:
+#   -e USERNAME=admin -e PASSWORD=changeme
+#
 # Optional HTTPS configuration (SERVER_CRT and SERVER_KEY):
 # When both are set, fiber will use HTTPS
 # Example in docker run:
 #   -e SERVER_CRT=/app/certs/server.crt \
 #   -e SERVER_KEY=/app/certs/server.key \
 #   -v /path/to/certs:/app/certs:ro
+#
+# Optional metrics (METRICS_ENABLED, METRICS_HOST, METRICS_PORT):
+# Metrics port has no authentication; do not expose to the public internet.
+# Example in docker run:
+#   -e METRICS_ENABLED=true \
+#   -p 8080:8080 -p 9090:9090
 
 ENV GOMEMLIMIT=768MiB
 ENV GOGC=100
