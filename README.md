@@ -22,13 +22,15 @@
 - ✅ **多格式支持** — HTTP-FLV / HLS-TS / HLS-fMP4
 - ✅ **灵活录制时长** — 指定时长上限、定时停止或无限时长
 - ✅ **开播即时通知** — Web Push / SSE 推送开播动态
+- ✅ **弹幕与互动记录** — 可在手动录制或房间自动录制时同时保存弹幕与礼物等互动记录
 - ✅ **自动分段轮转** — PK 或分辨率变更时自动切文件，减少花屏与损坏
 - ✅ **多路并发录制** — 低配硬件上也能稳定多路同时录
 - ✅ **故障自动恢复** — FLV 时间戳修复与断流重连，连接波动时尽量不中断
 - ✅ **自动 MP4 转换** — 本地 FFmpeg 或 CloudConvert 云端转码
+- ✅ **监控指标** — 可选开启独立监控端口，长期观察录制与资源状态
 - ✅ **多端运行与接入** — RESTful API、[bilirec-web](https://github.com/bilirec/bilirec-web)（PWA）、[bilirec-mobile](https://github.com/bilirec/bilirec-mobile)（Android 内嵌后端）
 - ✅ **FRP 内网穿透** — 无公网 IP 也可外网访问管理界面与文件
-- ✅ **文件管理与播放** — 列表浏览、批量删除、浏览器内 MP4 预览
+- ✅ **文件管理与播放** — 列表浏览、批量删除、内置播放器支持礼物特效与弹幕滚动回放
 - ✅ **账号登录与刷新** — 匿名 / 扫码 / Controller 模式，Cookie 自动刷新
 - ✅ **低配与 microSD 优化** — 大块缓冲、序列化写入、跳过极短直播写盘；默认开启录製中定期清理旧文件缓存，压低容器监控内存
 
@@ -95,7 +97,7 @@ docker run -d --name bilirec -p 8080:8080 \
 
 - 官方客户端：[bilirec-mobile](https://github.com/bilirec/bilirec-mobile)
 - 库接口与构建：`make android` → `dist/android/<abi>/libbilirec.so`
-- 说明见 [Android 指南](https://www.bilirec.org/zh-cn/guides/android/) · [Android 库接口](https://www.bilirec.org/zh-cn/guides/android-library/)
+- 说明见 [Android 指南](https://www.bilirec.org/zh-cn/guides/android/) · [Android 库接口](https://www.bilirec.org/zh-cn/development/android-library/)
 
 > [!IMPORTANT]
 > 请关闭电池优化并允许通知。华为 / 鸿蒙、OPPO / ColorOS、小米 / HyperOS、vivo / OriginOS 等大陆国产系统还可能在锁屏、切换应用或清理多任务时终止 Bilirec，造成录制中断；这类设备请按 [国产手机后台设置](https://www.bilirec.org/zh-cn/guides/android-mainland/) 额外放行后台活动并锁定多任务卡片。
@@ -118,6 +120,7 @@ docker run -d --name bilirec -p 8080:8080 \
 | 树莓派 / microSD 默认 | [configuration/pi5-defaults](https://www.bilirec.org/zh-cn/configuration/pi5-defaults/) |
 | 内存占用估算 | [configuration/memory-estimation](https://www.bilirec.org/zh-cn/configuration/memory-estimation/) |
 | REST API | [api/overview](https://www.bilirec.org/zh-cn/api/overview/)（运行时根路径 `/` 另有 Swagger UI） |
+| 监控指标 | [configuration/metrics](https://www.bilirec.org/zh-cn/configuration/metrics/) |
 | 常见问题 | [guides/faq](https://www.bilirec.org/zh-cn/guides/faq/) |
 | 性能实测 | [guides/performance-benchmark](https://www.bilirec.org/zh-cn/guides/performance-benchmark/) |
 
