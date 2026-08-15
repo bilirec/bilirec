@@ -107,6 +107,16 @@ func (s *Service) GetBytesWritten(roomID int) uint64 {
 	return sess.bytesWritten.Load()
 }
 
+// GetDropped returns messages discarded because the write channel was full.
+// It returns zero when no session exists.
+func (s *Service) GetDropped(roomID int) uint64 {
+	sess, ok := s.sessions.Load(roomID)
+	if !ok {
+		return 0
+	}
+	return sess.dropped.Load()
+}
+
 // removeSession deletes the mapping only if it still points at sess.
 func (s *Service) removeSession(roomID int, sess *session) {
 	removed := false

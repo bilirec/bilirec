@@ -47,6 +47,12 @@ jobs:
           testArguments: './... -timeout 2h -skip TestZZZ_Final_'
           omit: successful
 
+      - name: Run danmaku unit benchmarks
+        env:
+          BILIBILI_LOGIN_MODE: anonymous
+        run: |
+          go test ./internal/services/danmaku -bench=. -benchmem -count=1 -timeout 15m | tee "${{ runner.temp }}/danmaku-bench.txt"
+
       - name: Run concurrent 3-way FLV record soak
         uses: robherley/go-test-action@v0
         env:
@@ -65,12 +71,39 @@ jobs:
         with:
           testArguments: './internal/services/recorder -timeout 30m -run TestZZZ_Final_Concurrent3WayFmp4Record -count=1'
 
+      - name: Run danmaku jsonl record soak
+        uses: robherley/go-test-action@v0
+        env:
+          BILIBILI_LOGIN_MODE: anonymous
+          OUTPUT_DIR: ${{ runner.temp }}/recorder-records/zzz
+          RECORDER_TEST_PROFILE_DIR: ${{ runner.temp }}/recorder-profiles/zzz
+        with:
+          testArguments: './internal/services/recorder -timeout 30m -run TestZZZ_Final_DanmakuJsonlRecord -count=1'
+
+      - name: Run concurrent 3-way danmaku jsonl record soak
+        uses: robherley/go-test-action@v0
+        env:
+          BILIBILI_LOGIN_MODE: anonymous
+          OUTPUT_DIR: ${{ runner.temp }}/recorder-records/zzz
+          RECORDER_TEST_PROFILE_DIR: ${{ runner.temp }}/recorder-profiles/zzz
+        with:
+          testArguments: './internal/services/recorder -timeout 30m -run TestZZZ_Final_Concurrent3WayDanmakuJsonlRecord -count=1'
+
       - name: Upload recorder pprof profiles
         if: always()
         uses: actions/upload-artifact@v6
         with:
           name: recorder-pprof-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/recorder-profiles/
+          if-no-files-found: ignore
+          retention-days: 30
+
+      - name: Upload danmaku benchmark log
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: danmaku-bench-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/danmaku-bench.txt
           if-no-files-found: ignore
           retention-days: 30
 

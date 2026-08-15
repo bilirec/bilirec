@@ -42,6 +42,7 @@ func TestFlvFmp4ConcurrentRecord(t *testing.T) {
 //
 //	go test ./internal/services/recorder -run TestZZZ_Final_Concurrent3WayFlvRecord -count=1 -timeout 30m
 //	go test ./internal/services/recorder -run TestZZZ_Final_Concurrent3WayFmp4Record -count=1 -timeout 30m
+//	go test ./internal/services/recorder -run TestZZZ_Final_Concurrent3WayDanmakuJsonlRecord -count=1 -timeout 30m
 //
 // The ZZZ prefix keeps lexicographic order last when the full recorder package is
 // run in one invocation (e.g. go test ./internal/services/recorder without -run).

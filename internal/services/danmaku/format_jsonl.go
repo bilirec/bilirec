@@ -1,9 +1,10 @@
 package danmaku
 
 import (
-	"encoding/json"
 	"strconv"
 	"time"
+
+	"github.com/bytedance/sonic/encoder"
 )
 
 type jsonlEncoder struct{}
@@ -137,11 +138,8 @@ func parseTS(ts string) float64 {
 }
 
 func appendJSONLine(buf []byte, v any) []byte {
-	b, err := json.Marshal(v)
-	if err != nil {
+	if err := encoder.EncodeInto(&buf, v, 0); err != nil {
 		return nil
 	}
-	buf = append(buf, b...)
-	buf = append(buf, '\n')
-	return buf
+	return append(buf, '\n')
 }
