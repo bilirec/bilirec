@@ -2,6 +2,7 @@ package metrics
 
 import (
 	"bytes"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -100,6 +101,16 @@ func TestExporterEnabled(t *testing.T) {
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing %q in scrape output:\n%s", want, out)
+		}
+	}
+	if runtime.GOOS == "linux" {
+		for _, want := range []string{
+			`process_resident_memory_anon_bytes`,
+			`process_resident_memory_file_bytes`,
+		} {
+			if !strings.Contains(out, want) {
+				t.Errorf("missing %q in scrape output:\n%s", want, out)
+			}
 		}
 	}
 
