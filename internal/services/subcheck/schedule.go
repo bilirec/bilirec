@@ -94,7 +94,7 @@ func computeSchedule(roomCount int, p scheduleParams) schedule {
 func countLiveCheckRooms(rooms map[int]*subscribe.RoomConfig) int {
 	n := 0
 	for _, cfg := range rooms {
-		if cfg != nil && (cfg.Notify || cfg.AutoRecord) {
+		if needsLiveAction(cfg) {
 			n++
 		}
 	}

@@ -2,10 +2,8 @@ package subcheck
 
 import (
 	"context"
-	"maps"
 	"math/rand"
 	"os"
-	"slices"
 	"strconv"
 	"sync"
 	"time"
@@ -184,6 +182,28 @@ func (s *Service) tryStartAllAutoRecordRooms() {
 	s.tryStartShardAutoRecordRooms(0, 1)
 }
 
+func needsLiveAction(cfg *subscribe.RoomConfig) bool {
+	return cfg != nil && (cfg.Notify || cfg.AutoRecord)
+}
+
+func partitionShardRooms(rooms map[int]*subscribe.RoomConfig, shardIndex, shardCount int) (flaggedIDs, cachedIDs []int, shardRooms map[int]*subscribe.RoomConfig) {
+	shardRooms = rooms
+	if shardCount > 1 {
+		shardRooms = fp.FilterByKey(rooms, func(roomID int) bool {
+			return roomID%shardCount == shardIndex
+		})
+	}
+
+	for roomID, cfg := range shardRooms {
+		if needsLiveAction(cfg) {
+			flaggedIDs = append(flaggedIDs, roomID)
+		} else if cfg != nil {
+			cachedIDs = append(cachedIDs, roomID)
+		}
+	}
+	return flaggedIDs, cachedIDs, shardRooms
+}
+
 func (s *Service) tryStartShardAutoRecordRooms(shardIndex, shardCount int) {
 	if shardCount <= 0 {
 		shardCount = 1
@@ -195,25 +215,19 @@ func (s *Service) tryStartShardAutoRecordRooms(shardIndex, shardCount int) {
 		return
 	}
 
-	liveCheckRooms := fp.FilterByValue(rooms, func(cfg *subscribe.RoomConfig) bool {
-		return cfg != nil && (cfg.Notify || cfg.AutoRecord)
-	})
-	if shardCount > 1 {
-		liveCheckRooms = fp.FilterByKey(liveCheckRooms, func(roomID int) bool {
-			return roomID%shardCount == shardIndex
-		})
+	flaggedIDs, cachedIDs, shardRooms := partitionShardRooms(rooms, shardIndex, shardCount)
+	roomInfos := s.getNotifyRoomInfos(flaggedIDs)
+	for roomID, info := range s.getCachedRoomInfos(cachedIDs) {
+		roomInfos[roomID] = info
 	}
-
-	liveCheckRoomIDs := slices.Collect(maps.Keys(liveCheckRooms))
-	notifyRoomInfos := s.getNotifyRoomInfos(liveCheckRoomIDs)
 
 	// Stale room cleanup only needs one shard per cycle.
 	if shardIndex == 0 {
 		s.invalidateStaleRooms(rooms)
 	}
 
-	for roomID, cfg := range liveCheckRooms {
-		info, ok := notifyRoomInfos[roomID]
+	for roomID, cfg := range shardRooms {
+		info, ok := roomInfos[roomID]
 		if !ok || info == nil {
 			continue
 		}
@@ -237,7 +251,7 @@ func (s *Service) tryStartShardAutoRecordRooms(shardIndex, shardCount int) {
 		s.m.LiveSessionDetected(roomID)
 		state := notify.LiveStateLiveDetected
 
-		if cfg.AutoRecord {
+		if cfg != nil && cfg.AutoRecord {
 			status := s.recSvc.GetStatus(roomID)
 			if status != recorder.Recording && status != recorder.Recovering {
 				// Resolve duration from subscription config: -1 = unlimited, >0 = custom minutes.
@@ -269,7 +283,7 @@ func (s *Service) tryStartShardAutoRecordRooms(shardIndex, shardCount int) {
 			}
 		}
 
-		if cfg.Notify {
+		if cfg != nil && cfg.Notify {
 			s.notifySvc.PublishLiveState(roomID, info.Uname, info.Title, state)
 		}
 
@@ -318,7 +332,7 @@ func (s *Service) clearSessionState(roomID int) {
 func (s *Service) invalidateStaleRooms(rooms map[int]*subscribe.RoomConfig) {
 	staleRooms := make([]int, 0)
 	s.sessionKeys.Range(func(key int, value string) bool {
-		if cfg, ok := rooms[key]; !ok || cfg == nil || (!cfg.Notify && !cfg.AutoRecord) {
+		if _, ok := rooms[key]; !ok {
 			staleRooms = append(staleRooms, key)
 		}
 		return true
@@ -328,6 +342,24 @@ func (s *Service) invalidateStaleRooms(rooms map[int]*subscribe.RoomConfig) {
 		s.m.UnregisterLiveRoom(roomID)
 		logger.Debugf("removed stale session state for room: %v", roomID)
 	}
+}
+
+func (s *Service) getCachedRoomInfos(roomIDs []int) map[int]*bilibili.LiveRoomInfoDetail {
+	out := make(map[int]*bilibili.LiveRoomInfoDetail, len(roomIDs))
+	if len(roomIDs) == 0 {
+		return out
+	}
+	infos, err := s.roomSvc.GetMultipleRoomInfos(roomIDs...)
+	if err != nil {
+		logger.Warnf("读取房间信息缓存失败：%v", err)
+		return out
+	}
+	for _, roomID := range roomIDs {
+		if info, ok := infos[strconv.Itoa(roomID)]; ok && info != nil {
+			out[roomID] = info
+		}
+	}
+	return out
 }
 
 func (s *Service) getNotifyRoomInfos(liveCheckRoomIDs []int) map[int]*bilibili.LiveRoomInfoDetail {

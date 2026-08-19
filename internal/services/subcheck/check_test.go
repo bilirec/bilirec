@@ -128,12 +128,80 @@ func TestSessionState_MarkAndClear(t *testing.T) {
 	}
 }
 
+func TestNeedsLiveAction(t *testing.T) {
+	tests := []struct {
+		name string
+		cfg  *subscribe.RoomConfig
+		want bool
+	}{
+		{name: "nil", cfg: nil, want: false},
+		{name: "neither flag", cfg: &subscribe.RoomConfig{}, want: false},
+		{name: "notify only", cfg: &subscribe.RoomConfig{Notify: true}, want: true},
+		{name: "auto record only", cfg: &subscribe.RoomConfig{AutoRecord: true}, want: true},
+		{name: "both flags", cfg: &subscribe.RoomConfig{Notify: true, AutoRecord: true}, want: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := needsLiveAction(tt.cfg); got != tt.want {
+				t.Fatalf("needsLiveAction() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestPartitionShardRooms(t *testing.T) {
+	rooms := map[int]*subscribe.RoomConfig{
+		1: {Notify: true},
+		2: {AutoRecord: true},
+		3: {Notify: false, AutoRecord: false},
+		4: nil,
+		5: {Notify: true, AutoRecord: true},
+	}
+
+	flagged, cached, shard := partitionShardRooms(rooms, 0, 1)
+	if len(shard) != 5 {
+		t.Fatalf("shard rooms = %d, want 5", len(shard))
+	}
+	if !containsAll(flagged, 1, 2, 5) || len(flagged) != 3 {
+		t.Fatalf("flagged = %v, want [1 2 5]", flagged)
+	}
+	if !containsAll(cached, 3) || len(cached) != 1 {
+		t.Fatalf("cached = %v, want [3]", cached)
+	}
+
+	flagged, cached, shard = partitionShardRooms(rooms, 1, 2)
+	for roomID := range shard {
+		if roomID%2 != 1 {
+			t.Fatalf("room %d should not be in shard 1 of 2", roomID)
+		}
+	}
+	if !containsAll(flagged, 1, 5) || len(flagged) != 2 {
+		t.Fatalf("odd-shard flagged = %v, want [1 5]", flagged)
+	}
+	if !containsAll(cached, 3) || len(cached) != 1 {
+		t.Fatalf("odd-shard cached = %v, want [3]", cached)
+	}
+}
+
+func containsAll(got []int, want ...int) bool {
+	set := make(map[int]struct{}, len(got))
+	for _, id := range got {
+		set[id] = struct{}{}
+	}
+	for _, id := range want {
+		if _, ok := set[id]; !ok {
+			return false
+		}
+	}
+	return true
+}
+
 func TestSessionState_InvalidateStaleRooms(t *testing.T) {
 	service := newTestServiceWithBucket(t)
 
 	service.markSessionState(1, "live_id_str:keep-notify")
 	service.markSessionState(2, "live_id_str:keep-auto")
-	service.markSessionState(3, "live_id_str:remove-disabled")
+	service.markSessionState(3, "live_id_str:keep-unflagged")
 	service.markSessionState(4, "live_id_str:remove-missing")
 
 	rooms := map[int]*subscribe.RoomConfig{
@@ -150,14 +218,14 @@ func TestSessionState_InvalidateStaleRooms(t *testing.T) {
 	if _, ok := service.sessionKeys.Load(2); !ok {
 		t.Fatal("room 2 should be kept")
 	}
-	if _, ok := service.sessionKeys.Load(3); ok {
-		t.Fatal("room 3 should be removed")
+	if _, ok := service.sessionKeys.Load(3); !ok {
+		t.Fatal("room 3 should be kept")
 	}
 	if _, ok := service.sessionKeys.Load(4); ok {
 		t.Fatal("room 4 should be removed")
 	}
 
-	for _, roomID := range []int{1, 2} {
+	for _, roomID := range []int{1, 2, 3} {
 		exists, err := service.bucket.Exists([]byte(strconv.Itoa(roomID)))
 		if err != nil {
 			t.Fatalf("failed to check bucket key existence for room %d: %v", roomID, err)
@@ -167,14 +235,12 @@ func TestSessionState_InvalidateStaleRooms(t *testing.T) {
 		}
 	}
 
-	for _, roomID := range []int{3, 4} {
-		exists, err := service.bucket.Exists([]byte(strconv.Itoa(roomID)))
-		if err != nil {
-			t.Fatalf("failed to check bucket key existence for room %d: %v", roomID, err)
-		}
-		if exists {
-			t.Fatalf("room %d should be removed from bucket", roomID)
-		}
+	exists, err := service.bucket.Exists([]byte(strconv.Itoa(4)))
+	if err != nil {
+		t.Fatalf("failed to check bucket key existence for room 4: %v", err)
+	}
+	if exists {
+		t.Fatal("room 4 should be removed from bucket")
 	}
 }
 
