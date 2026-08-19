@@ -1,4 +1,4 @@
-﻿package subcheck
+package subcheck
 
 import (
 	"context"
@@ -45,7 +45,6 @@ type Service struct {
 	scheduleParams scheduleParams
 	lastRescale    time.Time
 	scheduleMu     sync.Mutex
-	roomsCache     subscribedRoomsCache
 	jitterSecs     int
 
 	ctx    context.Context
@@ -120,7 +119,6 @@ func (s *Service) start(cfg *config.Config) error {
 	s.checkInterval = sched.interval
 	logger.Infof("subcheck 调度：rooms=%d shards=%d interval=%s", roomCount, sched.shards, sched.interval)
 
-	s.roomsCache = newSubscribedRoomsCache(s.checkInterval)
 	s.coordinator = coordinator.NewRoundRobin(s.checkInterval)
 	// Keep one shard tick responsive when shard count is large.
 	s.coordinator.SetMinTick(time.Second)
@@ -191,7 +189,7 @@ func (s *Service) tryStartShardAutoRecordRooms(shardIndex, shardCount int) {
 		shardCount = 1
 	}
 
-	rooms, err := s.getSubscribedRooms()
+	rooms, err := s.subSvc.ListSubscribedRoomsWithConfig()
 	if err != nil {
 		logger.Warnf("列出房间订阅失败：%v", err)
 		return

@@ -1,8 +1,7 @@
-﻿package subscribe
+package subscribe
 
 import (
 	"fmt"
-	"strconv"
 
 	"github.com/bilirec/bilirec/pkg/pool"
 	"go.etcd.io/bbolt"
@@ -46,33 +45,25 @@ func (s *Service) UpdateConfig(roomID int, cfg *RoomConfig) error {
 	}
 
 	key := fmt.Append(nil, roomID)
-	return s.bucket.Update(func(bucket *bbolt.Bucket) error {
+	s.roomsMu.Lock()
+	defer s.roomsMu.Unlock()
+	if err := s.bucket.Update(func(bucket *bbolt.Bucket) error {
 		exists := bucket.Get(key)
 		if exists == nil {
 			return ErrRoomNotSubscribed
 		}
 		return bucket.Put(key, data)
-	})
+	}); err != nil {
+		return err
+	}
+	s.rooms[roomID] = cloneRoomConfig(cfg)
+	return nil
 }
 
 func (s *Service) ListSubscribedRoomsWithConfig() (map[int]*RoomConfig, error) {
-	result := make(map[int]*RoomConfig)
-	err := s.bucket.ForEach(func(k, v []byte) error {
-		roomID, err := strconv.Atoi(string(k))
-		if err != nil {
-			logger.Warnf("扫描条目失败：%s：%v，已忽略。", string(k), err)
-			return nil
-		}
-
-		cfg, err := parseRoomConfig(v)
-		if err != nil {
-			logger.Warnf("解析房间 %d 配置失败：%v，使用默认值", roomID, err)
-			cfg = defaultRoomConfig()
-		}
-		result[roomID] = cfg
-		return nil
-	})
-	return result, err
+	s.roomsMu.RLock()
+	defer s.roomsMu.RUnlock()
+	return cloneRooms(s.rooms), nil
 }
 
 func parseRoomConfig(raw []byte) (*RoomConfig, error) {
@@ -88,21 +79,11 @@ func parseRoomConfig(raw []byte) (*RoomConfig, error) {
 }
 
 func (s *Service) GetConfig(roomID int) (*RoomConfig, error) {
-	key := fmt.Append(nil, roomID)
-
-	var cfg *RoomConfig
-	err := s.bucket.View(func(bucket *bbolt.Bucket) error {
-		raw := bucket.Get(key)
-		if raw == nil {
-			return ErrRoomNotSubscribed
-		}
-
-		parsed, err := parseRoomConfig(raw)
-		if err != nil {
-			return err
-		}
-		cfg = parsed
-		return nil
-	})
-	return cfg, err
+	s.roomsMu.RLock()
+	defer s.roomsMu.RUnlock()
+	cfg, ok := s.rooms[roomID]
+	if !ok {
+		return nil, ErrRoomNotSubscribed
+	}
+	return cloneRoomConfig(cfg), nil
 }

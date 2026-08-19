@@ -1,10 +1,11 @@
-﻿package subscribe
+package subscribe
 
 import (
 	"errors"
 	"fmt"
 	"os"
-	"strconv"
+	"slices"
+	"sync"
 
 	"github.com/bilirec/bilirec/internal/modules/config"
 	"github.com/bilirec/bilirec/internal/services/room"
@@ -26,11 +27,16 @@ var (
 type Service struct {
 	bucket  *db.Bucket
 	roomSvc *room.Service
+
+	// caches
+	roomsMu sync.RWMutex
+	rooms   map[int]*RoomConfig
 }
 
 func NewService(lc fx.Lifecycle, cfg *config.Config, roomSvc *room.Service) *Service {
 	s := &Service{
 		roomSvc: roomSvc,
+		rooms:   make(map[int]*RoomConfig),
 	}
 
 	lc.Append(fx.StartStopHook(
@@ -42,7 +48,7 @@ func NewService(lc fx.Lifecycle, cfg *config.Config, roomSvc *room.Service) *Ser
 			} else {
 				s.bucket = bucket
 			}
-			return nil
+			return s.loadRooms()
 		},
 		func() error {
 			if s.bucket == nil {
@@ -60,41 +66,52 @@ func (s *Service) Subscribe(roomID int) error {
 		return err
 	}
 	key := fmt.Append(nil, roomID)
-	return s.bucket.Update(func(bucket *bbolt.Bucket) error {
+	s.roomsMu.Lock()
+	defer s.roomsMu.Unlock()
+	if err := s.bucket.Update(func(bucket *bbolt.Bucket) error {
 		exists := bucket.Get(key)
 		if exists != nil {
 			return ErrRoomAlreadySubscribed
 		}
 		return bucket.Put(key, defaultRoomConfigBytes)
-	})
+	}); err != nil {
+		return err
+	}
+	s.rooms[roomID] = defaultRoomConfig()
+	return nil
 }
 
 func (s *Service) Unsubscribe(roomID int) error {
 	key := fmt.Append(nil, roomID)
-	return s.bucket.Update(func(bucket *bbolt.Bucket) error {
+	s.roomsMu.Lock()
+	defer s.roomsMu.Unlock()
+	if err := s.bucket.Update(func(bucket *bbolt.Bucket) error {
 		exists := bucket.Get(key)
 		if exists == nil {
 			return ErrRoomNotSubscribed
 		}
 		return bucket.Delete(key)
-	})
+	}); err != nil {
+		return err
+	}
+	delete(s.rooms, roomID)
+	return nil
 }
 
 func (s *Service) IsSubscribed(roomID int) (bool, error) {
-	key := fmt.Append(nil, roomID)
-	return s.bucket.Exists(key)
+	s.roomsMu.RLock()
+	defer s.roomsMu.RUnlock()
+	_, ok := s.rooms[roomID]
+	return ok, nil
 }
 
 func (s *Service) ListSubscribedRooms() ([]int, error) {
-	var roomIDs []int
-	err := s.bucket.ForEach(func(k, v []byte) error {
-		roomID, err := strconv.Atoi(string(k))
-		if err != nil {
-			logger.Warnf("扫描条目失败：%s：%v，已忽略。", string(k), err)
-			return nil
-		}
+	s.roomsMu.RLock()
+	defer s.roomsMu.RUnlock()
+	roomIDs := make([]int, 0, len(s.rooms))
+	for roomID := range s.rooms {
 		roomIDs = append(roomIDs, roomID)
-		return nil
-	})
-	return roomIDs, err
+	}
+	slices.Sort(roomIDs)
+	return roomIDs, nil
 }

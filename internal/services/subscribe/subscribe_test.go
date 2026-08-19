@@ -23,10 +23,10 @@ func init() {
 	}
 }
 
-func newSubscribeService(t *testing.T) *subscribe.Service {
+func startSubscribeService(t *testing.T, dir string) (*subscribe.Service, *fxtest.App) {
 	t.Helper()
 
-	t.Setenv("DATABASE_DIR", t.TempDir())
+	t.Setenv("DATABASE_DIR", dir)
 
 	var svc *subscribe.Service
 	app := fxtest.New(t,
@@ -41,6 +41,12 @@ func newSubscribeService(t *testing.T) *subscribe.Service {
 	t.Cleanup(func() {
 		app.RequireStop()
 	})
+	return svc, app
+}
+
+func newSubscribeService(t *testing.T) *subscribe.Service {
+	t.Helper()
+	svc, _ := startSubscribeService(t, t.TempDir())
 	return svc
 }
 
@@ -255,6 +261,104 @@ func TestMemoryLeak_ListCycle(t *testing.T) {
 	const maxRetainedMB = 5.0
 	if retainedAfterGC > maxRetainedMB {
 		t.Errorf("possible memory leak: %.2f MB retained after GC", retainedAfterGC)
+	}
+}
+
+func TestSnapshot_WriteThroughVisibleImmediately(t *testing.T) {
+	svc := newSubscribeService(t)
+	roomID := testutil.LiveRoomID(t)
+
+	if err := svc.Subscribe(roomID); err != nil {
+		t.Fatalf("subscribe failed: %v", err)
+	}
+
+	rooms, err := svc.ListSubscribedRoomsWithConfig()
+	if err != nil {
+		t.Fatalf("list with config failed: %v", err)
+	}
+	cfg, ok := rooms[roomID]
+	if !ok || cfg == nil {
+		t.Fatal("expected subscribed room in snapshot immediately")
+	}
+	if cfg.AutoRecord || cfg.Notify {
+		t.Fatalf("expected default flags, got %+v", cfg)
+	}
+
+	updated := &subscribe.RoomConfig{
+		AutoRecord:            true,
+		Notify:                true,
+		RecordDurationMinutes: 45,
+		RecordDanmaku:         true,
+		StreamProfiles:        []string{"hls-fmp4"},
+	}
+	if err := svc.UpdateConfig(roomID, updated); err != nil {
+		t.Fatalf("update config failed: %v", err)
+	}
+
+	got, err := svc.GetConfig(roomID)
+	if err != nil {
+		t.Fatalf("get config failed: %v", err)
+	}
+	if !got.AutoRecord || !got.Notify || got.RecordDurationMinutes != 45 || !got.RecordDanmaku {
+		t.Fatalf("snapshot did not pick up update: %+v", got)
+	}
+	if len(got.StreamProfiles) != 1 || got.StreamProfiles[0] != "hls-fmp4" {
+		t.Fatalf("snapshot stream profiles = %v", got.StreamProfiles)
+	}
+
+	got.AutoRecord = false
+	got.StreamProfiles[0] = "http-flv"
+	got.StreamProfiles = append(got.StreamProfiles, "hls-ts")
+
+	again, err := svc.GetConfig(roomID)
+	if err != nil {
+		t.Fatalf("get config again failed: %v", err)
+	}
+	if !again.AutoRecord || again.StreamProfiles[0] != "hls-fmp4" || len(again.StreamProfiles) != 1 {
+		t.Fatalf("caller mutated cached config: %+v", again)
+	}
+
+	if err := svc.Unsubscribe(roomID); err != nil {
+		t.Fatalf("unsubscribe failed: %v", err)
+	}
+	if _, err := svc.GetConfig(roomID); err != subscribe.ErrRoomNotSubscribed {
+		t.Fatalf("expected ErrRoomNotSubscribed after unsubscribe, got %v", err)
+	}
+	listed, err := svc.ListSubscribedRooms()
+	if err != nil {
+		t.Fatalf("list failed: %v", err)
+	}
+	for _, id := range listed {
+		if id == roomID {
+			t.Fatal("unsubscribed room still in snapshot")
+		}
+	}
+}
+
+func TestSnapshot_ReloadsAfterRestart(t *testing.T) {
+	dir := t.TempDir()
+	roomID := testutil.LiveRoomID(t)
+
+	svc, app := startSubscribeService(t, dir)
+	if err := svc.Subscribe(roomID); err != nil {
+		t.Fatalf("subscribe failed: %v", err)
+	}
+	if err := svc.UpdateConfig(roomID, &subscribe.RoomConfig{
+		AutoRecord: true,
+		Notify:     true,
+		Qn:         10000,
+	}); err != nil {
+		t.Fatalf("update config failed: %v", err)
+	}
+	app.RequireStop()
+
+	svc, _ = startSubscribeService(t, dir)
+	got, err := svc.GetConfig(roomID)
+	if err != nil {
+		t.Fatalf("get config after restart failed: %v", err)
+	}
+	if !got.AutoRecord || !got.Notify || got.Qn != 10000 {
+		t.Fatalf("snapshot did not reload from bolt: %+v", got)
 	}
 }
 

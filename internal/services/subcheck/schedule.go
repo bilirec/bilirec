@@ -102,7 +102,7 @@ func countLiveCheckRooms(rooms map[int]*subscribe.RoomConfig) int {
 }
 
 func (s *Service) countLiveCheckRooms() (int, error) {
-	rooms, err := s.getSubscribedRooms()
+	rooms, err := s.subSvc.ListSubscribedRoomsWithConfig()
 	if err != nil {
 		return 0, err
 	}
@@ -135,7 +135,6 @@ func (s *Service) maybeRescale() {
 	s.coordinator.SetCyclePeriod(desired.interval)
 	s.shardCount = desired.shards
 	s.checkInterval = desired.interval
-	s.roomsCache.setInterval(desired.interval)
 	s.lastRescale = time.Now()
 
 	logger.Infof("subcheck 调度已调整：rooms=%d shards=%d interval=%s", roomCount, desired.shards, desired.interval)
