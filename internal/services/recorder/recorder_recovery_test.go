@@ -3,6 +3,7 @@ package recorder
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -54,10 +55,10 @@ func TestStart_RejectsRecovering(t *testing.T) {
 	defer cancel()
 
 	info := &Info{
-		ctx:    ctx,
-		cancel: cancel,
+		ctx:     ctx,
+		cancel:  cancel,
 		backoff: backoff.NewSequence(1 * time.Second),
-		room:   &bilibili.LiveRoomInfoDetail{RoomID: 1},
+		room:    &bilibili.LiveRoomInfoDetail{RoomID: 1},
 	}
 	info.status.Store(recoveringPtr)
 	r.recording.Store(1, info)
@@ -74,10 +75,10 @@ func TestStart_RejectsRecording(t *testing.T) {
 	defer cancel()
 
 	info := &Info{
-		ctx:    ctx,
-		cancel: cancel,
+		ctx:     ctx,
+		cancel:  cancel,
 		backoff: backoff.NewSequence(1 * time.Second),
-		room:   &bilibili.LiveRoomInfoDetail{RoomID: 1},
+		room:    &bilibili.LiveRoomInfoDetail{RoomID: 1},
 	}
 	info.status.Store(recordingPtr)
 	r.recording.Store(1, info)
@@ -364,5 +365,37 @@ func TestRotateFilePath_RecoveryPreserveNoOverwrite(t *testing.T) {
 	}
 	if string(recovered) != "recovered" {
 		t.Fatalf("recovered file content=%q", recovered)
+	}
+}
+
+func TestStartFailureReason(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		err    error
+		reason string
+		ok     bool
+	}{
+		{err: nil, ok: false},
+		{err: ErrRecordingStarted, ok: false},
+		{err: ErrRecordRecovering, ok: false},
+		{err: ErrRecordingPending, ok: false},
+		{err: context.Canceled, ok: false},
+		{err: ErrStreamNotLive, reason: metrics.ReasonNotLive, ok: true},
+		{err: ErrEmptyStreamURLs, reason: metrics.ReasonEmptyURLs, ok: true},
+		{err: ErrStreamURLsUnreachable, reason: metrics.ReasonUnreachable, ok: true},
+		{err: ErrInsufficientDiskSpace, reason: metrics.ReasonDisk, ok: true},
+		{err: ErrMaxConcurrentRecordingsReached, reason: metrics.ReasonConcurrent, ok: true},
+		{err: ErrRoomBanned, reason: metrics.ReasonBanned, ok: true},
+		{err: ErrRoomEncrypted, reason: metrics.ReasonEncrypted, ok: true},
+		{err: fmt.Errorf("%w: timeout", ErrLiveAPI), reason: metrics.ReasonAPI, ok: true},
+		{err: errors.New("unsupported format: ts"), reason: metrics.ReasonOther, ok: true},
+	}
+
+	for _, tc := range cases {
+		reason, ok := startFailureReason(tc.err)
+		if ok != tc.ok || reason != tc.reason {
+			t.Errorf("startFailureReason(%v) = %q, %v; want %q, %v", tc.err, reason, ok, tc.reason, tc.ok)
+		}
 	}
 }

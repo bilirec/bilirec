@@ -111,6 +111,25 @@ func (r *roomRegistry) unregisterCounterEvent(name string, roomID int, eventType
 	r.counters.Delete(counterKey{name: name, roomID: roomID, event: eventType})
 }
 
+func (r *roomRegistry) counterReason(name string, roomID int, reason string) *vm.Counter {
+	key := counterKey{name: name, roomID: roomID, event: reason}
+	if counter, ok := r.counters.Load(key); ok {
+		return counter
+	}
+
+	counter := r.set.GetOrCreateCounter(name + roomReasonLabel(roomID, reason))
+	actual, _ := r.counters.LoadOrStore(key, counter)
+	return actual
+}
+
+func (r *roomRegistry) unregisterCounterReason(name string, roomID int, reason string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	r.set.UnregisterMetric(name + roomReasonLabel(roomID, reason))
+	r.counters.Delete(counterKey{name: name, roomID: roomID, event: reason})
+}
+
 func (r *roomRegistry) unregisterRoomInfo(roomID int) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -161,5 +180,15 @@ func roomEventLabel(roomID int, eventType string) string {
 		roomID,
 		labelEventType,
 		strconv.Quote(eventType),
+	)
+}
+
+func roomReasonLabel(roomID int, reason string) string {
+	return fmt.Sprintf(
+		`{%s="%d",%s=%s}`,
+		labelRoomID,
+		roomID,
+		labelReason,
+		strconv.Quote(reason),
 	)
 }

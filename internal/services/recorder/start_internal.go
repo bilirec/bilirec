@@ -34,6 +34,8 @@ type internalStartParams struct {
 func (r *Service) internalStart(p internalStartParams) error {
 	l := logger.WithField("room", p.roomId)
 
+	r.m.StreamConnectAttempt(p.roomId)
+
 	txn := r.reser.Begin()
 	if err := txn.Reserve(p.roomId); err != nil {
 		if errors.Is(err, tx.ErrAlreadyReserved) {
@@ -59,7 +61,10 @@ func (r *Service) internalStart(p internalStartParams) error {
 	durationRoomInfo := time.Since(startTimeRoomInfo)
 	l.Debugf("duration: function=GetLiveRoomInfo spent=%v", durationRoomInfo)
 	if err != nil {
-		return err
+		if errors.Is(err, context.Canceled) {
+			return err
+		}
+		return fmt.Errorf("%w: %v", ErrLiveAPI, err)
 	} else if roomInfo.IsEncrypted {
 		return ErrRoomEncrypted
 	} else if roomInfo.LockStatus != 0 {
@@ -74,7 +79,10 @@ func (r *Service) internalStart(p internalStartParams) error {
 	l.Debugf("duration: function=GetStreamURLsV2 spent=%v", durationStreamURLs)
 
 	if err != nil {
-		return err
+		if errors.Is(err, context.Canceled) {
+			return err
+		}
+		return fmt.Errorf("%w: %v", ErrLiveAPI, err)
 	} else if len(streams) == 0 {
 		return ErrEmptyStreamURLs
 	}

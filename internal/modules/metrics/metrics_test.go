@@ -40,6 +40,17 @@ func TestExporterDisabledNoop(t *testing.T) {
 	e.SetLiveStatus(123, "uname", true)
 	e.LiveSessionDetected(123)
 	e.AddRecovery(123)
+	e.StreamConnectionActive(123, true)
+	e.StreamConnectionActive(123, false)
+	e.StreamConnectAttempt(123)
+	e.RecordingRotation(123)
+	e.RecordingStartFailed(123, ReasonDisk)
+	e.RecordingStartFailed(123, "bogus")
+	e.RecordingRecoverySucceeded(123)
+	e.RecordingGaveUp(123, ReasonMaxAttempts)
+	e.RecordingGaveUp(123, "bogus")
+	e.RecordingSegmentDiscarded(123, ReasonTiny)
+	e.RecordingPipelineError(123, ReasonNotFLV)
 	e.DanmakuSessionStarted(123)
 	e.DanmakuSessionStopped(123)
 	e.DanmakuConnectionAttempt(123)
@@ -63,6 +74,14 @@ func TestExporterEnabled(t *testing.T) {
 	e.SetLiveStatus(123, "主播A", true)
 	e.LiveSessionDetected(123)
 	e.AddRecovery(123)
+	e.StreamConnectionActive(123, true)
+	e.StreamConnectAttempt(123)
+	e.RecordingRotation(123)
+	e.RecordingStartFailed(123, ReasonDisk)
+	e.RecordingRecoverySucceeded(123)
+	e.RecordingGaveUp(123, ReasonMaxAttempts)
+	e.RecordingSegmentDiscarded(123, ReasonTiny)
+	e.RecordingPipelineError(123, ReasonNotFLV)
 	e.DanmakuSessionStarted(123)
 	e.DanmakuConnectionAttempt(123)
 	e.DanmakuConnectionActive(123, true)
@@ -82,6 +101,14 @@ func TestExporterEnabled(t *testing.T) {
 		`bilirec_room_live_status{room_id="123"} 1`,
 		`bilirec_room_live_sessions_total{room_id="123"} 1`,
 		`bilirec_room_stream_recovery_total{room_id="123"} 1`,
+		`bilirec_room_stream_connection_active{room_id="123"} 1`,
+		`bilirec_room_stream_connect_attempts_total{room_id="123"} 1`,
+		`bilirec_room_recording_rotations_total{room_id="123"} 1`,
+		`bilirec_room_recording_start_failures_total{room_id="123",reason="disk"} 1`,
+		`bilirec_room_stream_recovery_success_total{room_id="123"} 1`,
+		`bilirec_room_recording_gave_up_total{room_id="123",reason="max_attempts"} 1`,
+		`bilirec_room_recording_segments_discarded_total{room_id="123",reason="tiny"} 1`,
+		`bilirec_room_recording_pipeline_errors_total{room_id="123",reason="not_flv"} 1`,
 		`bilirec_room_info{room_id="123",uname="主播A"} 1`,
 		`bilirec_active_recordings 1`,
 		`bilirec_danmaku_recording_active{room_id="123"} 1`,
@@ -122,6 +149,7 @@ func TestExporterEnabled(t *testing.T) {
 	out = e.scrape()
 	for _, want := range []string{
 		`bilirec_room_recording_active{room_id="123"} 0`,
+		`bilirec_room_stream_connection_active{room_id="123"} 0`,
 		`bilirec_danmaku_recording_active{room_id="123"} 0`,
 		`bilirec_danmaku_connection_active{room_id="123"} 0`,
 		`bilirec_room_live_status{room_id="123"} 0`,
@@ -156,6 +184,16 @@ func TestExporterDeleteRoomClearsAllSpecs(t *testing.T) {
 	e.SetLiveStatus(123, "主播", false)
 	e.LiveSessionDetected(123)
 	e.AddRecovery(123)
+	e.StreamConnectionActive(123, true)
+	e.StreamConnectAttempt(123)
+	e.RecordingRotation(123)
+	e.RecordingStartFailed(123, ReasonAPI)
+	e.RecordingRecoverySucceeded(123)
+	e.RecordingGaveUp(123, ReasonNotLiveTimeout)
+	e.RecordingSegmentDiscarded(123, ReasonSkippedSmall)
+	e.RecordingSegmentDiscarded(123, ReasonStatError)
+	e.RecordingPipelineError(123, ReasonOpen)
+	e.RecordingPipelineError(123, ReasonOther)
 	e.DanmakuSessionStarted(123)
 	e.DanmakuSessionStopped(123)
 	e.DanmakuConnectionAttempt(123)
@@ -180,6 +218,47 @@ func TestExporterDeleteRoomClearsAllSpecs(t *testing.T) {
 	}
 	if got := registry.counters.Size(); got != 0 {
 		t.Fatalf("DeleteRoom should clear room counter cache, got %d entries", got)
+	}
+}
+
+func TestRecordingReasonBlacklist(t *testing.T) {
+	registry := newRoomRegistry()
+	e := &Exporter{
+		set:      registry.set,
+		registry: registry,
+	}
+
+	e.RecordingStartFailed(7, "")
+	e.RecordingStartFailed(7, "disk-full")
+	e.RecordingGaveUp(7, "")
+	e.RecordingGaveUp(7, "timeout")
+	e.RecordingSegmentDiscarded(7, "too_small")
+	e.RecordingPipelineError(7, "write")
+
+	if out := e.scrape(); strings.Contains(out, `room_id="7"`) {
+		t.Fatalf("unknown reasons must not create series:\n%s", out)
+	}
+
+	e.RecordingStartFailed(7, ReasonOther)
+	e.RecordingGaveUp(7, ReasonEncrypted)
+	e.RecordingSegmentDiscarded(7, ReasonTiny)
+	e.RecordingPipelineError(7, ReasonNotFLV)
+
+	out := e.scrape()
+	for _, want := range []string{
+		`bilirec_room_recording_start_failures_total{room_id="7",reason="other"} 1`,
+		`bilirec_room_recording_gave_up_total{room_id="7",reason="encrypted"} 1`,
+		`bilirec_room_recording_segments_discarded_total{room_id="7",reason="tiny"} 1`,
+		`bilirec_room_recording_pipeline_errors_total{room_id="7",reason="not_flv"} 1`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q in scrape output:\n%s", want, out)
+		}
+	}
+
+	e.UnregisterRecorderRoom(7)
+	if out = e.scrape(); strings.Contains(out, `room_id="7"`) {
+		t.Fatalf("UnregisterRecorderRoom should drop reason series:\n%s", out)
 	}
 }
 

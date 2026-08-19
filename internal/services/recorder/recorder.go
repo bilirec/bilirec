@@ -12,6 +12,7 @@ import (
 	"github.com/bilirec/bilirec/internal/modules/bilibili"
 	"github.com/bilirec/bilirec/internal/modules/config"
 	"github.com/bilirec/bilirec/internal/modules/metrics"
+	"github.com/bilirec/bilirec/internal/processors"
 	rs "github.com/bilirec/bilirec/internal/record_strategies"
 	"github.com/bilirec/bilirec/internal/services/convert"
 	"github.com/bilirec/bilirec/internal/services/danmaku"
@@ -27,18 +28,6 @@ import (
 )
 
 var logger = logrus.WithField("service", "recorder")
-
-func danmakuRoomMeta(room *bilibili.LiveRoomInfoDetail) danmaku.RoomMeta {
-	if room == nil {
-		return danmaku.RoomMeta{}
-	}
-	return danmaku.RoomMeta{
-		RoomID:  room.RoomID,
-		ShortID: room.ShortID,
-		Uname:   room.Uname,
-		Title:   room.Title,
-	}
-}
 
 type RecordStatus string
 
@@ -65,6 +54,7 @@ var (
 	ErrRoomBanned                     = errors.New("该房间已被封禁")
 	ErrRoomEncrypted                  = errors.New("该房间已加密")
 	ErrInsufficientDiskSpace          = errors.New("磁盘空间不足")
+	ErrLiveAPI                        = errors.New("直播信息接口失败")
 )
 
 type Service struct {
@@ -170,6 +160,8 @@ func (r *Service) Start(roomId int, options ...RecordStartOption) error {
 	})
 	if err == nil {
 		adopted = true
+	} else if reason, ok := startFailureReason(err); ok {
+		r.m.RecordingStartFailed(roomId, reason)
 	}
 	return err
 }
@@ -221,6 +213,7 @@ func (r *Service) rotate(roomId int, ch <-chan []byte, strategy rs.StreamRecordS
 	for {
 		outputPath, err := r.rotateFilePath(info, segment, strategy.FileExtension())
 		if err != nil {
+			r.m.RecordingPipelineError(roomId, metrics.ReasonOpen)
 			return fmt.Errorf("无法准备文件路径：%v", err)
 		}
 		info.SetOutputPath(outputPath)
@@ -231,15 +224,21 @@ func (r *Service) rotate(roomId int, ch <-chan []byte, strategy rs.StreamRecordS
 		// segmentStart 尽量贴近 pipe.Open 之后、首包写入之前，减少开录缓冲造成的偏移。
 		pipe, err := strategy.BuildPipeline(ctx, outputPath, state)
 		if err != nil {
+			r.m.RecordingPipelineError(roomId, metrics.ReasonOpen)
 			return fmt.Errorf("无法构建管道：%v", err)
 		}
 
 		startCtx, startCancel := context.WithTimeout(ctx, 10*time.Second)
 		if err := pipe.Open(startCtx); err != nil {
 			startCancel()
+			r.m.RecordingPipelineError(roomId, metrics.ReasonOpen)
 			return fmt.Errorf("无法打开管道：%v", err)
 		}
 		startCancel()
+
+		if !(segment == 0 && userStart) {
+			r.m.RecordingRotation(roomId)
+		}
 
 		if info.startOptions.recordDanmaku {
 			segStart := time.Now()
@@ -267,6 +266,11 @@ func (r *Service) rotate(roomId int, ch <-chan []byte, strategy rs.StreamRecordS
 				segment++
 				continue
 			case rs.ErrActionAbort:
+				reason := metrics.ReasonOther
+				if errors.Is(err, processors.ErrNotFlvFile) {
+					reason = metrics.ReasonNotFLV
+				}
+				r.m.RecordingPipelineError(roomId, reason)
 				l.Infof("收到录制停止信号：%v", err)
 				if handle.AbortDelay > 0 {
 					timer := time.NewTimer(handle.AbortDelay)
@@ -277,6 +281,7 @@ func (r *Service) rotate(roomId int, ch <-chan []byte, strategy rs.StreamRecordS
 					}
 				}
 			default:
+				r.m.RecordingPipelineError(roomId, metrics.ReasonOther)
 				l.Errorf("写入文件失败：%v", err)
 			}
 		}
@@ -287,7 +292,9 @@ func (r *Service) rotate(roomId int, ch <-chan []byte, strategy rs.StreamRecordS
 
 func (r *Service) rev(roomId int, ch <-chan []byte, info *Info, ctx context.Context, pipe *pipeline.Pipe[[]byte]) error {
 	log := logger.WithField("room", roomId)
+	r.m.StreamConnectionActive(roomId, true)
 	defer func() {
+		r.m.StreamConnectionActive(roomId, false)
 		pipe.Close()
 		outputPath := info.OutputPath()
 		go r.finalize(roomId, outputPath)
@@ -367,6 +374,7 @@ func (r *Service) recover(roomId int) {
 	l.Infof("正在尝试恢复流录制...")
 
 	info.status.Store(recoveringPtr)
+	r.m.StreamConnectionActive(roomId, false)
 	attempt := 1
 	retryStart := time.Now()
 	for {
@@ -384,6 +392,7 @@ func (r *Service) recover(roomId int) {
 		})
 		if err == nil {
 			l.Info("直播流恢复成功")
+			r.m.RecordingRecoverySucceeded(roomId)
 			info.backoff.Reset()
 			return
 		}
@@ -391,11 +400,15 @@ func (r *Service) recover(roomId int) {
 		switch err {
 		case ErrMaxConcurrentRecordingsReached:
 			l.Infof("因以下原因停止恢复：%v", err)
-			r.stopAndPublish(roomId, info)
+			r.giveUpRecover(roomId, info, metrics.ReasonConcurrent)
 			return
-		case ErrRoomEncrypted, ErrRoomBanned:
-			l.Infof("直播间已封禁或为付费直播，不再恢复")
-			r.stopAndPublish(roomId, info)
+		case ErrRoomEncrypted:
+			l.Infof("直播间为付费直播，不再恢复")
+			r.giveUpRecover(roomId, info, metrics.ReasonEncrypted)
+			return
+		case ErrRoomBanned:
+			l.Infof("直播间已封禁，不再恢复")
+			r.giveUpRecover(roomId, info, metrics.ReasonBanned)
 			return
 		default:
 
@@ -417,12 +430,12 @@ func (r *Service) recover(roomId int) {
 				// use r.cfg.MaxRetryMinutes to limit the total retry duration, instead of max attempts, since the stream may be live again after some time
 				if time.Since(retryStart) >= time.Duration(r.cfg.MaxRetryMinutes)*time.Minute {
 					l.Infof("直播已下线且已达到最长重试时间 (%d 分钟)，不再恢复", r.cfg.MaxRetryMinutes)
-					r.stopAndPublish(roomId, info)
+					r.giveUpRecover(roomId, info, metrics.ReasonNotLiveTimeout)
 					return
 				}
 			} else if attempt >= r.cfg.MaxRecoveryAttempts {
 				l.Infof("已达到最大恢复次数（%d），不再恢复", r.cfg.MaxRecoveryAttempts)
-				r.stopAndPublish(roomId, info)
+				r.giveUpRecover(roomId, info, metrics.ReasonMaxAttempts)
 				return
 			} else {
 				l.Warnf("第 %d 次恢复失败：%v", attempt, err)
@@ -459,12 +472,15 @@ func (r *Service) finalize(roomId int, outputPath string) {
 	fileInfo, err := os.Stat(outputPath)
 	if err != nil && config.ReadOnly.SkipSmallFlush() && os.IsNotExist(err) {
 		logger.Debugf("文件因为过小被而没有写入，跳过收尾：%s", outputPath)
+		r.m.RecordingSegmentDiscarded(roomId, metrics.ReasonSkippedSmall)
 		return
 	} else if err != nil {
 		logger.Errorf("获取房间 %d 录制文件状态失败：%v", roomId, err)
+		r.m.RecordingSegmentDiscarded(roomId, metrics.ReasonStatError)
 		return
 	} else if fileInfo.Size() < 1024 { // less than 1KB
 		logger.Warnf("房间 %d 的录制文件过小（%d 字节），跳过收尾并删除文件", roomId, fileInfo.Size())
+		r.m.RecordingSegmentDiscarded(roomId, metrics.ReasonTiny)
 		if err := os.Remove(outputPath); err != nil {
 			logger.Errorf("删除空文件 %s 失败：%v", outputPath, err)
 		}
@@ -502,6 +518,11 @@ func (r *Service) stopAndPublish(roomId int, info *Info) {
 	r.nt.PublishLiveState(roomId, info.room.Uname, info.room.Title, notify.LiveStateRecordStopped)
 }
 
+func (r *Service) giveUpRecover(roomId int, info *Info, reason string) {
+	r.m.RecordingGaveUp(roomId, reason)
+	r.stopAndPublish(roomId, info)
+}
+
 // fileTime is used for the filename timestamp; startTime is for duration accounting.
 func (r *Service) rotateFilePath(info *Info, segment int, ext string) (string, error) {
 	dirPath := fmt.Sprintf("%s/%s-%d", r.cfg.OutputDir, info.room.Uname, info.room.RoomID)
@@ -514,5 +535,48 @@ func (r *Service) rotateFilePath(info *Info, segment int, ext string) (string, e
 		return fmt.Sprintf("%s/%s-%s%s", dirPath, safeTitle, stamp, ext), nil
 	} else {
 		return fmt.Sprintf("%s/%s-%s-%d%s", dirPath, safeTitle, stamp, segment, ext), nil
+	}
+}
+
+func danmakuRoomMeta(room *bilibili.LiveRoomInfoDetail) danmaku.RoomMeta {
+	if room == nil {
+		return danmaku.RoomMeta{}
+	}
+	return danmaku.RoomMeta{
+		RoomID:  room.RoomID,
+		ShortID: room.ShortID,
+		Uname:   room.Uname,
+		Title:   room.Title,
+	}
+}
+
+func startFailureReason(err error) (string, bool) {
+	if err == nil ||
+		errors.Is(err, ErrRecordingStarted) ||
+		errors.Is(err, ErrRecordRecovering) ||
+		errors.Is(err, ErrRecordingPending) ||
+		errors.Is(err, context.Canceled) ||
+		errors.Is(err, tx.ErrTxnClosed) {
+		return "", false
+	}
+	switch {
+	case errors.Is(err, ErrStreamNotLive):
+		return metrics.ReasonNotLive, true
+	case errors.Is(err, ErrEmptyStreamURLs):
+		return metrics.ReasonEmptyURLs, true
+	case errors.Is(err, ErrStreamURLsUnreachable):
+		return metrics.ReasonUnreachable, true
+	case errors.Is(err, ErrInsufficientDiskSpace):
+		return metrics.ReasonDisk, true
+	case errors.Is(err, ErrMaxConcurrentRecordingsReached):
+		return metrics.ReasonConcurrent, true
+	case errors.Is(err, ErrRoomBanned):
+		return metrics.ReasonBanned, true
+	case errors.Is(err, ErrRoomEncrypted):
+		return metrics.ReasonEncrypted, true
+	case errors.Is(err, ErrLiveAPI):
+		return metrics.ReasonAPI, true
+	default:
+		return metrics.ReasonOther, true
 	}
 }

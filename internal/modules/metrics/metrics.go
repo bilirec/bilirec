@@ -11,6 +11,7 @@ const (
 	labelRoomID    = "room_id"
 	labelUname     = "uname"
 	labelEventType = "event_type"
+	labelReason    = "reason"
 
 	metricRoomInfo = "bilirec_room_info"
 )
