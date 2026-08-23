@@ -31,7 +31,7 @@ When working in this repository on a company computer:
   - `go build ...`
   - `go install ...`
   - `cargo build`
-  - `make build` (this repo’s target produces `bilirec-windows.exe`)
+  - `make build` / `make build os=windows` (default target produces `bilirec-windows.exe`)
   - `cmake --build ...` / `make` when the artifact is a native `.exe`
   - any command with native compile intent whose output is a `.exe`
 

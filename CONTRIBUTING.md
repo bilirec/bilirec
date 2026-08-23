@@ -18,7 +18,7 @@
 
 1. Fork 并创建分支。
 2. 本地开发：`make dev`（`go run ./cmd/backend`）。
-3. 构建：`make build`。
+3. 构建：`make build`（默认 Windows exe）。其他目标：`make build os=linux|darwin|android`。
 4. 提交 PR，说明环境（OS、Docker/二进制、录制路数）与重现步骤。
 
 ## API 变更

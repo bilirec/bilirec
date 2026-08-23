@@ -70,6 +70,8 @@
 
 ```bash
 chmod +x bilirec-linux-amd64 && ./bilirec-linux-amd64
+# macOS Apple Silicon：chmod +x bilirec-darwin-arm64 && ./bilirec-darwin-arm64
+# macOS Intel：chmod +x bilirec-darwin-amd64 && ./bilirec-darwin-amd64
 # Windows：双击 bilirec-windows.exe
 ```
 

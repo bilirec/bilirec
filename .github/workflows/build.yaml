@@ -97,6 +97,47 @@ jobs:
           name: ${{ env.artifact_name }}-windows
           path: ./dist/${{ env.artifact_name }}-windows.exe
 
+  build_darwin:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        goarch: [ "amd64", "arm64" ]
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Prepare Go and swagger docs
+        uses: ./.github/actions/setup-go-swagger
+        with:
+          go-version: '1.26.5'
+
+      - name: Prepare build version
+        id: version
+        uses: ./.github/actions/prepare-build-version
+        with:
+          event_name: ${{ github.event_name }}
+          ref: ${{ github.ref }}
+          release_tag: ${{ github.event.release.tag_name }}
+
+      - name: Build macOS
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          LDFLAGS="-X github.com/bilirec/bilirec/internal/modules/config.frpTokenInjected=${{ secrets.FRP_TOKEN }} -X github.com/bilirec/bilirec/pkg/updatecheck.currentVersionInjected=$VERSION"
+          if [ "${{ env.production }}" = "true" ]; then
+            LDFLAGS="$LDFLAGS -s -w"
+          fi
+
+          go build -ldflags "$LDFLAGS" -o ./dist/${{ env.artifact_name }}-darwin-${{ matrix.goarch }} ./cmd/backend
+        env:
+          GOOS: darwin
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: "0"
+
+      - name: Upload a Build Artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: ${{ env.artifact_name }}-darwin-${{ matrix.goarch }}
+          path: ./dist/${{ env.artifact_name }}-darwin-${{ matrix.goarch }}
+
   build_android:
     runs-on: ubuntu-latest
     env:
@@ -243,13 +284,15 @@ jobs:
 
   upload_release:
     runs-on: ubuntu-latest
-    needs: [ build_windows, build_linux, build_android ]
+    needs: [ build_windows, build_linux, build_darwin, build_android ]
     if: github.event_name == 'release'
     strategy:
       matrix:
         arch: 
           - "linux-amd64"
           - "linux-arm64"
+          - "darwin-amd64"
+          - "darwin-arm64"
           - "windows"
           - "android-arm64-v8a"
           - "android-x86_64"
