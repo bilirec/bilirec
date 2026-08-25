@@ -262,7 +262,7 @@ jobs:
     if: ${{ github.event_name != 'release' }}
     timeout-minutes: 5
     steps:
-      - name: Trigger mobile nightly APK workflow
+      - name: Trigger mobile APK workflow
         env:
           GH_TOKEN: ${{ secrets.BILIREC_CROSS_REPO_TOKEN }}
           SOURCE_REPOSITORY: ${{ github.repository }}
@@ -272,7 +272,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          gh workflow run build-test-apk.yml \
+          gh workflow run build-apk.yml \
             --repo bilirec/bilirec-mobile \
             --ref master \
             -f "source_repository=${SOURCE_REPOSITORY}" \
@@ -280,7 +280,7 @@ jobs:
             -f "source_sha=${SOURCE_SHA}" \
             -f "source_ref=${SOURCE_REF}"
 
-          echo "Triggered bilirec/bilirec-mobile nightly APK workflow for run ${SOURCE_RUN_ID}."
+          echo "Triggered bilirec/bilirec-mobile APK workflow for run ${SOURCE_RUN_ID}."
 
   upload_release:
     runs-on: ubuntu-latest
