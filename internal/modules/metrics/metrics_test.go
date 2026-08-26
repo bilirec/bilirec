@@ -257,8 +257,108 @@ func TestRecordingReasonBlacklist(t *testing.T) {
 	}
 
 	e.UnregisterRecorderRoom(7)
+	out = e.scrape()
+	for _, want := range []string{
+		`bilirec_room_recording_start_failures_total{room_id="7",reason="other"} 1`,
+		`bilirec_room_recording_gave_up_total{room_id="7",reason="encrypted"} 1`,
+		`bilirec_room_recording_segments_discarded_total{room_id="7",reason="tiny"} 1`,
+		`bilirec_room_recording_pipeline_errors_total{room_id="7",reason="not_flv"} 1`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("UnregisterRecorderRoom must keep reason counters, missing %q:\n%s", want, out)
+		}
+	}
+
+	e.DeleteRoom(7)
 	if out = e.scrape(); strings.Contains(out, `room_id="7"`) {
-		t.Fatalf("UnregisterRecorderRoom should drop reason series:\n%s", out)
+		t.Fatalf("DeleteRoom should drop reason series:\n%s", out)
+	}
+}
+
+func TestRecorderCountersSurviveUnregister(t *testing.T) {
+	registry := newRoomRegistry()
+	e := &Exporter{
+		set:      registry.set,
+		registry: registry,
+	}
+
+	e.RecordingStarted(123, "主播")
+	e.AddStreamBytes(123, 1024)
+	e.StreamConnectAttempt(123)
+	e.RecordingStopped(123)
+	e.UnregisterRecorderRoom(123)
+
+	out := e.scrape()
+	for _, want := range []string{
+		`bilirec_room_recording_sessions_total{room_id="123"} 1`,
+		`bilirec_room_stream_bytes_total{room_id="123"} 1024`,
+		`bilirec_room_stream_connect_attempts_total{room_id="123"} 1`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing surviving counter %q:\n%s", want, out)
+		}
+	}
+	for _, gone := range []string{
+		`bilirec_room_recording_active{room_id="123"}`,
+		`bilirec_room_stream_connection_active{room_id="123"}`,
+	} {
+		if strings.Contains(out, gone) {
+			t.Errorf("gauge %q should be unregistered:\n%s", gone, out)
+		}
+	}
+
+	e.RecordingStarted(123, "主播")
+	out = e.scrape()
+	if !strings.Contains(out, `bilirec_room_recording_sessions_total{room_id="123"} 2`) {
+		t.Fatalf("second start should increment surviving counter:\n%s", out)
+	}
+	if !strings.Contains(out, `bilirec_room_recording_active{room_id="123"} 1`) {
+		t.Fatalf("second start should recreate recording_active:\n%s", out)
+	}
+}
+
+func TestDanmakuCountersSurviveUnregister(t *testing.T) {
+	registry := newRoomRegistry()
+	e := &Exporter{
+		set:      registry.set,
+		registry: registry,
+	}
+
+	e.DanmakuSessionStarted(123)
+	e.DanmakuConnectionAttempt(123)
+	e.DanmakuConnectionActive(123, true)
+	e.DanmakuMessageReceived(123, eventTypeDanmaku)
+	e.AddDanmakuBytes(123, 64)
+	e.DanmakuSessionStopped(123)
+	e.UnregisterDanmakuRoom(123)
+
+	out := e.scrape()
+	for _, want := range []string{
+		`bilirec_danmaku_sessions_total{room_id="123"} 1`,
+		`bilirec_danmaku_connection_attempts_total{room_id="123"} 1`,
+		`bilirec_danmaku_messages_total{room_id="123",event_type="danmaku"} 1`,
+		`bilirec_danmaku_bytes_total{room_id="123"} 64`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing surviving counter %q:\n%s", want, out)
+		}
+	}
+	for _, gone := range []string{
+		`bilirec_danmaku_recording_active{room_id="123"}`,
+		`bilirec_danmaku_connection_active{room_id="123"}`,
+	} {
+		if strings.Contains(out, gone) {
+			t.Errorf("gauge %q should be unregistered:\n%s", gone, out)
+		}
+	}
+
+	e.DanmakuSessionStarted(123)
+	out = e.scrape()
+	if !strings.Contains(out, `bilirec_danmaku_sessions_total{room_id="123"} 2`) {
+		t.Fatalf("second start should increment surviving counter:\n%s", out)
+	}
+	if !strings.Contains(out, `bilirec_danmaku_recording_active{room_id="123"} 1`) {
+		t.Fatalf("second start should recreate danmaku_recording_active:\n%s", out)
 	}
 }
 

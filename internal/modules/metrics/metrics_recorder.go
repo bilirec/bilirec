@@ -175,15 +175,24 @@ func (e *Exporter) RecordingPipelineError(roomID int, reason string) {
 	e.registry.counterReason(metricRoomRecordingPipelineErrorsTotal, roomID, reason).Inc()
 }
 
+// UnregisterRecorderRoom drops the room's recording gauges so stopped rooms
+// disappear from current-state queries. Counters stay so increase() can
+// accumulate across sessions in the same process.
 func (e *Exporter) UnregisterRecorderRoom(roomID int) {
+	if e.registry == nil {
+		return
+	}
+	e.registry.unregisterGauge(metricRoomRecordingActive, roomID)
+	e.registry.unregisterGauge(metricRoomStreamConnectionActive, roomID)
+}
+
+func (e *Exporter) unregisterRecorderCounters(roomID int) {
 	if e.registry == nil {
 		return
 	}
 	e.registry.unregisterCounter(metricRoomStreamBytesTotal, roomID)
 	e.registry.unregisterCounter(metricRoomRecordingSessionsTotal, roomID)
 	e.registry.unregisterCounter(metricRoomStreamRecoveryTotal, roomID)
-	e.registry.unregisterGauge(metricRoomRecordingActive, roomID)
-	e.registry.unregisterGauge(metricRoomStreamConnectionActive, roomID)
 	e.registry.unregisterCounter(metricRoomStreamConnectAttemptsTotal, roomID)
 	e.registry.unregisterCounter(metricRoomRecordingRotationsTotal, roomID)
 	e.registry.unregisterCounter(metricRoomStreamRecoverySuccessTotal, roomID)

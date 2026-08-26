@@ -131,13 +131,22 @@ func (e *Exporter) DanmakuRotationDropped(roomID int) {
 	e.registry.counter(metricDanmakuRotationDroppedTotal, roomID).Inc()
 }
 
+// UnregisterDanmakuRoom drops the room's danmaku gauges so stopped rooms
+// disappear from current-state queries. Counters stay so increase() can
+// accumulate across sessions in the same process.
 func (e *Exporter) UnregisterDanmakuRoom(roomID int) {
 	if e.registry == nil {
 		return
 	}
 	e.registry.unregisterGauge(metricDanmakuRecordingActive, roomID)
-	e.registry.unregisterCounter(metricDanmakuSessionsTotal, roomID)
 	e.registry.unregisterGauge(metricDanmakuConnectionActive, roomID)
+}
+
+func (e *Exporter) unregisterDanmakuCounters(roomID int) {
+	if e.registry == nil {
+		return
+	}
+	e.registry.unregisterCounter(metricDanmakuSessionsTotal, roomID)
 	e.registry.unregisterCounter(metricDanmakuConnectionAttemptsTotal, roomID)
 	e.registry.unregisterCounter(metricDanmakuReconnectsTotal, roomID)
 	e.registry.unregisterCounter(metricDanmakuParseErrorsTotal, roomID)

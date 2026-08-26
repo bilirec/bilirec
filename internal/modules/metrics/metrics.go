@@ -46,8 +46,10 @@ func (e *Exporter) DeleteRoom(roomID int) {
 		return
 	}
 	e.UnregisterRecorderRoom(roomID)
+	e.unregisterRecorderCounters(roomID)
 	e.UnregisterLiveRoom(roomID)
 	e.UnregisterDanmakuRoom(roomID)
+	e.unregisterDanmakuCounters(roomID)
 	e.registry.unregisterRoomInfo(roomID)
 }
 
