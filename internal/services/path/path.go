@@ -1,4 +1,4 @@
-﻿package path
+package path
 
 import (
 	"fmt"
@@ -8,13 +8,14 @@ import (
 	"strings"
 	"time"
 
+	"github.com/bilirec/bilirec/pkg/logger"
+
 	"github.com/bilirec/bilirec/internal/modules/config"
 	"github.com/bilirec/bilirec/pkg/signeddownload"
 	"github.com/bilirec/bilirec/utils"
-	"github.com/sirupsen/logrus"
 )
 
-var logger = logrus.WithField("service", "path")
+var log = logger.Named("path")
 
 var (
 	ErrFileNotFound    = fmt.Errorf("文件不存在")
@@ -49,12 +50,12 @@ func (s *Service) GeneratePresignedURL(fullPath string, expireAfter time.Duratio
 	fallbackURL := fmt.Sprintf("/files/tempdownload?presigned=%s", token)
 	baseURL := strings.TrimSpace(s.cfg.PublicBaseUrl)
 	if baseURL == "" {
-		logger.Warn("PUBLIC_BASE_URL 为空，返回相对预签名 URL")
+		log.Warn("PUBLIC_BASE_URL 为空，返回相对预签名 URL")
 		return fallbackURL, nil
 	}
 
 	if !utils.IsValidAbsoluteHTTPURL(baseURL) {
-		logger.Warnf("PUBLIC_BASE_URL 无效：%q，返回相对预签名 URL", s.cfg.PublicBaseUrl)
+		log.Warnf("PUBLIC_BASE_URL 无效：%q，返回相对预签名 URL", s.cfg.PublicBaseUrl)
 		return fallbackURL, nil
 	}
 
@@ -87,7 +88,7 @@ func (s *Service) ParsePresignedURLToken(token string) (string, error) {
 func (s *Service) ValidatePath(path string) (string, error) {
 	baseAbs, err := filepath.Abs(s.cfg.OutputDir)
 	if err != nil {
-		logger.Errorf("%s 的基础路径无效：%v", s.cfg.OutputDir, err)
+		log.Errorf("%s 的基础路径无效：%v", s.cfg.OutputDir, err)
 		return "", ErrInvalidFilePath
 	}
 
@@ -96,13 +97,13 @@ func (s *Service) ValidatePath(path string) (string, error) {
 
 	fullPathAbs, err := filepath.Abs(fullPath)
 	if err != nil {
-		logger.Errorf("路径 %s 无效：%v", fullPath, err)
+		log.Errorf("路径 %s 无效：%v", fullPath, err)
 		return "", ErrInvalidFilePath
 	}
 
 	if !strings.HasPrefix(fullPathAbs, baseAbs+string(os.PathSeparator)) &&
 		fullPathAbs != baseAbs {
-		logger.Errorf("检测到路径穿越：%s", fullPath)
+		log.Errorf("检测到路径穿越：%s", fullPath)
 		return "", ErrAccessDenied
 	}
 

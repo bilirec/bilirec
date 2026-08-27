@@ -136,6 +136,6 @@ func LogFailure(res Result, rawErr error) {
 		return
 	}
 
-	logger.Warn(res.Error)
-	logger.Debugf("check update failed: %v", rawErr)
+	log.Warn(res.Error)
+	log.Debugf("check update failed: %v", rawErr)
 }

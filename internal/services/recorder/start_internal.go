@@ -9,10 +9,10 @@ import (
 	"github.com/bilirec/bilirec/internal/modules/bilibili"
 	rs "github.com/bilirec/bilirec/internal/record_strategies"
 	"github.com/bilirec/bilirec/pkg/backoff"
+	"github.com/bilirec/bilirec/pkg/logger"
 	"github.com/bilirec/bilirec/pkg/pool"
 	"github.com/bilirec/bilirec/pkg/tx"
 	"github.com/bilirec/bilirec/utils"
-	"github.com/sirupsen/logrus"
 )
 
 type startMode int
@@ -32,7 +32,7 @@ type internalStartParams struct {
 }
 
 func (r *Service) internalStart(p internalStartParams) error {
-	l := logger.WithField("room", p.roomId)
+	l := log.With("room", p.roomId)
 
 	r.m.StreamConnectAttempt(p.roomId)
 
@@ -223,7 +223,7 @@ func nextFileTime(prev, now time.Time) time.Time {
 }
 
 func (r *Service) connectStream(
-	l *logrus.Entry,
+	l logger.Logger,
 	roomId int,
 	ctx context.Context,
 	streamInfo bilibili.StreamURLInfo,

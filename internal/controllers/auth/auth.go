@@ -3,11 +3,11 @@ package auth
 import (
 	"github.com/bilirec/bilirec/internal/modules/bilibili"
 	"github.com/bilirec/bilirec/internal/modules/rest"
+	"github.com/bilirec/bilirec/pkg/logger"
 	"github.com/gofiber/fiber/v3"
-	"github.com/sirupsen/logrus"
 )
 
-var logger = logrus.WithField("controller", "auth")
+var log = logger.Named("auth")
 
 type Controller struct {
 	client *bilibili.Client
@@ -75,7 +75,7 @@ func (r *Controller) getStatus(ctx fiber.Ctx) error {
 func (r *Controller) initLogin(ctx fiber.Ctx) error {
 	qrResp, err := r.client.InitQRLogin()
 	if err != nil {
-		logger.Warnf("failed to init QR login: %v", err)
+		log.Warnf("failed to init QR login: %v", err)
 		var status int
 		switch err {
 		case bilibili.ErrNotControllerMode:

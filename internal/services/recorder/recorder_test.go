@@ -14,8 +14,8 @@ import (
 
 	"github.com/bilirec/bilirec/internal/modules/bilibili"
 	"github.com/bilirec/bilirec/internal/services/recorder"
+	"github.com/bilirec/bilirec/pkg/logger"
 	"github.com/bilirec/bilirec/utils"
-	"github.com/sirupsen/logrus"
 )
 
 func TestFlvRecord(t *testing.T) {
@@ -374,6 +374,6 @@ func init() {
 	if os.Getenv("CI") != "" {
 		os.Setenv("BILIBILI_LOGIN_MODE", "anonymous")
 		os.Setenv("SKIP_SMALL_FLUSH", "false")
-		logrus.SetLevel(logrus.DebugLevel)
+		logger.SetLevel(logger.DebugLevel)
 	}
 }

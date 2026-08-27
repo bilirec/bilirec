@@ -21,15 +21,15 @@ import (
 	"time"
 
 	"github.com/bilirec/bilirec/internal/bootstrap"
-	"github.com/sirupsen/logrus"
+	"github.com/bilirec/bilirec/pkg/logger"
 	"go.uber.org/fx"
 	"gopkg.in/natefinch/lumberjack.v2"
 )
 
 var (
-	androidApp *fx.App
-	appMu      sync.Mutex
-	logger     *lumberjack.Logger
+	androidApp   *fx.App
+	appMu        sync.Mutex
+	bootstrapLog *lumberjack.Logger
 )
 
 type StartConfig struct {
@@ -74,16 +74,16 @@ func Stop() C.int {
 
 	exitCode := 0
 	if err := androidApp.Stop(ctx); err != nil {
-		logrus.Errorf("failed to stop app: %v\n", err)
+		logger.L().Errorf("failed to stop app: %v\n", err)
 		exitCode = 1
-		logrus.Info("-------------- STOP FAILED at " + time.Now().Format("2006-01-02 15:04:05") + " ---------------")
+		logger.L().Info("-------------- STOP FAILED at " + time.Now().Format("2006-01-02 15:04:05") + " ---------------")
 	} else {
-		logrus.Info("-------------- STOP at " + time.Now().Format("2006-01-02 15:04:05") + " ---------------")
+		logger.L().Info("-------------- STOP at " + time.Now().Format("2006-01-02 15:04:05") + " ---------------")
 	}
 
-	closeBootstrapLog(logger)
+	closeBootstrapLog(bootstrapLog)
 	androidApp = nil
-	logger = nil
+	bootstrapLog = nil
 	return C.int(exitCode)
 }
 
@@ -131,7 +131,7 @@ func start(config StartConfig) C.int {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
-	logrus.Info("-------------- START at " + time.Now().Format("2006-01-02 15:04:05") + " --------------")
+	logger.L().Info("-------------- START at " + time.Now().Format("2006-01-02 15:04:05") + " --------------")
 
 	if err := app.Start(ctx); err != nil {
 		closeBootstrapLog(log)
@@ -139,7 +139,7 @@ func start(config StartConfig) C.int {
 	}
 
 	androidApp = app
-	logger = log
+	bootstrapLog = log
 	return 0
 }
 
@@ -173,7 +173,7 @@ func initResourceLimits() {
 
 	runtime.GOMAXPROCS(finalCPUs)
 
-	logrus.Infof("System limits dynamically adjusted: Max Recordings=%d, Mem Limit=%d MB, CPU Cores=%d/%d",
+	logger.L().Infof("System limits dynamically adjusted: Max Recordings=%d, Mem Limit=%d MB, CPU Cores=%d/%d",
 		maxConcurrent, targetMemoryMB, finalCPUs, totalCPUs)
 }
 

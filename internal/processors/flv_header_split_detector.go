@@ -1,12 +1,13 @@
-﻿package processors
+package processors
 
 import (
 	"context"
 	"errors"
 
+	"github.com/bilirec/bilirec/pkg/logger"
+
 	"github.com/bilirec/bilirec/pkg/flv"
 	"github.com/bilirec/bilirec/pkg/pipeline"
-	"github.com/sirupsen/logrus"
 )
 
 // ErrVideoHeaderChanged is re-exported so callers in this package can match
@@ -17,7 +18,7 @@ var ErrVideoHeaderChanged = flv.ErrVideoHeaderChanged
 // flv.HeaderChangeDetector. All parsing logic lives in pkg/flv.
 type flvHeaderSplitDetectorProcessor struct {
 	detector        *flv.HeaderChangeDetector
-	log             *logrus.Entry
+	log             logger.Logger
 	seedVideoHeader []byte // pre-seeded initial video header tag bytes
 }
 
@@ -50,7 +51,7 @@ func NewFlvHeaderSplitDetectorSeeded(videoHeaderTag []byte) *pipeline.ProcessorI
 	)
 }
 
-func (p *flvHeaderSplitDetectorProcessor) Open(ctx context.Context, log *logrus.Entry) error {
+func (p *flvHeaderSplitDetectorProcessor) Open(ctx context.Context, log logger.Logger) error {
 	p.log = log
 	p.detector.Reset()
 	if len(p.seedVideoHeader) > 0 {
@@ -59,7 +60,7 @@ func (p *flvHeaderSplitDetectorProcessor) Open(ctx context.Context, log *logrus.
 	return nil
 }
 
-func (p *flvHeaderSplitDetectorProcessor) Process(ctx context.Context, log *logrus.Entry, data []byte) ([]byte, error) {
+func (p *flvHeaderSplitDetectorProcessor) Process(ctx context.Context, log logger.Logger, data []byte) ([]byte, error) {
 	if len(data) == 0 {
 		return data, nil
 	}

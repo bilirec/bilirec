@@ -1,4 +1,4 @@
-﻿package processors
+package processors
 
 import (
 	"context"
@@ -8,9 +8,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/bilirec/bilirec/pkg/logger"
+
 	"github.com/bilirec/bilirec/pkg/pipeline"
 	"github.com/bilirec/bilirec/utils"
-	"github.com/sirupsen/logrus"
 )
 
 type FileConverterProcessor struct {
@@ -39,7 +40,7 @@ func NewFileConverter(format string, options ...FileConverterOption) *pipeline.P
 	)
 }
 
-func (p *FileConverterProcessor) Open(ctx context.Context, log *logrus.Entry) error {
+func (p *FileConverterProcessor) Open(ctx context.Context, log logger.Logger) error {
 	cmd := exec.CommandContext(ctx, "ffmpeg", "-h")
 	if err := cmd.Run(); err != nil {
 		return err
@@ -50,7 +51,7 @@ func (p *FileConverterProcessor) Open(ctx context.Context, log *logrus.Entry) er
 	return nil
 }
 
-func (p *FileConverterProcessor) Process(ctx context.Context, log *logrus.Entry, path string) (string, error) {
+func (p *FileConverterProcessor) Process(ctx context.Context, log logger.Logger, path string) (string, error) {
 	if strings.HasSuffix(path, p.format) {
 		log.Debugf("file %s already in %s format, skipping conversion", path, p.format)
 		return path, nil
@@ -72,8 +73,10 @@ func (p *FileConverterProcessor) Process(ctx context.Context, log *logrus.Entry,
 		"copy",
 		newFileName,
 	)
-	convertCmd.Stderr = log.Writer()
-	convertCmd.Stdout = log.Writer()
+	ffmpegOut := log.WriterAt(logger.InfoLevel)
+	defer ffmpegOut.Close()
+	convertCmd.Stderr = ffmpegOut
+	convertCmd.Stdout = ffmpegOut
 	if err := convertCmd.Run(); err != nil {
 		return path, err
 	}

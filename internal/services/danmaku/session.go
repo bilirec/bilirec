@@ -93,7 +93,7 @@ func (s *session) segmentStart() time.Time {
 func (s *session) supervise() {
 	defer func() {
 		if r := recover(); r != nil {
-			logger.Errorf("房间 %d 弹幕连接监督 panic：%v", s.roomID, r)
+			log.Errorf("房间 %d 弹幕连接监督 panic：%v", s.roomID, r)
 		}
 	}()
 	defer close(s.supervisorDone)
@@ -120,7 +120,7 @@ func (s *session) supervise() {
 			bo.Reset()
 		}
 		delay := bo.Next()
-		logger.Warnf("房间 %d 弹幕连接断开（%v），%v 后重连", s.roomID, err, delay)
+		log.Warnf("房间 %d 弹幕连接断开（%v），%v 后重连", s.roomID, err, delay)
 		timer := time.NewTimer(delay)
 		select {
 		case <-timer.C:
@@ -212,12 +212,12 @@ func (s *session) enqueue(build fragmentBuilder, eventType string) {
 			s.svc.pool.PutBytes(frag)
 			s.svc.metrics.DanmakuMessageDropped(s.roomID, eventType)
 			if dropped := s.dropped.Add(1); dropped == 1 || dropped%1000 == 0 {
-				logger.Warnf("房间 %d 弹幕写入通道已满，已累计丢弃 %d 条消息", s.roomID, dropped)
+				log.Warnf("房间 %d 弹幕写入通道已满，已累计丢弃 %d 条消息", s.roomID, dropped)
 			}
 		}
 	} else {
 		// should never reach here
-		logger.Errorf("房间 %d 未知弹幕溢出策略：%s", s.roomID, config.ReadOnly.DanmakuOverflowPolicy())
+		log.Errorf("房间 %d 未知弹幕溢出策略：%s", s.roomID, config.ReadOnly.DanmakuOverflowPolicy())
 		s.svc.pool.PutBytes(frag)
 	}
 }
@@ -227,7 +227,7 @@ func (s *session) enqueue(build fragmentBuilder, eventType string) {
 func (s *session) writeLoop(videoPath string, segmentStart time.Time) {
 	defer func() {
 		if r := recover(); r != nil {
-			logger.Errorf("房间 %d 弹幕写入 panic：%v", s.roomID, r)
+			log.Errorf("房间 %d 弹幕写入 panic：%v", s.roomID, r)
 		}
 	}()
 	defer close(s.done)
@@ -260,7 +260,7 @@ func (s *session) writeLoop(videoPath string, segmentStart time.Time) {
 func (s *session) openSegment(req rotateRequest) {
 	p := PathForVideo(req.videoPath, s.encoder.Ext())
 	if err := os.MkdirAll(filepath.Dir(p), 0755); err != nil {
-		logger.Errorf("房间 %d 创建弹幕目录失败：%v", s.roomID, err)
+		log.Errorf("房间 %d 创建弹幕目录失败：%v", s.roomID, err)
 		return
 	}
 
@@ -277,7 +277,7 @@ func (s *session) openSegment(req rotateRequest) {
 		),
 	)
 	if err := writerPipeline.Open(s.writerCtx); err != nil {
-		logger.Errorf("房间 %d 创建弹幕文件失败：%v", s.roomID, err)
+		log.Errorf("房间 %d 创建弹幕文件失败：%v", s.roomID, err)
 		return
 	}
 
@@ -289,7 +289,7 @@ func (s *session) openSegment(req rotateRequest) {
 	h := s.encoder.AppendHeader(header[:0], s.meta, req.segmentStart)
 	if len(h) > 0 {
 		if _, err := s.writer.Process(s.writerCtx, h); err != nil {
-			logger.Errorf("房间 %d 写入弹幕文件头失败：%v", s.roomID, err)
+			log.Errorf("房间 %d 写入弹幕文件头失败：%v", s.roomID, err)
 		} else {
 			s.bytesWritten.Add(uint64(len(h)))
 			s.svc.metrics.AddDanmakuBytes(s.roomID, len(h))
@@ -306,7 +306,7 @@ func (s *session) finalizeSegment() {
 	f := s.encoder.AppendFooter(footer[:0])
 	if len(f) > 0 {
 		if _, err := s.writer.Process(s.writerCtx, f); err != nil {
-			logger.Errorf("房间 %d 写入弹幕文件尾失败：%v", s.roomID, err)
+			log.Errorf("房间 %d 写入弹幕文件尾失败：%v", s.roomID, err)
 		} else {
 			s.bytesWritten.Add(uint64(len(f)))
 			s.svc.metrics.AddDanmakuBytes(s.roomID, len(f))
@@ -318,13 +318,13 @@ func (s *session) finalizeSegment() {
 	// the buffered writer, syncs the file and closes the file descriptor.
 	s.writer.Close()
 	s.writer = nil
-	logger.Infof("房间 %d 弹幕文件已写入：%s", s.roomID, s.curPath)
+	log.Infof("房间 %d 弹幕文件已写入：%s", s.roomID, s.curPath)
 }
 
 func (s *session) writeFragment(frag []byte) {
 	if s.writer != nil {
 		if _, err := s.writer.Process(s.writerCtx, frag); err != nil {
-			logger.Errorf("房间 %d 写入弹幕失败：%v", s.roomID, err)
+			log.Errorf("房间 %d 写入弹幕失败：%v", s.roomID, err)
 		} else {
 			s.bytesWritten.Add(uint64(len(frag)))
 			s.svc.metrics.AddDanmakuBytes(s.roomID, len(frag))

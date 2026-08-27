@@ -18,12 +18,12 @@ import (
 	"github.com/bilirec/bilirec/pkg/coordinator"
 	"github.com/bilirec/bilirec/pkg/db"
 	"github.com/bilirec/bilirec/pkg/fp"
+	"github.com/bilirec/bilirec/pkg/logger"
 	"github.com/puzpuzpuz/xsync/v4"
-	"github.com/sirupsen/logrus"
 	"go.uber.org/fx"
 )
 
-var logger = logrus.WithField("service", "subcheck")
+var log = logger.Named("subcheck")
 
 const sessionKeysBucketName = "SubCheck_LiveStates"
 
@@ -109,13 +109,13 @@ func (s *Service) start(cfg *config.Config) error {
 	s.jitterSecs = cfg.SubcheckJitterSecs
 	roomCount, err := s.countLiveCheckRooms()
 	if err != nil {
-		logger.Warnf("启动时统计订阅检查房间数失败：%v", err)
+		log.Warnf("启动时统计订阅检查房间数失败：%v", err)
 		roomCount = 0
 	}
 	sched := computeSchedule(roomCount, s.scheduleParams)
 	s.shardCount = sched.shards
 	s.checkInterval = sched.interval
-	logger.Infof("subcheck 调度：rooms=%d shards=%d interval=%s", roomCount, sched.shards, sched.interval)
+	log.Infof("subcheck 调度：rooms=%d shards=%d interval=%s", roomCount, sched.shards, sched.interval)
 
 	s.coordinator = coordinator.NewRoundRobin(s.checkInterval)
 	// Keep one shard tick responsive when shard count is large.
@@ -211,7 +211,7 @@ func (s *Service) tryStartShardAutoRecordRooms(shardIndex, shardCount int) {
 
 	rooms, err := s.subSvc.ListSubscribedRoomsWithConfig()
 	if err != nil {
-		logger.Warnf("列出房间订阅失败：%v", err)
+		log.Warnf("列出房间订阅失败：%v", err)
 		return
 	}
 
@@ -247,7 +247,7 @@ func (s *Service) tryStartShardAutoRecordRooms(shardIndex, shardCount int) {
 			continue
 		}
 
-		logger.Debugf("new live session detected for room %d (%s), key: %s", roomID, info.Uname, currentSessionKey)
+		log.Debugf("new live session detected for room %d (%s), key: %s", roomID, info.Uname, currentSessionKey)
 		s.m.LiveSessionDetected(roomID)
 		state := notify.LiveStateLiveDetected
 
@@ -275,10 +275,10 @@ func (s *Service) tryStartShardAutoRecordRooms(shardIndex, shardCount int) {
 				switch err {
 				case nil, recorder.ErrRecordingStarted, recorder.ErrRecordRecovering, recorder.ErrRecordingPending:
 					state = notify.LiveStateAutoRecordStarted
-					logger.Infof("已开始录制房间 %d（%s）", roomID, info.Uname)
+					log.Infof("已开始录制房间 %d（%s）", roomID, info.Uname)
 				default:
 					state = notify.LiveStateAutoRecordFailed
-					logger.Warnf("开始录制房间 %d 失败：%v", roomID, err)
+					log.Warnf("开始录制房间 %d 失败：%v", roomID, err)
 				}
 			}
 		}
@@ -315,7 +315,7 @@ func streamOptionsFromRoomConfig(cfg *subscribe.RoomConfig) []bilibili.GetStream
 func (s *Service) markSessionState(roomID int, sessionKey string) {
 	s.sessionKeys.Store(roomID, sessionKey)
 	if err := s.bucket.Put([]byte(strconv.Itoa(roomID)), []byte(sessionKey)); err != nil {
-		logger.Warnf("保存房间 %d 会话密钥失败：%v", roomID, err)
+		log.Warnf("保存房间 %d 会话密钥失败：%v", roomID, err)
 	}
 }
 
@@ -325,7 +325,7 @@ func (s *Service) clearSessionState(roomID int) {
 		return
 	}
 	if err := s.bucket.Delete([]byte(strconv.Itoa(roomID))); err != nil {
-		logger.Warnf("清理房间 %d 会话状态失败：%v", roomID, err)
+		log.Warnf("清理房间 %d 会话状态失败：%v", roomID, err)
 	}
 }
 
@@ -340,7 +340,7 @@ func (s *Service) invalidateStaleRooms(rooms map[int]*subscribe.RoomConfig) {
 	for _, roomID := range staleRooms {
 		s.clearSessionState(roomID)
 		s.m.UnregisterLiveRoom(roomID)
-		logger.Debugf("removed stale session state for room: %v", roomID)
+		log.Debugf("removed stale session state for room: %v", roomID)
 	}
 }
 
@@ -351,7 +351,7 @@ func (s *Service) getCachedRoomInfos(roomIDs []int) map[int]*bilibili.LiveRoomIn
 	}
 	infos, err := s.roomSvc.GetMultipleRoomInfos(roomIDs...)
 	if err != nil {
-		logger.Warnf("读取房间信息缓存失败：%v", err)
+		log.Warnf("读取房间信息缓存失败：%v", err)
 		return out
 	}
 	for _, roomID := range roomIDs {
@@ -368,11 +368,11 @@ func (s *Service) getNotifyRoomInfos(liveCheckRoomIDs []int) map[int]*bilibili.L
 	if len(liveCheckRoomIDs) > 0 {
 		infos, err := s.roomSvc.RefreshRoomInfos(liveCheckRoomIDs...)
 		if err != nil {
-			logger.Warnf("强制刷新房间信息失败：%v，回退到逐房间检查", err)
+			log.Warnf("强制刷新房间信息失败：%v，回退到逐房间检查", err)
 			for _, roomID := range liveCheckRoomIDs {
 				one, checkErr := s.roomSvc.RefreshRoomInfos(roomID)
 				if checkErr != nil {
-					logger.Warnf("获取房间 %d 信息失败：%v", roomID, checkErr)
+					log.Warnf("获取房间 %d 信息失败：%v", roomID, checkErr)
 					continue
 				}
 				if info, ok := one[strconv.Itoa(roomID)]; ok {

@@ -8,13 +8,13 @@ import (
 	"github.com/bilirec/bilirec/internal/modules/bilibili"
 	"github.com/bilirec/bilirec/internal/modules/rest"
 	"github.com/bilirec/bilirec/internal/services/recorder"
+	"github.com/bilirec/bilirec/pkg/logger"
 	"github.com/gofiber/fiber/v3"
-	"github.com/sirupsen/logrus"
 
 	"github.com/bilirec/bilirec/utils"
 )
 
-var logger = logrus.WithField("controller", "record")
+var log = logger.Named("record")
 
 type Controller struct {
 	service *recorder.Service
@@ -50,7 +50,7 @@ func NewController(app *fiber.App, service *recorder.Service) *Controller {
 func (r *Controller) startRecording(ctx fiber.Ctx) error {
 	roomId, err := strconv.Atoi(ctx.Params("roomID"))
 	if err != nil {
-		logger.Warnf("无法将 roomId 解析为整数：%v", err)
+		log.Warnf("无法将 roomId 解析为整数：%v", err)
 		return fiber.NewError(fiber.StatusBadRequest, "无效的房间 ID")
 	}
 
@@ -83,7 +83,7 @@ func (r *Controller) startRecording(ctx fiber.Ctx) error {
 	if qnRaw != "" {
 		qn, err := strconv.Atoi(qnRaw)
 		if err != nil {
-			logger.Warnf("无法将 qn 解析为整数：%v", err)
+			log.Warnf("无法将 qn 解析为整数：%v", err)
 			return fiber.NewError(fiber.StatusBadRequest, "无效的 qn 参数")
 		}
 		streamOptions = append(streamOptions, bilibili.WithQn(bilibili.Quality(qn)))
@@ -103,7 +103,7 @@ func (r *Controller) startRecording(ctx fiber.Ctx) error {
 
 	err = r.service.Start(roomId, startArgs...)
 	if err != nil {
-		logger.Errorf("为房间 %d 开始录制失败：%v", roomId, err)
+		log.Errorf("为房间 %d 开始录制失败：%v", roomId, err)
 		switch err {
 		case bilibili.ErrRoomNotFound:
 			return fiber.NewError(fiber.StatusNotFound, "房间不存在")
@@ -154,7 +154,7 @@ func (r *Controller) startRecording(ctx fiber.Ctx) error {
 func (r *Controller) stopRecording(ctx fiber.Ctx) error {
 	roomId, err := strconv.Atoi(ctx.Params("roomID"))
 	if err != nil {
-		logger.Warnf("无法将 roomId 解析为整数：%v", err)
+		log.Warnf("无法将 roomId 解析为整数：%v", err)
 		return fiber.NewError(fiber.StatusBadRequest, "无效的房间 ID")
 	}
 	stopped := r.service.Stop(roomId)
@@ -178,7 +178,7 @@ func (r *Controller) stopRecording(ctx fiber.Ctx) error {
 func (r *Controller) getRecordingStatuses(ctx fiber.Ctx) error {
 	roomIds, err := utils.ParseRoomIDs(ctx.Query("roomIDs", ""), ctx.Body())
 	if err != nil {
-		logger.Warnf("无法解析 roomIds：%v", err)
+		log.Warnf("无法解析 roomIds：%v", err)
 		return fiber.NewError(fiber.StatusBadRequest, err.Error())
 	}
 
@@ -204,7 +204,7 @@ func (r *Controller) getRecordingStatuses(ctx fiber.Ctx) error {
 func (r *Controller) getRecordingStats(ctx fiber.Ctx) error {
 	roomIds, err := utils.ParseRoomIDs(ctx.Query("roomIDs", ""), ctx.Body())
 	if err != nil {
-		logger.Warnf("无法解析 roomIds：%v", err)
+		log.Warnf("无法解析 roomIds：%v", err)
 		return fiber.NewError(fiber.StatusBadRequest, err.Error())
 	}
 

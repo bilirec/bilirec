@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/sirupsen/logrus"
+	"github.com/bilirec/bilirec/pkg/logger"
 )
 
 func TestFmp4InitWriter_PrependsPendingInit(t *testing.T) {
@@ -13,7 +13,7 @@ func TestFmp4InitWriter_PrependsPendingInit(t *testing.T) {
 
 	p := &fmp4InitWriterProcessor{pendingInit: initSeg}
 	ctx := context.Background()
-	log := logrus.NewEntry(logrus.New())
+	log := logger.Nop()
 
 	if err := p.Open(ctx, log); err != nil {
 		t.Fatalf("Open failed: %v", err)
@@ -47,7 +47,7 @@ func TestFmp4InitWriter_NoOpWhenPendingEmpty(t *testing.T) {
 	moof := makeMediaFragment()
 	p := &fmp4InitWriterProcessor{}
 	ctx := context.Background()
-	log := logrus.NewEntry(logrus.New())
+	log := logger.Nop()
 
 	if err := p.Open(ctx, log); err != nil {
 		t.Fatalf("Open failed: %v", err)
@@ -67,7 +67,7 @@ func TestFmp4InitWriter_EmptyInputDoesNotMarkWritten(t *testing.T) {
 	moof := makeMediaFragment()
 	p := &fmp4InitWriterProcessor{pendingInit: initSeg}
 	ctx := context.Background()
-	log := logrus.NewEntry(logrus.New())
+	log := logger.Nop()
 
 	if err := p.Open(ctx, log); err != nil {
 		t.Fatalf("Open failed: %v", err)

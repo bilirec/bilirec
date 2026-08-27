@@ -6,8 +6,9 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/bilirec/bilirec/pkg/logger"
+
 	"github.com/bilirec/bilirec/pkg/stdoutbox"
-	"github.com/sirupsen/logrus"
 	"github.com/tcnksm/go-latest"
 )
 
@@ -23,7 +24,7 @@ var currentVersionInjected = ""
 var cacheMu sync.RWMutex
 var cached Result
 
-var logger = logrus.WithField("module", "updatecheck")
+var log = logger.Named("updatecheck")
 
 // Result holds version check state for logging and REST responses.
 type Result struct {
@@ -73,7 +74,7 @@ func Check() (Result, error) {
 		return res, err
 	}
 
-	logger.Debugf("latest version: %s, current version: %s, outdated: %v", checkRes.Current, current, checkRes.Outdated)
+	log.Debugf("latest version: %s, current version: %s, outdated: %v", checkRes.Current, current, checkRes.Outdated)
 
 	latestTag := checkRes.Current
 	if latestTag != "" && !strings.HasPrefix(latestTag, "v") {

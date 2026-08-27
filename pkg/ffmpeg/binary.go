@@ -7,21 +7,22 @@ import (
 	"os/exec"
 	"slices"
 
+	"github.com/bilirec/bilirec/pkg/logger"
+
 	"github.com/bilirec/bilirec/pkg/pool"
-	"github.com/sirupsen/logrus"
 )
 
 // 初始容量 (initialCap): 4KB (剛好是一個記憶體分頁，應付絕大多數錯誤綽綽有餘)
 // 最大容量 (maxCap): 4MB (防止極端 Warn 洪水撐爆池子)
 var ffmpegBufPool = pool.NewBufferPool(4*1024, 4*1024*1024)
 
-func Run(ctx context.Context, taskLog *logrus.Entry, args ...string) error {
+func Run(ctx context.Context, taskLog logger.Logger, args ...string) error {
 
 	// 如果開啟了 Debug，依然走「直通水管」即時看完整日誌
-	if taskLog.Logger.IsLevelEnabled(logrus.DebugLevel) {
+	if taskLog.Enabled(logger.DebugLevel) {
 		cmd := exec.CommandContext(ctx, "ffmpeg", args...)
 
-		debugWriter := taskLog.WriterLevel(logrus.DebugLevel)
+		debugWriter := taskLog.WriterAt(logger.DebugLevel)
 		defer debugWriter.Close()
 
 		cmd.Stdout = debugWriter

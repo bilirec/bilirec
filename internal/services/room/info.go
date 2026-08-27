@@ -1,4 +1,4 @@
-﻿package room
+package room
 
 import (
 	"fmt"
@@ -74,7 +74,7 @@ func (r *Service) GetBatchLiveStatus(roomIDs []int) map[string]bool {
 		if err == nil {
 			result[fmt.Sprint(roomID)] = isLive
 		} else {
-			logger.Warnf("检查房间 %d 直播状态失败：%v", roomID, err)
+			log.Warnf("检查房间 %d 直播状态失败：%v", roomID, err)
 			result[fmt.Sprint(roomID)] = false
 		}
 	}
@@ -157,7 +157,7 @@ func (r *Service) refreshRoomInfosInBackground(roomIDs []int) {
 	ids := append([]int(nil), roomIDs...)
 	go func() {
 		if err := r.fetchAndStoreRoomInfos(ids); err != nil {
-			logger.Debugf("background revalidation failed for rooms %v: %v", ids, err)
+			log.Debugf("background revalidation failed for rooms %v: %v", ids, err)
 		}
 	}()
 }

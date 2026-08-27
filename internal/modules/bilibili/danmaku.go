@@ -81,7 +81,7 @@ func (c *Client) GetDanmuInfo(ctx context.Context, roomID int) (*DanmuInfo, erro
 }
 
 func fallbackDanmuInfo(cause error) (*DanmuInfo, error) {
-	logger.Warnf("getDanmuInfo 失败，降级使用默认弹幕服务器：%v", cause)
+	log.Warnf("getDanmuInfo 失败，降级使用默认弹幕服务器：%v", cause)
 	return &DanmuInfo{
 		Token:    "",
 		HostList: []DanmuInfoHost{{Host: defaultDanmakuHost, WssPort: defaultDanmakuWssPort}},

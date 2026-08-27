@@ -1,10 +1,12 @@
-﻿package convert
+package convert
 
 import (
 	"context"
 	"fmt"
 	"sync"
 	"time"
+
+	"github.com/bilirec/bilirec/pkg/logger"
 
 	"github.com/bilirec/bilirec/internal/modules/config"
 	"github.com/bilirec/bilirec/pkg/db"
@@ -13,7 +15,6 @@ import (
 	"github.com/bilirec/bilirec/pkg/pool"
 	"github.com/bilirec/bilirec/utils"
 	"github.com/puzpuzpuz/xsync/v4"
-	"github.com/sirupsen/logrus"
 	"golang.org/x/sync/semaphore"
 )
 
@@ -25,7 +26,7 @@ const (
 
 type ffmpegConvertManager struct {
 	bucket     *db.Bucket
-	logger     *logrus.Entry
+	logger     logger.Logger
 	serializer *pool.Serializer
 	getActives GetActiveRecordings
 	deleter    *sourceDeleter
@@ -37,7 +38,7 @@ type ffmpegConvertManager struct {
 
 func newFFmpegConvertManager(getActives GetActiveRecordings, deleter *sourceDeleter) ConvertManager {
 	return &ffmpegConvertManager{
-		logger:     logger.WithField("manager", "ffmpeg"),
+		logger:     log.With("manager", "ffmpeg"),
 		serializer: pool.NewSerializer(),
 		getActives: getActives,
 		deleter:    deleter,
@@ -140,7 +141,7 @@ func (f *ffmpegConvertManager) runTaskPeriodically(ctx context.Context, wg *sync
 			}
 
 			for _, queue := range list {
-				taskLog := f.logger.WithField("task_id", queue.TaskID)
+				taskLog := f.logger.With("task_id", queue.TaskID)
 
 				if _, processing := f.processing.Load(queue.TaskID); processing {
 					taskLog.Debug("task is already being processed, skip this cycle")
@@ -186,7 +187,7 @@ func (f *ffmpegConvertManager) deleteTaskFromQueue(taskID string) error {
 	})
 }
 
-func (f *ffmpegConvertManager) asyncProcessTask(ctx context.Context, queue *TaskQueue, taskLog *logrus.Entry) {
+func (f *ffmpegConvertManager) asyncProcessTask(ctx context.Context, queue *TaskQueue, taskLog logger.Logger) {
 	defer func() {
 		if cancel, ok := f.processing.LoadAndDelete(queue.TaskID); ok {
 			cancel()
@@ -227,7 +228,7 @@ func (f *ffmpegConvertManager) asyncProcessTask(ctx context.Context, queue *Task
 	taskLog.Info("任务已完成并从队列移除")
 }
 
-func (f *ffmpegConvertManager) processTask(ctx context.Context, queue *TaskQueue, taskLog *logrus.Entry) error {
+func (f *ffmpegConvertManager) processTask(ctx context.Context, queue *TaskQueue, taskLog logger.Logger) error {
 
 	if !utils.IsFileExists(queue.InputPath) {
 		taskLog.Warnf("输入文件 %s 已不存在，跳过转码", queue.InputPath)

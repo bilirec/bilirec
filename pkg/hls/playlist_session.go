@@ -7,8 +7,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/bilirec/bilirec/pkg/logger"
+
 	"github.com/go-resty/resty/v2"
-	"github.com/sirupsen/logrus"
 )
 
 var (
@@ -62,7 +63,7 @@ type PlaylistSessionOptions struct {
 	SegmentClient  *resty.Client
 	ReadBody       SegmentBodyReader
 	ReleaseBytes   BytesReleaser
-	Log            *logrus.Entry
+	Log            logger.Logger
 	OnURLRefresh   func()
 }
 
@@ -75,7 +76,7 @@ type PlaylistSession struct {
 	segmentClient  *resty.Client
 	readBody       SegmentBodyReader
 	release        BytesReleaser
-	log            *logrus.Entry
+	log            logger.Logger
 	onURLRefresh   func()
 
 	m3u8URL        string
@@ -90,9 +91,6 @@ type PlaylistSession struct {
 func NewPlaylistSession(ctx context.Context, opt PlaylistSessionOptions) (*PlaylistSession, error) {
 	if opt.FetchURL == nil || opt.PlaylistClient == nil || opt.SegmentClient == nil {
 		return nil, fmt.Errorf("hls：PlaylistSession 缺少必要参数")
-	}
-	if opt.Log == nil {
-		return nil, fmt.Errorf("hls：PlaylistSession 缺少 Log")
 	}
 	if opt.ReadBody == nil {
 		opt.ReadBody = readSegmentBody

@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"github.com/bilirec/bilirec/internal/modules/config"
-	"github.com/sirupsen/logrus"
+	"github.com/bilirec/bilirec/pkg/logger"
 )
 
 // Danmaku recording performance tests. These are the regression metrics for
@@ -59,9 +59,9 @@ const perfGuardJSON = `{"cmd":"GUARD_BUY","data":{"username":"舰长用户","uid
 
 func quietDanmakuLogs(t testing.TB) {
 	t.Helper()
-	prev := logrus.GetLevel()
-	logrus.SetLevel(logrus.ErrorLevel)
-	t.Cleanup(func() { logrus.SetLevel(prev) })
+	prev := logger.Level()
+	logger.SetLevel(logger.ErrorLevel)
+	t.Cleanup(func() { logger.SetLevel(prev) })
 }
 
 func useDanmakuOverflowPolicy(t testing.TB, policy string) {

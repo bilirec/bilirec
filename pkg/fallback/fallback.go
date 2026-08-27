@@ -5,11 +5,12 @@ import (
 	"sync"
 	"time"
 
+	"github.com/bilirec/bilirec/pkg/logger"
+
 	"github.com/go-resty/resty/v2"
-	"github.com/sirupsen/logrus"
 )
 
-var logger = logrus.WithField("pkg", "fallback")
+var log = logger.Named("fallback")
 
 const (
 	degradeThreshold      = 3
@@ -40,12 +41,12 @@ type Client struct {
 
 	mu sync.Mutex
 
-	preferFallback      bool
-	fallbackFailStreak  int
-	lastProbeAt         time.Time
-	probeSuccessStreak  int
-	degradedLogged      bool
-	recoveredLogged     bool
+	preferFallback     bool
+	fallbackFailStreak int
+	lastProbeAt        time.Time
+	probeSuccessStreak int
+	degradedLogged     bool
+	recoveredLogged    bool
 }
 
 // New creates a fallback client. fallback may be nil to disable cookie retry.
@@ -96,7 +97,7 @@ func (c *Client) Do(ctx context.Context, build RequestBuilder) (*resty.Response,
 			}
 			return resp, nil
 		}
-		logger.Debug("primary 失败，尝试 fallback client")
+		log.Debug("primary 失败，尝试 fallback client")
 		c.recordFallbackTrigger()
 		fbResp, fbErr := c.execute(ctx, c.fallback, build)
 		fbDecision := c.interpret(ctx, fbResp, fbErr)
@@ -156,7 +157,7 @@ func (c *Client) onProbeSuccess() {
 		c.probeSuccessStreak = 0
 		c.degradedLogged = false
 		if !c.recoveredLogged {
-			logger.Info("直播間資訊輪詢已恢復匿名模式")
+			log.Info("直播間資訊輪詢已恢復匿名模式")
 			c.recoveredLogged = true
 		}
 	}
@@ -173,14 +174,14 @@ func (c *Client) recordFallbackTrigger() {
 	defer c.mu.Unlock()
 	c.fallbackFailStreak++
 	if c.fallbackFailStreak == 1 {
-		logger.Warn("直播間資訊請求觸發風控，已切換為帳號憑證模式")
+		log.Warn("直播間資訊請求觸發風控，已切換為帳號憑證模式")
 	}
 	if c.fallbackFailStreak >= degradeThreshold && !c.preferFallback {
 		c.preferFallback = true
 		c.probeSuccessStreak = 0
 		c.recoveredLogged = false
 		if !c.degradedLogged {
-			logger.Info("直播間資訊輪詢已降級為帳號憑證模式")
+			log.Info("直播間資訊輪詢已降級為帳號憑證模式")
 			c.degradedLogged = true
 		}
 	}

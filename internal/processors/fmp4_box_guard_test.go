@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/sirupsen/logrus"
+	"github.com/bilirec/bilirec/pkg/logger"
 )
 
 // makeInitSegment creates a minimal ftyp box as an init segment
@@ -69,7 +69,7 @@ func newFmp4BoxGuardForTest() (*Fmp4BoxGuardProcessor, *[]byte) {
 func TestFmp4BoxGuard_AllowsInitSegmentFirst(t *testing.T) {
 	processor, lastInit := newFmp4BoxGuardForTest()
 	ctx := context.Background()
-	log := logrus.NewEntry(logrus.New())
+	log := logger.Nop()
 
 	if err := processor.Open(ctx, log); err != nil {
 		t.Fatalf("Open failed: %v", err)
@@ -91,7 +91,7 @@ func TestFmp4BoxGuard_AllowsInitSegmentFirst(t *testing.T) {
 func TestFmp4BoxGuard_AllowsMediaFragmentAfterInit(t *testing.T) {
 	processor, _ := newFmp4BoxGuardForTest()
 	ctx := context.Background()
-	log := logrus.NewEntry(logrus.New())
+	log := logger.Nop()
 
 	if err := processor.Open(ctx, log); err != nil {
 		t.Fatalf("Open failed: %v", err)
@@ -113,7 +113,7 @@ func TestFmp4BoxGuard_AllowsMediaFragmentAfterInit(t *testing.T) {
 func TestFmp4BoxGuard_AllowsStypAfterInit(t *testing.T) {
 	processor, _ := newFmp4BoxGuardForTest()
 	ctx := context.Background()
-	log := logrus.NewEntry(logrus.New())
+	log := logger.Nop()
 
 	if err := processor.Open(ctx, log); err != nil {
 		t.Fatalf("Open failed: %v", err)
@@ -135,7 +135,7 @@ func TestFmp4BoxGuard_AllowsStypAfterInit(t *testing.T) {
 func TestFmp4BoxGuard_ReturnsErrorOnDiscontinuity(t *testing.T) {
 	processor, _ := newFmp4BoxGuardForTest()
 	ctx := context.Background()
-	log := logrus.NewEntry(logrus.New())
+	log := logger.Nop()
 
 	if err := processor.Open(ctx, log); err != nil {
 		t.Fatalf("Open failed: %v", err)
@@ -171,7 +171,7 @@ func TestFmp4BoxGuard_ReturnsErrorOnDiscontinuity(t *testing.T) {
 func TestFmp4BoxGuard_SkipsDuplicateInitAfterMedia(t *testing.T) {
 	processor, _ := newFmp4BoxGuardForTest()
 	ctx := context.Background()
-	log := logrus.NewEntry(logrus.New())
+	log := logger.Nop()
 
 	if err := processor.Open(ctx, log); err != nil {
 		t.Fatalf("Open failed: %v", err)
@@ -193,7 +193,7 @@ func TestFmp4BoxGuard_SkipsDuplicateInitAfterMedia(t *testing.T) {
 func TestFmp4BoxGuard_DropsUnknownBoxType(t *testing.T) {
 	processor, _ := newFmp4BoxGuardForTest()
 	ctx := context.Background()
-	log := logrus.NewEntry(logrus.New())
+	log := logger.Nop()
 
 	if err := processor.Open(ctx, log); err != nil {
 		t.Fatalf("Open failed: %v", err)
@@ -218,7 +218,7 @@ func TestFmp4BoxGuard_DropsUnknownBoxType(t *testing.T) {
 func TestFmp4BoxGuard_DropsTruncatedSegment(t *testing.T) {
 	processor, _ := newFmp4BoxGuardForTest()
 	ctx := context.Background()
-	log := logrus.NewEntry(logrus.New())
+	log := logger.Nop()
 
 	if err := processor.Open(ctx, log); err != nil {
 		t.Fatalf("Open failed: %v", err)
@@ -237,7 +237,7 @@ func TestFmp4BoxGuard_DropsTruncatedSegment(t *testing.T) {
 func TestFmp4BoxGuard_AllowsEmptySegment(t *testing.T) {
 	processor, _ := newFmp4BoxGuardForTest()
 	ctx := context.Background()
-	log := logrus.NewEntry(logrus.New())
+	log := logger.Nop()
 
 	if err := processor.Open(ctx, log); err != nil {
 		t.Fatalf("Open failed: %v", err)
@@ -257,7 +257,7 @@ func TestFmp4BoxGuard_ResetsSeenMediaOnOpen(t *testing.T) {
 	processor.seenMedia = true
 
 	ctx := context.Background()
-	log := logrus.NewEntry(logrus.New())
+	log := logger.Nop()
 
 	if err := processor.Open(ctx, log); err != nil {
 		t.Fatalf("Open failed: %v", err)
@@ -271,7 +271,7 @@ func TestFmp4BoxGuard_ResetsSeenMediaOnOpen(t *testing.T) {
 func TestFmp4BoxGuard_DiscontinuityScenario(t *testing.T) {
 	processor, _ := newFmp4BoxGuardForTest()
 	ctx := context.Background()
-	log := logrus.NewEntry(logrus.New())
+	log := logger.Nop()
 
 	if err := processor.Open(ctx, log); err != nil {
 		t.Fatalf("Open failed: %v", err)
@@ -305,7 +305,7 @@ func TestFmp4BoxGuard_DiscontinuityScenario(t *testing.T) {
 func TestFmp4BoxGuard_ChangedInitRotatesImmediately(t *testing.T) {
 	processor, _ := newFmp4BoxGuardForTest()
 	ctx := context.Background()
-	log := logrus.NewEntry(logrus.New())
+	log := logger.Nop()
 	_ = processor.Open(ctx, log)
 
 	_, _ = processor.Process(ctx, log, makeInitSegment())

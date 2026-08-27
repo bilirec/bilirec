@@ -13,9 +13,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bilirec/bilirec/pkg/logger"
+
 	"github.com/bilirec/bilirec/pkg/cloudconvert"
 	"github.com/bilirec/bilirec/pkg/pool"
-	"github.com/sirupsen/logrus"
 )
 
 const (
@@ -33,7 +34,7 @@ const (
 )
 
 func init() {
-	logrus.SetLevel(logrus.DebugLevel)
+	logger.SetLevel(logger.DebugLevel)
 	os.Setenv("DEBUG", "true")
 }
 

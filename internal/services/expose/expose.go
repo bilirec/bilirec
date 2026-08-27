@@ -1,4 +1,4 @@
-﻿package expose
+package expose
 
 import (
 	"context"
@@ -10,6 +10,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/bilirec/bilirec/pkg/logger"
+
 	"github.com/bilirec/bilirec/internal/modules/config"
 	"github.com/bilirec/bilirec/pkg/stdoutbox"
 	"github.com/bilirec/bilirec/utils"
@@ -17,7 +19,6 @@ import (
 	"github.com/fatedier/frp/client/proxy"
 	"github.com/fatedier/frp/pkg/config/source"
 	v1 "github.com/fatedier/frp/pkg/config/v1"
-	"github.com/sirupsen/logrus"
 	"go.uber.org/fx"
 )
 
@@ -30,7 +31,7 @@ const (
 	tunnelStatusWaitTimeout = 15 * time.Second
 )
 
-var logger = logrus.WithField("service", "expose")
+var log = logger.Named("expose")
 
 type tunnelService interface {
 	Run(context.Context) error
@@ -53,11 +54,11 @@ func NewService(lc fx.Lifecycle, cfg *config.Config) *Service {
 
 	// Log FRP mode and token source for audit/debugging (without exposing token value)
 	modeLabel := frpModeLabel(cfg)
-	logger.Infof("FRP 已启用，模式：%s", modeLabel)
+	log.Infof("FRP 已启用，模式：%s", modeLabel)
 
 	svc, proxyName, remoteURL, err := initService(cfg)
 	if err != nil {
-		logger.Errorf("初始化 FRP 客户端失败：%v", err)
+		log.Errorf("初始化 FRP 客户端失败：%v", err)
 		return s
 	} else {
 		s.svc = svc
@@ -90,13 +91,13 @@ func frpModeLabel(cfg *config.Config) string {
 func (s *Service) Run() {
 	defer s.wg.Done()
 	if err := s.svc.Run(s.ctx); err != nil {
-		logger.Errorf("FRP 客户端错误：%v", err)
+		log.Errorf("FRP 客户端错误：%v", err)
 	}
 }
 
 func (s *Service) waitAndPrintTunnelBox(local, proxyName, remoteURL string) {
 	defer s.wg.Done()
-	
+
 	ticker := time.NewTicker(tunnelStatusPollPeriod)
 	defer ticker.Stop()
 
@@ -108,7 +109,7 @@ func (s *Service) waitAndPrintTunnelBox(local, proxyName, remoteURL string) {
 		case <-s.ctx.Done():
 			return
 		case <-timeout.C:
-			logger.Warnf("等待 FRP 代理 %q 变为运行状态超时；未打印隧道信息框", proxyName)
+			log.Warnf("等待 FRP 代理 %q 变为运行状态超时；未打印隧道信息框", proxyName)
 			return
 		case <-ticker.C:
 			if exporter := s.svc.StatusExporter(); exporter != nil {
@@ -118,10 +119,10 @@ func (s *Service) waitAndPrintTunnelBox(local, proxyName, remoteURL string) {
 						printTunnelBox(local, remoteURL)
 						return
 					case proxy.ProxyPhaseStartErr:
-						logger.Errorf("代理 %q 启动失败：%s", proxyName, status.Err)
+						log.Errorf("代理 %q 启动失败：%s", proxyName, status.Err)
 						return
 					case proxy.ProxyPhaseCheckFailed:
-						logger.Errorf("代理 %q 检查失败：%s", proxyName, status.Err)
+						log.Errorf("代理 %q 检查失败：%s", proxyName, status.Err)
 						return
 					}
 				}

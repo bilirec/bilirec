@@ -6,9 +6,10 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/bilirec/bilirec/pkg/logger"
+
 	"github.com/bilirec/bilirec/pkg/backoff"
 	"github.com/go-resty/resty/v2"
-	"github.com/sirupsen/logrus"
 )
 
 // StreamRunnerOptions configures NewStreamRunner / Start.
@@ -18,7 +19,7 @@ type StreamRunnerOptions struct {
 	SegmentClient  *resty.Client
 	ReadBody       SegmentBodyReader
 	ReleaseBytes   BytesReleaser
-	Log            *logrus.Entry
+	Log            logger.Logger
 	ChanBufferSize int
 	OnClose        func()
 
@@ -38,7 +39,7 @@ type StreamRunner struct {
 	readBody      SegmentBodyReader
 	ch            chan<- []byte
 	release       BytesReleaser
-	log           *logrus.Entry
+	log           logger.Logger
 	onClose       func()
 	pollInterval  time.Duration
 	nextSeq       int64
@@ -52,12 +53,6 @@ type StreamRunner struct {
 func Start(ctx context.Context, opt StreamRunnerOptions) (<-chan []byte, error) {
 	if opt.Session == nil || opt.Settle == nil || opt.SegmentClient == nil || opt.InitialPlaylist == nil {
 		return nil, fmt.Errorf("hls：StreamRunner 缺少必要参数")
-	}
-	if opt.Log == nil {
-		return nil, fmt.Errorf("hls：StreamRunner 缺少 Log")
-	}
-	if opt.Settle.Log == nil {
-		return nil, fmt.Errorf("hls：InitSettle 缺少 Log")
 	}
 	if opt.PollInterval <= 0 {
 		return nil, fmt.Errorf("hls：PollInterval 必须大于 0")
@@ -200,7 +195,7 @@ func (r *StreamRunner) run() {
 	consecutiveSegmentFailures := 0
 	segmentFailureBackoff := backoff.NewExpotential(2*time.Second, 2, 30*time.Second)
 	lastSyncWaitBaseSeq := int64(-1)
-	traceEnabled := r.log.Logger.IsLevelEnabled(logrus.TraceLevel)
+	traceEnabled := r.log.Enabled(logger.TraceLevel)
 
 	for {
 		select {

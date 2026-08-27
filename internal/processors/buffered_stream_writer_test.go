@@ -10,10 +10,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bilirec/bilirec/pkg/logger"
+
 	"github.com/bilirec/bilirec/internal/processors"
 	"github.com/bilirec/bilirec/pkg/pipeline"
 	"github.com/bilirec/bilirec/pkg/pool"
-	"github.com/sirupsen/logrus"
 )
 
 func TestBufferedStreamWriter_MemoryLeak(t *testing.T) {
@@ -656,5 +657,5 @@ func TestBufferedStreamWriter_NoSDCardProtection_AlwaysFlushes(t *testing.T) {
 func init() {
 	_ = bufio.NewWriter(nil)
 	// Set log level to warn to reduce noise in tests
-	logrus.SetLevel(logrus.WarnLevel)
+	logger.SetLevel(logger.WarnLevel)
 }

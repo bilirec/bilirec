@@ -7,8 +7,8 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/bilirec/bilirec/pkg/logger"
 	"github.com/bilirec/bilirec/pkg/pipeline"
-	"github.com/sirupsen/logrus"
 )
 
 var errOpenFailed = errors.New("open failed")
@@ -28,7 +28,7 @@ type testProcessor struct {
 	closeOrder *[]string
 }
 
-func (p *testProcessor) Open(ctx context.Context, log *logrus.Entry) error {
+func (p *testProcessor) Open(ctx context.Context, log logger.Logger) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.openCalls++
@@ -39,7 +39,7 @@ func (p *testProcessor) Open(ctx context.Context, log *logrus.Entry) error {
 	return nil
 }
 
-func (p *testProcessor) Process(ctx context.Context, log *logrus.Entry, item int) (int, error) {
+func (p *testProcessor) Process(ctx context.Context, log logger.Logger, item int) (int, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.processCalls++

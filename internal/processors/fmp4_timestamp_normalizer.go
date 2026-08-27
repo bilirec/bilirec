@@ -3,9 +3,10 @@ package processors
 import (
 	"context"
 
+	"github.com/bilirec/bilirec/pkg/logger"
+
 	"github.com/bilirec/bilirec/pkg/hls"
 	"github.com/bilirec/bilirec/pkg/pipeline"
-	"github.com/sirupsen/logrus"
 )
 
 // Fmp4TimestampNormalizerProcessor normalizes tfdt timestamps in fragmented MP4
@@ -24,14 +25,14 @@ func NewFmp4TimestampNormalizer(bases *map[uint32]uint64) *pipeline.ProcessorInf
 	)
 }
 
-func (p *Fmp4TimestampNormalizerProcessor) Open(_ context.Context, _ *logrus.Entry) error {
+func (p *Fmp4TimestampNormalizerProcessor) Open(_ context.Context, _ logger.Logger) error {
 	p.segmentCount = 0
 	p.normalizedSegmentCount = 0
 	p.normalizedTfdtTotal = 0
 	return nil
 }
 
-func (p *Fmp4TimestampNormalizerProcessor) Process(_ context.Context, log *logrus.Entry, data []byte) ([]byte, error) {
+func (p *Fmp4TimestampNormalizerProcessor) Process(_ context.Context, log logger.Logger, data []byte) ([]byte, error) {
 	if len(data) == 0 {
 		return data, nil
 	}
@@ -39,7 +40,7 @@ func (p *Fmp4TimestampNormalizerProcessor) Process(_ context.Context, log *logru
 	p.segmentCount++
 	segmentNo := p.segmentCount
 
-	if len(data) >= 8 {
+	if log.Enabled(logger.DebugLevel) && len(data) >= 8 {
 		boxType := string(data[4:8])
 		if segmentNo <= 3 || boxType == "ftyp" || segmentNo%60 == 0 {
 			log.Debugf("fmp4 segment: box=%s size=%d seg=%d", boxType, len(data), segmentNo)

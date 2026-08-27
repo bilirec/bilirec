@@ -1,11 +1,12 @@
-﻿package processors
+package processors
 
 import (
 	"context"
 	"crypto/sha256"
 
+	"github.com/bilirec/bilirec/pkg/logger"
+
 	"github.com/bilirec/bilirec/pkg/pipeline"
-	"github.com/sirupsen/logrus"
 )
 
 // SegmentDedupProcessor drops a segment whose SHA-256 matches the previous
@@ -36,7 +37,7 @@ func NewSegmentDedup() *pipeline.ProcessorInfo[[]byte] {
 	)
 }
 
-func (p *SegmentDedupProcessor) Open(_ context.Context, _ *logrus.Entry) error {
+func (p *SegmentDedupProcessor) Open(_ context.Context, _ logger.Logger) error {
 	*p = SegmentDedupProcessor{}
 	return nil
 }
@@ -76,7 +77,7 @@ func (p *SegmentDedupProcessor) updateFingerprint(data []byte) {
 
 // Process returns (nil, nil) for a duplicate segment, signalling downstream
 // processors (writers) to skip writing.
-func (p *SegmentDedupProcessor) Process(_ context.Context, log *logrus.Entry, data []byte) ([]byte, error) {
+func (p *SegmentDedupProcessor) Process(_ context.Context, log logger.Logger, data []byte) ([]byte, error) {
 	if len(data) == 0 {
 		return data, nil
 	}

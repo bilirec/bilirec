@@ -4,8 +4,9 @@ import (
 	"context"
 	"testing"
 
+	"github.com/bilirec/bilirec/pkg/logger"
+
 	"github.com/bilirec/bilirec/pkg/benchreport"
-	"github.com/sirupsen/logrus"
 )
 
 func makePayload(size int, seed byte) []byte {
@@ -18,9 +19,8 @@ func makePayload(size int, seed byte) []byte {
 
 func benchmarkSegmentDedup(b *testing.B, payloadSize int, duplicate bool) {
 	proc := &SegmentDedupProcessor{}
-	logger := logrus.New()
-	logger.SetLevel(logrus.ErrorLevel)
-	entry := logrus.NewEntry(logger)
+	logger.SetLevel(logger.ErrorLevel)
+	entry := logger.Nop()
 
 	if err := proc.Open(context.Background(), entry); err != nil {
 		b.Fatalf("open processor: %v", err)
@@ -76,9 +76,8 @@ func BenchmarkSegmentDedup_Duplicate1MB(b *testing.B) {
 // Phase 1 fingerprint should reject the match on length alone, skipping SHA-256.
 func BenchmarkSegmentDedup_VaryingSize(b *testing.B) {
 	proc := &SegmentDedupProcessor{}
-	logger := logrus.New()
-	logger.SetLevel(logrus.ErrorLevel)
-	entry := logrus.NewEntry(logger)
+	logger.SetLevel(logger.ErrorLevel)
+	entry := logger.Nop()
 
 	if err := proc.Open(context.Background(), entry); err != nil {
 		b.Fatalf("open processor: %v", err)

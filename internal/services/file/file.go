@@ -1,4 +1,4 @@
-﻿package file
+package file
 
 import (
 	"context"
@@ -11,13 +11,14 @@ import (
 	"sync"
 	"time"
 
+	"github.com/bilirec/bilirec/pkg/logger"
+
 	"github.com/bilirec/bilirec/internal/modules/config"
 	"github.com/bilirec/bilirec/internal/services/path"
-	"github.com/sirupsen/logrus"
 	"go.uber.org/fx"
 )
 
-var logger = logrus.WithField("service", "file")
+var log = logger.Named("file")
 
 var ErrIsDirectory = fmt.Errorf("路径是目录")
 
@@ -148,7 +149,7 @@ func (s *Service) ListTreeWithOptions(path string, opts ListOptions) (*PagedTree
 	start := min(opts.Offset, total)
 	end := total
 	if opts.Limit > 0 {
-		end = min(start + opts.Limit, total)
+		end = min(start+opts.Limit, total)
 	}
 	page := filtered[start:end]
 

@@ -1,4 +1,4 @@
-﻿package config
+package config
 
 import "fmt"
 
@@ -279,68 +279,68 @@ func (g *GlobalReadOnly) Validate() error {
 		return fmt.Errorf("配置无效：DANMAKU_OVERFLOW_POLICY 仅支持 drop、block，当前值：%s", g.config.DanmakuOverflowPolicy)
 	}
 	if g.config.CloudConvertCheckIntervalSecs <= 0 {
-		logger.Warnf("CLOUDCONVERT_CHECK_INTERVAL_SECS 无效（%d），使用默认值 %d 秒", g.config.CloudConvertCheckIntervalSecs, defaultCloudConvertCheckIntervalSecs)
+		log.Warnf("CLOUDCONVERT_CHECK_INTERVAL_SECS 无效（%d），使用默认值 %d 秒", g.config.CloudConvertCheckIntervalSecs, defaultCloudConvertCheckIntervalSecs)
 	}
 	if g.config.CloudConvertMaxConcurrentDownloads <= 0 {
-		logger.Warnf("CLOUDCONVERT_MAX_CONCURRENT_DOWNLOADS 无效（%d），使用默认值 %d", g.config.CloudConvertMaxConcurrentDownloads, defaultCloudConvertMaxConcurrentDownloads)
+		log.Warnf("CLOUDCONVERT_MAX_CONCURRENT_DOWNLOADS 无效（%d），使用默认值 %d", g.config.CloudConvertMaxConcurrentDownloads, defaultCloudConvertMaxConcurrentDownloads)
 	}
 	if g.config.CloudConvertAllowDuringRecordingMaxActiveRecordings < 1 {
-		logger.Debugf("CLOUDCONVERT_ALLOW_DURING_RECORDING_MAX_ACTIVE_RECORDINGS is %d, threshold disabled (no active-recordings limit)", g.config.CloudConvertAllowDuringRecordingMaxActiveRecordings)
+		log.Debugf("CLOUDCONVERT_ALLOW_DURING_RECORDING_MAX_ACTIVE_RECORDINGS is %d, threshold disabled (no active-recordings limit)", g.config.CloudConvertAllowDuringRecordingMaxActiveRecordings)
 	}
 	if g.config.FFmpegCheckIntervalSecs <= 0 {
-		logger.Warnf("FFMPEG_CHECK_INTERVAL_SECS 无效（%d），使用默认值 %d 秒", g.config.FFmpegCheckIntervalSecs, defaultFFmpegCheckIntervalSecs)
+		log.Warnf("FFMPEG_CHECK_INTERVAL_SECS 无效（%d），使用默认值 %d 秒", g.config.FFmpegCheckIntervalSecs, defaultFFmpegCheckIntervalSecs)
 	}
 	if g.config.FFmpegMaxConcurrentTasks <= 0 {
-		logger.Warnf("FFMPEG_MAX_CONCURRENT_TASKS 无效（%d），使用默认值 %d", g.config.FFmpegMaxConcurrentTasks, defaultFFmpegMaxConcurrentTasks)
+		log.Warnf("FFMPEG_MAX_CONCURRENT_TASKS 无效（%d），使用默认值 %d", g.config.FFmpegMaxConcurrentTasks, defaultFFmpegMaxConcurrentTasks)
 	}
 	if g.config.FFmpegAllowDuringRecordingMaxActiveRecordings < 1 {
-		logger.Debugf("FFMPEG_ALLOW_DURING_RECORDING_MAX_ACTIVE_RECORDINGS is %d, threshold disabled (no active-recordings limit)", g.config.FFmpegAllowDuringRecordingMaxActiveRecordings)
+		log.Debugf("FFMPEG_ALLOW_DURING_RECORDING_MAX_ACTIVE_RECORDINGS is %d, threshold disabled (no active-recordings limit)", g.config.FFmpegAllowDuringRecordingMaxActiveRecordings)
 	}
 	if g.config.liveStreamWriterSyncPeriod < 0 {
-		logger.Warnf("LIVE_STREAM_WRITER_SYNC_PERIOD_SECS 无效（%d），使用默认值 %d 秒", g.config.liveStreamWriterSyncPeriod, defaultLiveStreamWriterSyncPeriodSecs)
+		log.Warnf("LIVE_STREAM_WRITER_SYNC_PERIOD_SECS 无效（%d），使用默认值 %d 秒", g.config.liveStreamWriterSyncPeriod, defaultLiveStreamWriterSyncPeriodSecs)
 	}
 	if g.config.liveStreamWriterColdCacheReleasePeriod < 0 {
-		logger.Warnf("LIVE_STREAM_WRITER_COLD_CACHE_RELEASE_SECS 无效（%d），冷缓存释放已关闭", g.config.liveStreamWriterColdCacheReleasePeriod)
+		log.Warnf("LIVE_STREAM_WRITER_COLD_CACHE_RELEASE_SECS 无效（%d），冷缓存释放已关闭", g.config.liveStreamWriterColdCacheReleasePeriod)
 	}
 	if g.config.liveStreamWriterSyncPeriod > 0 && g.config.liveStreamWriterColdCacheReleasePeriod > 0 {
-		logger.Warnf(
+		log.Warnf(
 			"LIVE_STREAM_WRITER_SYNC_PERIOD_SECS（%d）与 LIVE_STREAM_WRITER_COLD_CACHE_RELEASE_SECS（%d）同时启用；以 periodic fsync 为准，冷缓存将在每次 fsync 成功后一并释放（不再按冷释放间隔单独计时）",
 			g.config.liveStreamWriterSyncPeriod,
 			g.config.liveStreamWriterColdCacheReleasePeriod,
 		)
 	}
 	if g.config.liveStreamWriterFlushPeriod <= 0 {
-		logger.Warnf("LIVE_STREAM_WRITER_FLUSH_PERIOD_SECS 无效（%d），使用默认值 %d 秒", g.config.liveStreamWriterFlushPeriod, defaultLiveStreamWriterFlushPeriodSecs)
+		log.Warnf("LIVE_STREAM_WRITER_FLUSH_PERIOD_SECS 无效（%d），使用默认值 %d 秒", g.config.liveStreamWriterFlushPeriod, defaultLiveStreamWriterFlushPeriodSecs)
 	}
 	if g.config.skipSmallFlushThreshold <= 0 {
-		logger.Warnf("SKIP_SMALL_FLUSH_THRESHOLD 无效（%d），使用默认值 %d 字节", g.config.skipSmallFlushThreshold, defaultSkipSmallFlushThreshold)
+		log.Warnf("SKIP_SMALL_FLUSH_THRESHOLD 无效（%d），使用默认值 %d 字节", g.config.skipSmallFlushThreshold, defaultSkipSmallFlushThreshold)
 	}
 	if g.config.readStreamBytesPoolSizeHigh <= 0 {
-		logger.Warnf("READ_STREAM_BYTES_POOL_SIZE_HIGH 无效（%d），使用默认值 %d 字节", g.config.readStreamBytesPoolSizeHigh, defaultReadStreamBytesPoolSizeHigh)
+		log.Warnf("READ_STREAM_BYTES_POOL_SIZE_HIGH 无效（%d），使用默认值 %d 字节", g.config.readStreamBytesPoolSizeHigh, defaultReadStreamBytesPoolSizeHigh)
 	}
 	if g.config.readStreamChanBufferSizeHigh <= 0 {
-		logger.Warnf("READ_STREAM_CHAN_BUFFER_SIZE_HIGH 无效（%d），使用默认值 %d", g.config.readStreamChanBufferSizeHigh, defaultReadStreamChanBufferSizeHigh)
+		log.Warnf("READ_STREAM_CHAN_BUFFER_SIZE_HIGH 无效（%d），使用默认值 %d", g.config.readStreamChanBufferSizeHigh, defaultReadStreamChanBufferSizeHigh)
 	}
 	if g.config.liveStreamWriterBytesPoolSizeHigh <= 0 {
-		logger.Warnf("LIVE_STREAM_WRITER_BYTES_POOL_SIZE_HIGH 无效（%d），使用默认值 %d 字节", g.config.liveStreamWriterBytesPoolSizeHigh, defaultLiveStreamWriterBytesPoolSizeHigh)
+		log.Warnf("LIVE_STREAM_WRITER_BYTES_POOL_SIZE_HIGH 无效（%d），使用默认值 %d 字节", g.config.liveStreamWriterBytesPoolSizeHigh, defaultLiveStreamWriterBytesPoolSizeHigh)
 	}
 	if g.config.danmakuWriterBufferSize <= 0 {
-		logger.Warnf("DANMAKU_WRITER_BUFFER_SIZE 无效（%d），使用默认值 %d 字节", g.config.danmakuWriterBufferSize, defaultDanmakuWriterBufferSize)
+		log.Warnf("DANMAKU_WRITER_BUFFER_SIZE 无效（%d），使用默认值 %d 字节", g.config.danmakuWriterBufferSize, defaultDanmakuWriterBufferSize)
 	}
 	if g.config.danmakuWriterMinPeriodicFlushBytes <= 0 {
-		logger.Warnf("DANMAKU_WRITER_MIN_PERIODIC_FLUSH_BYTES 无效（%d），使用默认值 %d 字节", g.config.danmakuWriterMinPeriodicFlushBytes, defaultDanmakuWriterMinPeriodicFlushBytes)
+		log.Warnf("DANMAKU_WRITER_MIN_PERIODIC_FLUSH_BYTES 无效（%d），使用默认值 %d 字节", g.config.danmakuWriterMinPeriodicFlushBytes, defaultDanmakuWriterMinPeriodicFlushBytes)
 	}
 	if g.config.danmakuWriterFlushPeriod <= 0 {
-		logger.Warnf("DANMAKU_WRITER_FLUSH_PERIOD_SECS 无效（%d），使用默认值 %d 秒", g.config.danmakuWriterFlushPeriod, defaultDanmakuWriterFlushPeriodSecs)
+		log.Warnf("DANMAKU_WRITER_FLUSH_PERIOD_SECS 无效（%d），使用默认值 %d 秒", g.config.danmakuWriterFlushPeriod, defaultDanmakuWriterFlushPeriodSecs)
 	}
 	if g.config.danmakuWriterSyncPeriod < 0 {
-		logger.Warnf("DANMAKU_WRITER_SYNC_PERIOD_SECS 无效（%d），使用默认值 %d 秒", g.config.danmakuWriterSyncPeriod, defaultDanmakuWriterSyncPeriodSecs)
+		log.Warnf("DANMAKU_WRITER_SYNC_PERIOD_SECS 无效（%d），使用默认值 %d 秒", g.config.danmakuWriterSyncPeriod, defaultDanmakuWriterSyncPeriodSecs)
 	}
 	if g.config.danmakuChanBufferSize <= 0 {
-		logger.Warnf("DANMAKU_CHAN_BUFFER_SIZE 无效（%d），使用默认值 %d", g.config.danmakuChanBufferSize, defaultDanmakuChanBufferSize)
+		log.Warnf("DANMAKU_CHAN_BUFFER_SIZE 无效（%d），使用默认值 %d", g.config.danmakuChanBufferSize, defaultDanmakuChanBufferSize)
 	}
 	if g.config.danmakuBytesPoolSize <= 0 {
-		logger.Warnf("DANMAKU_BYTES_POOL_SIZE 无效（%d），使用默认值 %d 字节", g.config.danmakuBytesPoolSize, defaultDanmakuBytesPoolSize)
+		log.Warnf("DANMAKU_BYTES_POOL_SIZE 无效（%d），使用默认值 %d 字节", g.config.danmakuBytesPoolSize, defaultDanmakuBytesPoolSize)
 	}
 	// Reject protocol-mismatch configs between FRP backend mode and Fiber listener mode.
 	if g.config.ServerCrt != "" && g.config.ServerKey != "" && g.config.FRPEnabled && !g.config.FRPHttps {

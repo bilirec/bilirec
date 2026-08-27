@@ -3,12 +3,13 @@ package stream
 import (
 	"time"
 
+	"github.com/bilirec/bilirec/pkg/logger"
+
 	"github.com/bilirec/bilirec/internal/modules/config"
 	"github.com/bilirec/bilirec/pkg/pool"
-	"github.com/sirupsen/logrus"
 )
 
-var logger = logrus.WithField("service", "stream")
+var log = logger.Named("stream")
 
 type Service struct {
 	chunkPools         *pool.LazyDualPool[*pool.BucketedBytesPool]

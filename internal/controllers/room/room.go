@@ -1,4 +1,4 @@
-﻿package room
+package room
 
 import (
 	"strconv"
@@ -7,12 +7,12 @@ import (
 	"github.com/bilirec/bilirec/internal/modules/rest"
 	"github.com/bilirec/bilirec/internal/services/room"
 	"github.com/bilirec/bilirec/internal/services/subscribe"
+	"github.com/bilirec/bilirec/pkg/logger"
 	"github.com/bilirec/bilirec/utils"
 	"github.com/gofiber/fiber/v3"
-	"github.com/sirupsen/logrus"
 )
 
-var logger = logrus.WithField("controller", "room")
+var log = logger.Named("room")
 
 type Controller struct {
 	roomSvc *room.Service
@@ -55,13 +55,13 @@ func NewController(app *fiber.App, roomSvc *room.Service, subSvc *subscribe.Serv
 func (r *Controller) getRoomInfo(ctx fiber.Ctx) error {
 	roomId, err := strconv.Atoi(ctx.Params("roomID"))
 	if err != nil {
-		logger.Warnf("无法将 roomId 解析为整数：%v", err)
+		log.Warnf("无法将 roomId 解析为整数：%v", err)
 		return fiber.NewError(fiber.StatusBadRequest, "无效的房间 ID")
 	}
 	res, err := r.roomSvc.GetLiveRoomInfo(roomId)
 
 	if err != nil {
-		logger.Errorf("获取房间 %d 信息失败：%v", roomId, err)
+		log.Errorf("获取房间 %d 信息失败：%v", roomId, err)
 		return utils.Ternary(
 			bilibili.IsErrRoomNotFound(err),
 			fiber.NewError(fiber.StatusNotFound, "房间不存在"),
@@ -87,12 +87,12 @@ func (r *Controller) getRoomInfo(ctx fiber.Ctx) error {
 func (r *Controller) resolveRoomID(ctx fiber.Ctx) error {
 	roomId, err := strconv.Atoi(ctx.Params("roomID"))
 	if err != nil {
-		logger.Warnf("无法将 roomId 解析为整数：%v", err)
+		log.Warnf("无法将 roomId 解析为整数：%v", err)
 		return fiber.NewError(fiber.StatusBadRequest, "无效的房间 ID")
 	}
 	info, err := r.roomSvc.GetLiveRoomInfo(roomId)
 	if err != nil {
-		logger.Errorf("解析房间 %d 失败：%v", roomId, err)
+		log.Errorf("解析房间 %d 失败：%v", roomId, err)
 		return utils.Ternary(
 			bilibili.IsErrRoomNotFound(err),
 			fiber.NewError(fiber.StatusNotFound, "房间不存在"),
@@ -121,12 +121,12 @@ func (r *Controller) resolveRoomID(ctx fiber.Ctx) error {
 func (r *Controller) getRoomInfos(ctx fiber.Ctx) error {
 	roomIds, err := utils.ParseRoomIDs(ctx.Query("roomIDs", ""), ctx.Body())
 	if err != nil {
-		logger.Warnf("无法解析 roomIds：%v", err)
+		log.Warnf("无法解析 roomIds：%v", err)
 		return fiber.NewError(fiber.StatusBadRequest, err.Error())
 	}
 	res, err := r.roomSvc.GetMultipleRoomInfos(roomIds...)
 	if err != nil {
-		logger.Errorf("批量获取房间 %v 信息失败：%v", roomIds, err)
+		log.Errorf("批量获取房间 %v 信息失败：%v", roomIds, err)
 		return fiber.ErrInternalServerError
 	}
 	return ctx.JSON(res)
@@ -147,12 +147,12 @@ func (r *Controller) getRoomInfos(ctx fiber.Ctx) error {
 func (r *Controller) getLiveStatus(ctx fiber.Ctx) error {
 	roomId, err := strconv.Atoi(ctx.Params("roomID"))
 	if err != nil {
-		logger.Warnf("无法将 roomId 解析为整数：%v", err)
+		log.Warnf("无法将 roomId 解析为整数：%v", err)
 		return fiber.NewError(fiber.StatusBadRequest, "无效的房间 ID")
 	}
 	isLive, err := r.roomSvc.IsRoomLive(roomId)
 	if err != nil {
-		logger.Errorf("检查房间 %d 直播状态失败：%v", roomId, err)
+		log.Errorf("检查房间 %d 直播状态失败：%v", roomId, err)
 		return utils.Ternary(
 			bilibili.IsErrRoomNotFound(err),
 			fiber.NewError(fiber.StatusNotFound, "房间不存在"),
@@ -179,7 +179,7 @@ func (r *Controller) getLiveStatus(ctx fiber.Ctx) error {
 func (r *Controller) getLiveStatuses(ctx fiber.Ctx) error {
 	roomIds, err := utils.ParseRoomIDs(ctx.Query("roomIDs", ""), ctx.Body())
 	if err != nil {
-		logger.Warnf("无法解析 roomIds：%v", err)
+		log.Warnf("无法解析 roomIds：%v", err)
 		return fiber.NewError(fiber.StatusBadRequest, err.Error())
 	}
 
@@ -203,12 +203,12 @@ func (r *Controller) getLiveStatuses(ctx fiber.Ctx) error {
 func (r *Controller) subscribeRoom(ctx fiber.Ctx) error {
 	roomId, err := strconv.Atoi(ctx.Params("roomID"))
 	if err != nil {
-		logger.Warnf("无法将 roomId 解析为整数：%v", err)
+		log.Warnf("无法将 roomId 解析为整数：%v", err)
 		return fiber.NewError(fiber.StatusBadRequest, "无效的房间 ID")
 	}
 	err = r.subSvc.Subscribe(roomId)
 	if err != nil {
-		logger.Errorf("订阅房间 %d 失败：%v", roomId, err)
+		log.Errorf("订阅房间 %d 失败：%v", roomId, err)
 		switch {
 		case subscribe.ErrRoomAlreadySubscribed == err:
 			return fiber.NewError(fiber.StatusConflict, "已订阅该房间")
@@ -237,12 +237,12 @@ func (r *Controller) subscribeRoom(ctx fiber.Ctx) error {
 func (r *Controller) unsubscribeRoom(ctx fiber.Ctx) error {
 	roomId, err := strconv.Atoi(ctx.Params("roomID"))
 	if err != nil {
-		logger.Warnf("无法将 roomId 解析为整数：%v", err)
+		log.Warnf("无法将 roomId 解析为整数：%v", err)
 		return fiber.NewError(fiber.StatusBadRequest, "无效的房间 ID")
 	}
 	err = r.subSvc.Unsubscribe(roomId)
 	if err != nil {
-		logger.Errorf("取消订阅房间 %d 失败：%v", roomId, err)
+		log.Errorf("取消订阅房间 %d 失败：%v", roomId, err)
 		return utils.Ternary(
 			subscribe.ErrRoomNotSubscribed == err,
 			fiber.NewError(fiber.StatusNotFound, "未订阅该房间"),
@@ -266,12 +266,12 @@ func (r *Controller) unsubscribeRoom(ctx fiber.Ctx) error {
 func (r *Controller) isSubscribeRoom(ctx fiber.Ctx) error {
 	roomId, err := strconv.Atoi(ctx.Params("roomID"))
 	if err != nil {
-		logger.Warnf("无法将 roomId 解析为整数：%v", err)
+		log.Warnf("无法将 roomId 解析为整数：%v", err)
 		return fiber.NewError(fiber.StatusBadRequest, "无效的房间 ID")
 	}
 	isSubscribed, err := r.subSvc.IsSubscribed(roomId)
 	if err != nil {
-		logger.Errorf("检查房间 %d 订阅状态失败：%v", roomId, err)
+		log.Errorf("检查房间 %d 订阅状态失败：%v", roomId, err)
 		return fiber.ErrInternalServerError
 	}
 	return ctx.JSON(SubscribeStatus{
@@ -292,7 +292,7 @@ func (r *Controller) isSubscribeRoom(ctx fiber.Ctx) error {
 func (r *Controller) listSubscribeRooms(ctx fiber.Ctx) error {
 	roomIds, err := r.subSvc.ListSubscribedRooms()
 	if err != nil {
-		logger.Errorf("列出已订阅房间失败：%v", err)
+		log.Errorf("列出已订阅房间失败：%v", err)
 		return fiber.ErrInternalServerError
 	}
 	return ctx.JSON(SubscribeList{
@@ -315,13 +315,13 @@ func (r *Controller) listSubscribeRooms(ctx fiber.Ctx) error {
 func (r *Controller) getRoomConfig(ctx fiber.Ctx) error {
 	roomId, err := strconv.Atoi(ctx.Params("roomID"))
 	if err != nil {
-		logger.Warnf("无法将 roomId 解析为整数：%v", err)
+		log.Warnf("无法将 roomId 解析为整数：%v", err)
 		return fiber.NewError(fiber.StatusBadRequest, "无效的房间 ID")
 	}
 
 	cfg, err := r.subSvc.GetConfig(roomId)
 	if err != nil {
-		logger.Errorf("获取房间 %d 配置失败：%v", roomId, err)
+		log.Errorf("获取房间 %d 配置失败：%v", roomId, err)
 		if err == subscribe.ErrRoomNotSubscribed {
 			return fiber.NewError(fiber.StatusNotFound, "未订阅该房间")
 		}
@@ -357,13 +357,13 @@ func (r *Controller) getRoomConfig(ctx fiber.Ctx) error {
 func (r *Controller) updateRoomConfig(ctx fiber.Ctx) error {
 	roomId, err := strconv.Atoi(ctx.Params("roomID"))
 	if err != nil {
-		logger.Warnf("无法将 roomId 解析为整数：%v", err)
+		log.Warnf("无法将 roomId 解析为整数：%v", err)
 		return fiber.NewError(fiber.StatusBadRequest, "无效的房间 ID")
 	}
 
 	var req UpdateRoomConfigRequest
 	if err := ctx.Bind().Body(&req); err != nil {
-		logger.Warnf("无法解析更新房间配置的请求体：%v", err)
+		log.Warnf("无法解析更新房间配置的请求体：%v", err)
 		return fiber.NewError(fiber.StatusBadRequest, "无效的请求数据")
 	}
 
@@ -382,7 +382,7 @@ func (r *Controller) updateRoomConfig(ctx fiber.Ctx) error {
 		RecordDanmaku:         req.RecordDanmaku,
 		StreamProfiles:        streamProfiles,
 	}); err != nil {
-		logger.Errorf("更新房间 %d 配置失败：%v", roomId, err)
+		log.Errorf("更新房间 %d 配置失败：%v", roomId, err)
 		if err == subscribe.ErrRoomNotSubscribed {
 			return fiber.NewError(fiber.StatusNotFound, "未订阅该房间")
 		}

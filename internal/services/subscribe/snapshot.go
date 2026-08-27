@@ -29,13 +29,13 @@ func (s *Service) loadRooms() error {
 	err := s.bucket.ForEach(func(k, v []byte) error {
 		roomID, err := strconv.Atoi(string(k))
 		if err != nil {
-			logger.Warnf("扫描条目失败：%s：%v，已忽略。", string(k), err)
+			log.Warnf("扫描条目失败：%s：%v，已忽略。", string(k), err)
 			return nil
 		}
 
 		cfg, err := parseRoomConfig(v)
 		if err != nil {
-			logger.Warnf("解析房间 %d 配置失败：%v，使用默认值", roomID, err)
+			log.Warnf("解析房间 %d 配置失败：%v，使用默认值", roomID, err)
 			cfg = defaultRoomConfig()
 		}
 		rooms[roomID] = cfg

@@ -35,7 +35,7 @@ func (r *Service) ReadHlsStream(
 
 	settle := &hls.InitSettle{
 		Release: release,
-		Log:     logger,
+		Log:     log,
 	}
 
 	session, err := hls.NewPlaylistSession(ctx, hls.PlaylistSessionOptions{
@@ -44,7 +44,7 @@ func (r *Service) ReadHlsStream(
 		SegmentClient:  segmentClient,
 		ReadBody:       readBody,
 		ReleaseBytes:   release,
-		Log:            logger,
+		Log:            log,
 		OnURLRefresh: func() {
 			settle.Reset("m3u8 URL 已刷新")
 		},
@@ -70,7 +70,7 @@ func (r *Service) ReadHlsStream(
 
 	mediaSeq, segs := pl.MediaSeq, pl.Segments
 	pollInterval := hls.DerivePollInterval(pl)
-	logger.Infof("hls：轮询间隔=%v（target=%.2fs，first-extinf=%.2fs）", pollInterval, func() float64 {
+	log.Infof("hls：轮询间隔=%v（target=%.2fs，first-extinf=%.2fs）", pollInterval, func() float64 {
 		if len(segs) > 0 {
 			return pl.TargetDuration
 		}
@@ -93,7 +93,7 @@ func (r *Service) ReadHlsStream(
 		SegmentClient:   segmentClient,
 		ReadBody:        readBody,
 		ReleaseBytes:    release,
-		Log:             logger,
+		Log:             log,
 		ChanBufferSize:  r.chanBufferSizeForQn(qn),
 		OnClose:         releasePool,
 		InitialPlaylist: pl,

@@ -27,10 +27,10 @@ func (e *Exporter) registerServer(lc fx.Lifecycle, cfg *config.Config) {
 			}
 			go func() {
 				if err := srv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
-					logger.Errorf("metrics 服务器错误：%v", err)
+					log.Errorf("metrics 服务器错误：%v", err)
 				}
 			}()
-			logger.Infof("metrics 服务器已启动：http://%s/metrics", addr)
+			log.Infof("metrics 服务器已启动：http://%s/metrics", addr)
 			return nil
 		},
 		func(ctx context.Context) error {

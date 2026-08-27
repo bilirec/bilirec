@@ -1,4 +1,4 @@
-﻿package stream
+package stream
 
 import (
 	"context"
@@ -41,11 +41,11 @@ func (r *Service) readFlv(
 			buf := chunkPool.GetSized(readSize)
 			n, err := stream.Read(buf)
 			if err == io.EOF {
-				logger.Info("直播流已结束")
+				log.Info("直播流已结束")
 				r.putChunk(chunkPool, buf)
 				return
 			} else if err != nil {
-				logger.Errorf("读取直播流失败：%v", err)
+				log.Errorf("读取直播流失败：%v", err)
 				r.putChunk(chunkPool, buf)
 				return
 			}

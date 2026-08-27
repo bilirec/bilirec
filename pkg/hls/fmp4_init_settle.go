@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"time"
 
-	"github.com/sirupsen/logrus"
+	"github.com/bilirec/bilirec/pkg/logger"
 )
 
 // DefaultFmp4InitDebounceWindow is the hold-and-settle window after a true
@@ -27,7 +27,7 @@ type BytesReleaser func([]byte)
 type InitSettle struct {
 	Window  time.Duration
 	Release BytesReleaser
-	Log     *logrus.Entry
+	Log     logger.Logger
 
 	confirmed []byte
 	active    bool
