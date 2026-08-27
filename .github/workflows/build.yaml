@@ -259,7 +259,7 @@ jobs:
   trigger_mobile_test_apk:
     runs-on: ubuntu-latest
     needs: [ build_android ]
-    if: ${{ github.event_name != 'release' }}
+    if: ${{ github.event_name != 'release' && contains(fromJSON('["develop", "master"]'), github.ref_name) }}
     timeout-minutes: 5
     steps:
       - name: Trigger mobile APK workflow
