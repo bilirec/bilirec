@@ -1,4 +1,4 @@
-﻿package file
+package file
 
 import (
 	"io/fs"
@@ -15,11 +15,11 @@ import (
 	"github.com/bilirec/bilirec/internal/services/file"
 	"github.com/bilirec/bilirec/internal/services/path"
 	"github.com/bilirec/bilirec/internal/services/recorder"
+	"github.com/bilirec/bilirec/pkg/logger"
 	"github.com/gofiber/fiber/v3"
-	"github.com/sirupsen/logrus"
 )
 
-var logger = logrus.WithField("controller", "file")
+var log = logger.Named("file")
 
 type Controller struct {
 	fileSvc     *file.Service
@@ -81,7 +81,7 @@ func (c *Controller) playbackFile(ctx fiber.Ctx) error {
 
 	fullPath, mimeType, err := c.fileSvc.OpenForPlayback(path)
 	if err != nil {
-		logger.Warnf("打开播放文件 %s 失败：%v", path, err)
+		log.Warnf("打开播放文件 %s 失败：%v", path, err)
 		return c.parseFiberError(err)
 	}
 
@@ -192,7 +192,7 @@ func (c *Controller) listFiles(ctx fiber.Ctx) error {
 		Limit:  limit,
 	})
 	if err != nil {
-		logger.Warnf("列出路径 %s 的目录失败：%v", path, err)
+		log.Warnf("列出路径 %s 的目录失败：%v", path, err)
 		return c.parseFiberError(err)
 	}
 	paged.Items = c.withRecordingStatus(paged.Items)
@@ -222,7 +222,7 @@ func (c *Controller) downloadFile(ctx fiber.Ctx) error {
 	}
 	fullPath, err := c.pathSvc.ValidatePath(path)
 	if err != nil {
-		logger.Warnf("校验路径 %s 失败：%v", path, err)
+		log.Warnf("校验路径 %s 失败：%v", path, err)
 		return c.parseFiberError(err)
 	}
 	ctx.Attachment(fullPath) // set this because SendFile does not set the filename when using Download: true
@@ -256,7 +256,7 @@ func (c *Controller) presignedDownload(ctx fiber.Ctx) error {
 	}
 	fullPath, err := c.pathSvc.ValidatePath(relPath)
 	if err != nil {
-		logger.Warnf("校验路径 %s 失败：%v", relPath, err)
+		log.Warnf("校验路径 %s 失败：%v", relPath, err)
 		return c.parseFiberError(err)
 	}
 	ctx.Attachment(fullPath) // set this because SendFile does not set the filename when using Download: true
@@ -289,7 +289,7 @@ func (c *Controller) createPresignedURL(ctx fiber.Ctx) error {
 
 	fullPath, err := c.pathSvc.ValidatePath(path)
 	if err != nil {
-		logger.Warnf("校验路径 %s 失败：%v", path, err)
+		log.Warnf("校验路径 %s 失败：%v", path, err)
 		return c.parseFiberError(err)
 	}
 
@@ -306,7 +306,7 @@ func (c *Controller) createPresignedURL(ctx fiber.Ctx) error {
 
 	url, err := c.pathSvc.GeneratePresignedURL(fullPath, ttl)
 	if err != nil {
-		logger.Warnf("为路径 %s 生成预签名令牌失败：%v", path, err)
+		log.Warnf("为路径 %s 生成预签名令牌失败：%v", path, err)
 		return fiber.ErrInternalServerError
 	}
 
@@ -329,7 +329,7 @@ func (c *Controller) createPresignedURL(ctx fiber.Ctx) error {
 func (c *Controller) getDiskSpace(ctx fiber.Ctx) error {
 	space, err := c.fileSvc.GetDiskSpace()
 	if err != nil {
-		logger.Warnf("获取磁盘空间失败：%v", err)
+		log.Warnf("获取磁盘空间失败：%v", err)
 		return fiber.ErrInternalServerError
 	}
 	return ctx.JSON(space)
@@ -357,10 +357,10 @@ func (c *Controller) deleteFiles(ctx fiber.Ctx) error {
 		if c.recorderSvc.IsRecording(p) {
 			return fiber.NewError(fiber.StatusBadRequest, "要删除的文件中包含正在录制的文件")
 		} else if fullPath, err := c.pathSvc.ValidatePath(p); err != nil {
-			logger.Warnf("校验路径 %s 失败：%v", p, err)
+			log.Warnf("校验路径 %s 失败：%v", p, err)
 			return c.parseFiberError(err)
 		} else if inQueue, err := c.convertSvc.IsInQueue(fullPath); err != nil && err != convert.ErrNoConvertManager {
-			logger.Warnf("检查路径 %s 的转码队列失败：%v", p, err)
+			log.Warnf("检查路径 %s 的转码队列失败：%v", p, err)
 			return fiber.ErrInternalServerError
 		} else if inQueue {
 			return fiber.NewError(fiber.StatusBadRequest, "要删除的文件中包含正在转码的文件")
@@ -368,7 +368,7 @@ func (c *Controller) deleteFiles(ctx fiber.Ctx) error {
 	}
 
 	if err := c.fileSvc.DeleteFiles(paths...); err != nil {
-		logger.Warnf("删除文件失败：%v", err)
+		log.Warnf("删除文件失败：%v", err)
 		return c.parseFiberError(err)
 	}
 	return ctx.SendStatus(fiber.StatusNoContent)
@@ -394,7 +394,7 @@ func (c *Controller) deleteDir(ctx fiber.Ctx) error {
 	} else if c.recorderSvc.IsRecordingUnder(path) {
 		return fiber.NewError(fiber.StatusBadRequest, "无法删除包含正在录制文件的文件夹")
 	} else if err := c.fileSvc.DeleteDirectory(path); err != nil {
-		logger.Warnf("删除路径 %s 的目录失败：%v", path, err)
+		log.Warnf("删除路径 %s 的目录失败：%v", path, err)
 		return c.parseFiberError(err)
 	}
 	return ctx.SendStatus(fiber.StatusNoContent)

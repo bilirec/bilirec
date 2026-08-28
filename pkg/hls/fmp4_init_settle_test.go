@@ -2,17 +2,14 @@ package hls
 
 import (
 	"bytes"
-	"io"
 	"testing"
 	"time"
 
-	"github.com/sirupsen/logrus"
+	"github.com/bilirec/bilirec/pkg/logger"
 )
 
-func testLog() *logrus.Entry {
-	l := logrus.New()
-	l.SetOutput(io.Discard)
-	return logrus.NewEntry(l)
+func testLog() logger.Logger {
+	return logger.Nop()
 }
 
 func TestInitSettle_URIOnlySkipsRedeliver(t *testing.T) {

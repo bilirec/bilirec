@@ -87,7 +87,7 @@ func (s *Service) publishWebPushPayload(payload []byte) {
 		}
 
 		if sendErr != nil {
-			logger.Warnf("向 %s 发送 Web Push 通知失败：%v", sub.Endpoint, sendErr)
+			log.Warnf("向 %s 发送 Web Push 通知失败：%v", sub.Endpoint, sendErr)
 		}
 
 		return nil
@@ -95,7 +95,7 @@ func (s *Service) publishWebPushPayload(payload []byte) {
 
 	for _, endpoint := range staleEndpoints {
 		if err := s.bucket.Delete([]byte(endpoint)); err != nil {
-			logger.Warnf("删除过期 Web Push 订阅失败：%s", endpoint)
+			log.Warnf("删除过期 Web Push 订阅失败：%s", endpoint)
 		}
 	}
 }

@@ -6,8 +6,8 @@ import (
 	"os"
 	"strings"
 
+	"github.com/bilirec/bilirec/pkg/logger"
 	"github.com/bilirec/bilirec/utils"
-	"github.com/sirupsen/logrus"
 	"go.uber.org/fx"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -131,7 +131,7 @@ type Config struct {
 	danmakuBytesPoolSize               int
 }
 
-var logger = logrus.WithField("module", "config")
+var log = logger.Named("config")
 
 func provider(lc fx.Lifecycle) (*Config, error) {
 
@@ -159,7 +159,7 @@ func provider(lc fx.Lifecycle) (*Config, error) {
 	debug := os.Getenv("DEBUG") == "true"
 
 	if debug {
-		logrus.SetLevel(logrus.DebugLevel)
+		logger.SetDebug(true)
 	}
 
 	// Prefer the new max-active-recordings variable name. Fallback to legacy
@@ -257,12 +257,12 @@ func provider(lc fx.Lifecycle) (*Config, error) {
 		dropFilePageCache:                      os.Getenv("DROP_FILE_PAGE_CACHE") != "false",
 
 		// danmaku recording performance configs (defaults tuned for Raspberry Pi 4B + SD card)
-		danmakuWriterBufferSize:            utils.MustAtoi(utils.EmptyOrElse(os.Getenv("DANMAKU_WRITER_BUFFER_SIZE"), "262144")),              // 256KB: absorb bursts; fewer mid-interval flushes on SD
+		danmakuWriterBufferSize:            utils.MustAtoi(utils.EmptyOrElse(os.Getenv("DANMAKU_WRITER_BUFFER_SIZE"), "262144")),             // 256KB: absorb bursts; fewer mid-interval flushes on SD
 		danmakuWriterMinPeriodicFlushBytes: utils.MustAtoi(utils.EmptyOrElse(os.Getenv("DANMAKU_WRITER_MIN_PERIODIC_FLUSH_BYTES"), "16384")), // 16KB: skip tiny periodic flushes that contend with video
-		danmakuWriterFlushPeriod:           utils.MustAtoi(utils.EmptyOrElse(os.Getenv("DANMAKU_WRITER_FLUSH_PERIOD_SECS"), "15")),            // align with video flush period to reduce SD card flush frequency
-		danmakuWriterSyncPeriod:            utils.MustAtoi(utils.EmptyOrElse(os.Getenv("DANMAKU_WRITER_SYNC_PERIOD_SECS"), "0")),              // 0 = disabled; sync only on Close() to minimize SD card wear
-		danmakuChanBufferSize:              utils.MustAtoi(utils.EmptyOrElse(os.Getenv("DANMAKU_CHAN_BUFFER_SIZE"), "256")),                   // message slots per room; overflow policy decides drop vs block
-		danmakuBytesPoolSize:               utils.MustAtoi(utils.EmptyOrElse(os.Getenv("DANMAKU_BYTES_POOL_SIZE"), "4096")),                   // 4KB per fragment buffer
+		danmakuWriterFlushPeriod:           utils.MustAtoi(utils.EmptyOrElse(os.Getenv("DANMAKU_WRITER_FLUSH_PERIOD_SECS"), "15")),           // align with video flush period to reduce SD card flush frequency
+		danmakuWriterSyncPeriod:            utils.MustAtoi(utils.EmptyOrElse(os.Getenv("DANMAKU_WRITER_SYNC_PERIOD_SECS"), "0")),             // 0 = disabled; sync only on Close() to minimize SD card wear
+		danmakuChanBufferSize:              utils.MustAtoi(utils.EmptyOrElse(os.Getenv("DANMAKU_CHAN_BUFFER_SIZE"), "256")),                  // message slots per room; overflow policy decides drop vs block
+		danmakuBytesPoolSize:               utils.MustAtoi(utils.EmptyOrElse(os.Getenv("DANMAKU_BYTES_POOL_SIZE"), "4096")),                  // 4KB per fragment buffer
 	}
 
 	ReadOnly = &GlobalReadOnly{config: c}

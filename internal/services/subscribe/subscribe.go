@@ -10,14 +10,14 @@ import (
 	"github.com/bilirec/bilirec/internal/modules/config"
 	"github.com/bilirec/bilirec/internal/services/room"
 	"github.com/bilirec/bilirec/pkg/db"
-	"github.com/sirupsen/logrus"
+	"github.com/bilirec/bilirec/pkg/logger"
 	"go.etcd.io/bbolt"
 	"go.uber.org/fx"
 )
 
 const roomSubscribeBucket = "Room_Subscriptions"
 
-var logger = logrus.WithField("service", "subscribe")
+var log = logger.Named("subscribe")
 
 var (
 	ErrRoomNotSubscribed     = errors.New("房间未订阅")

@@ -35,17 +35,18 @@ import (
 	"syscall"
 	"unsafe"
 
+	"github.com/bilirec/bilirec/pkg/logger"
+
 	"github.com/bilirec/bilirec/pkg/ds"
-	"github.com/sirupsen/logrus"
 )
 
 var (
 	nextSessionID  atomic.Int64
-	activeSessions *ds.SoftMap[int64, *logrus.Entry] = ds.NewSoftMap[int64, *logrus.Entry]()
+	activeSessions *ds.SoftMap[int64, logger.Logger] = ds.NewSoftMap[int64, logger.Logger]()
 )
 
 // Run 封裝了 ffmpeg.so 的執行邏輯，並完美支援 Context 取消與逾時机制
-func Run(ctx context.Context, taskLog *logrus.Entry, args ...string) error {
+func Run(ctx context.Context, taskLog logger.Logger, args ...string) error {
 	if len(args) == 0 {
 		return fmt.Errorf("arguments cannot be empty")
 	}

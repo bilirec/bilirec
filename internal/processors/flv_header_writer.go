@@ -4,9 +4,10 @@ import (
 	"context"
 	"sync"
 
+	"github.com/bilirec/bilirec/pkg/logger"
+
 	"github.com/bilirec/bilirec/pkg/flv"
 	"github.com/bilirec/bilirec/pkg/pipeline"
-	"github.com/sirupsen/logrus"
 )
 
 type flvHeaderWriterProcessor struct {
@@ -30,14 +31,14 @@ func NewFlvHeaderWriter(videoHeaderTag, audioHeaderTag []byte) *pipeline.Process
 	)
 }
 
-func (p *flvHeaderWriterProcessor) Open(ctx context.Context, log *logrus.Entry) error {
+func (p *flvHeaderWriterProcessor) Open(ctx context.Context, log logger.Logger) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.written = false
 	return nil
 }
 
-func (p *flvHeaderWriterProcessor) Process(ctx context.Context, log *logrus.Entry, data []byte) ([]byte, error) {
+func (p *flvHeaderWriterProcessor) Process(ctx context.Context, log logger.Logger, data []byte) ([]byte, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if len(data) == 0 {

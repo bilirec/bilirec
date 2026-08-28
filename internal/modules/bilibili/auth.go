@@ -1,4 +1,4 @@
-﻿package bilibili
+package bilibili
 
 import (
 	"context"
@@ -27,33 +27,33 @@ func (c *Client) loadCookiesOrLogin() error {
 		c.refreshToken = token
 
 		if acc, err := c.GetAccountInformation(); err == nil {
-			logger.Infof("已加载用户 Cookie：%s（mid：%d）", acc.Uname, acc.Mid)
+			log.Infof("已加载用户 Cookie：%s（mid：%d）", acc.Uname, acc.Mid)
 			c.updateSession(func(as *AuthSession) {
 				as.State = StatePreloaded
 				as.Account = acc
 				as.Error = nil
 			})
 			if err := c.refreshCookiesIfRequired(); err != nil {
-				logger.Warnf("预加载刷新检查失败：%v", err)
+				log.Warnf("预加载刷新检查失败：%v", err)
 			}
 			c.wg.Go(func() { c.refreshCookiesPeriodically(c.ctx, 10*time.Minute) })
 			return nil
 		} else {
-			logger.Warnf("使用已加载 Cookie 获取账号信息失败：%v", err)
+			log.Warnf("使用已加载 Cookie 获取账号信息失败：%v", err)
 		}
 
 	} else if !os.IsNotExist(err) {
 		return fmt.Errorf("读取 cookie 文件失败：%v", err)
 	}
 
-	logger.Info("开始哔哩哔哩登录流程")
+	log.Info("开始哔哩哔哩登录流程")
 
 	qrcode, err := c.GetQRCode()
 	if err != nil {
 		return fmt.Errorf("获取二维码失败：%v", err)
 	}
 
-	logger.Info("请扫描二维码登录：")
+	log.Info("请扫描二维码登录：")
 	qrcode.Print()
 
 	// blocking thread
@@ -70,7 +70,7 @@ func (c *Client) loadCookiesOrLogin() error {
 	if acc, err := c.GetAccountInformation(); err != nil {
 		return fmt.Errorf("登录后获取账号信息失败：%v，请重试。", err)
 	} else {
-		logger.Infof("登录成功，当前账号：%s（mid：%d）", acc.Uname, acc.Mid)
+		log.Infof("登录成功，当前账号：%s（mid：%d）", acc.Uname, acc.Mid)
 		c.updateSession(func(as *AuthSession) {
 			as.State = StateAuthenticated
 			as.Account = acc
@@ -79,10 +79,10 @@ func (c *Client) loadCookiesOrLogin() error {
 	}
 
 	if err := c.writeRefreshTokenToFile(result.RefreshToken); err != nil {
-		logger.Warn(err)
+		log.Warn(err)
 	}
 	if err := c.writerCookiesToFile(); err != nil {
-		logger.Warn(err)
+		log.Warn(err)
 	}
 
 	c.wg.Go(func() { c.refreshCookiesPeriodically(c.ctx, 10*time.Minute) })
@@ -92,7 +92,7 @@ func (c *Client) loadCookiesOrLogin() error {
 // preloadCookies run on controller mode
 func (c *Client) preloadCookies() error {
 	if c.loginMode != "controller" {
-		logger.Warnf("在 %s 模式下调用 preloadCookies，已跳过", c.loginMode)
+		log.Warnf("在 %s 模式下调用 preloadCookies，已跳过", c.loginMode)
 		return nil
 	}
 
@@ -100,7 +100,7 @@ func (c *Client) preloadCookies() error {
 	if err != nil {
 		// If no offline credentials available, that's OK in controller mode
 		// QR login will be triggered via controller endpoint
-		logger.Debugf("未找到离线凭据：%v", err)
+		log.Debugf("未找到离线凭据：%v", err)
 		return nil
 	}
 
@@ -111,7 +111,7 @@ func (c *Client) preloadCookies() error {
 	c.refreshToken = token
 
 	if acc, err := c.GetAccountInformation(); err == nil {
-		logger.Infof("已加载用户 Cookie：%s（mid：%d）", acc.Uname, acc.Mid)
+		log.Infof("已加载用户 Cookie：%s（mid：%d）", acc.Uname, acc.Mid)
 		refreshCtx, cancel := context.WithCancel(c.ctx)
 		c.updateSession(func(s *AuthSession) {
 			s.State = StatePreloaded
@@ -121,14 +121,14 @@ func (c *Client) preloadCookies() error {
 		})
 		// Best effort refresh, don't fail if it doesn't work
 		if err := c.refreshCookiesIfRequired(); err != nil {
-			logger.Debugf("预加载刷新检查失败（非阻塞）：%v", err)
+			log.Debugf("预加载刷新检查失败（非阻塞）：%v", err)
 		}
 		c.wg.Go(func() { c.refreshCookiesPeriodically(refreshCtx, 10*time.Minute) })
 		return nil
 	}
 
 	// If validation fails, log but don't fail startup
-	logger.Warnf("使用预加载 Cookie 获取账号信息失败：%v", err)
+	log.Warnf("使用预加载 Cookie 获取账号信息失败：%v", err)
 	return nil
 }
 
@@ -139,7 +139,7 @@ func (c *Client) refreshCookiesIfRequired() error {
 			return nil, fmt.Errorf("获取 cookie 刷新信息失败：%v", err)
 		}
 		if !info.Refresh {
-			logger.Debug("Cookie 无需刷新")
+			log.Debug("Cookie 无需刷新")
 			return nil, nil
 		}
 		csrfResult, err := c.GetWebCookieRefreshCsrf(bili.GetWebCookieRefreshCsrfParam{
@@ -155,7 +155,7 @@ func (c *Client) refreshCookiesIfRequired() error {
 		if err != nil {
 			return nil, fmt.Errorf("刷新 cookie 失败：%v", err)
 		} else {
-			logger.Info("Cookie 刷新成功")
+			log.Info("Cookie 刷新成功")
 			c.syncCookies()
 		}
 
@@ -213,7 +213,7 @@ func (c *Client) refreshCookiesPeriodically(ctx context.Context, interval time.D
 		select {
 		case <-ticker.C:
 			if err := c.refreshCookiesIfRequired(); err != nil {
-				logger.Error(err)
+				log.Error(err)
 			}
 		case <-ctx.Done():
 			return
@@ -250,7 +250,7 @@ func syncCookieToClient(client *resty.Client, cookies []*http.Cookie) {
 // If already authenticated, starts a new login session (allowing account switching).
 func (c *Client) InitQRLogin() (*bili.QRCode, error) {
 	if c.loginMode != "controller" {
-		logger.Warnf("在 %s 模式下调用 InitQRLogin，已跳过", c.loginMode)
+		log.Warnf("在 %s 模式下调用 InitQRLogin，已跳过", c.loginMode)
 		return nil, ErrNotControllerMode
 	}
 
@@ -258,13 +258,13 @@ func (c *Client) InitQRLogin() (*bili.QRCode, error) {
 	// Allow reusing existing QR code if we're still in the awaiting/authenticating state
 	if session.State == StateAwaitingQR {
 		if session.QrcodeURL != "" {
-			logger.Debug("reusing existing QR code for pending login session")
+			log.Debug("reusing existing QR code for pending login session")
 			return &bili.QRCode{Url: session.QrcodeURL}, nil
 		}
 	}
 
 	if !c.qrcodeHolding.CompareAndSwap(false, true) {
-		logger.Warn("已有进行中的二维码登录，已跳过")
+		log.Warn("已有进行中的二维码登录，已跳过")
 		return nil, ErrQRCodeLoginInProgress
 	}
 
@@ -291,7 +291,7 @@ func (c *Client) InitQRLogin() (*bili.QRCode, error) {
 
 	go c.performQRLogin(qrcode.QrcodeKey)
 
-	logger.Info("请扫描二维码登录：")
+	log.Info("请扫描二维码登录：")
 	return qrcode, nil
 }
 
@@ -311,7 +311,7 @@ func (c *Client) performQRLogin(qrcodeKey string) {
 				s.QrcodeURL = ""
 				s.Error = wrapped
 			})
-			logger.Errorf("二维码登录出错：%v", err)
+			log.Errorf("二维码登录出错：%v", err)
 			return nil, nil
 		}
 
@@ -323,7 +323,7 @@ func (c *Client) performQRLogin(qrcodeKey string) {
 				s.QrcodeURL = ""
 				s.Error = wrapped
 			})
-			logger.Errorf("登录失败：%s（代码 %d）", result.Message, result.Code)
+			log.Errorf("登录失败：%s（代码 %d）", result.Message, result.Code)
 			return nil, nil
 		case 0: // 成功
 			// continue
@@ -334,7 +334,7 @@ func (c *Client) performQRLogin(qrcodeKey string) {
 				s.QrcodeURL = ""
 				s.Error = wrapped
 			})
-			logger.Errorf("登录失败：%s（代码 %d）", result.Message, result.Code)
+			log.Errorf("登录失败：%s（代码 %d）", result.Message, result.Code)
 			return nil, nil
 		}
 
@@ -352,14 +352,14 @@ func (c *Client) performQRLogin(qrcodeKey string) {
 				s.cookieRefreshCancel = cancel
 			})
 
-			logger.Infof("登录成功，当前账号：%s（mid：%d）", acc.Uname, acc.Mid)
+			log.Infof("登录成功，当前账号：%s（mid：%d）", acc.Uname, acc.Mid)
 
 			if err := c.writeRefreshTokenToFile(result.RefreshToken); err != nil {
-				logger.Warn(err)
+				log.Warn(err)
 			}
 
 			if err := c.writerCookiesToFile(); err != nil {
-				logger.Warn(err)
+				log.Warn(err)
 			}
 
 			c.wg.Go(func() { c.refreshCookiesPeriodically(refreshCtx, 10*time.Minute) })
@@ -370,7 +370,7 @@ func (c *Client) performQRLogin(qrcodeKey string) {
 				s.QrcodeURL = ""
 				s.Error = wrapped
 			})
-			logger.Errorf("登录后获取账号信息失败：%v", err)
+			log.Errorf("登录后获取账号信息失败：%v", err)
 		}
 
 		return nil, nil

@@ -5,10 +5,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/sirupsen/logrus"
+	"github.com/bilirec/bilirec/pkg/logger"
 )
 
-var logger = logrus.WithField("pkg", "pipeline")
+var log = logger.Named("pipeline")
 
 type Pipe[T any] struct {
 	closable   atomic.Bool
@@ -46,7 +46,7 @@ func (p *Pipe[T]) Process(ctx context.Context, item T) (T, error) {
 func (p *Pipe[T]) Open(ctx context.Context) error {
 	var opened int32
 	for _, processor := range p.processors {
-		if err := processor.processor.Open(ctx, processor.logger); err != nil {
+		if err := processor.processor.Open(ctx, processor.log); err != nil {
 			if opened > 0 {
 				p.closable.Store(true)
 				p.opened.Store(opened)
@@ -82,7 +82,7 @@ func (p *Pipe[T]) closeOpened(count int) {
 	for i := count - 1; i >= 0; i-- {
 		processor := p.processors[i]
 		if err := processor.close(); err != nil {
-			processor.logger.Errorf("关闭处理器失败：%v", err)
+			processor.log.Errorf("关闭处理器失败：%v", err)
 		}
 	}
 	p.opened.Store(0)
@@ -90,16 +90,20 @@ func (p *Pipe[T]) closeOpened(count int) {
 }
 
 func (p *Pipe[T]) process(ctx context.Context, tp *ProcessorInfo[T], item T) (T, error) {
-	start := time.Now()
-	defer func() {
+	traceEnabled := tp.log.Enabled(logger.TraceLevel)
+	var start time.Time
+	if traceEnabled || tp.timeout > 0 {
+		start = time.Now()
+	}
+	next, err := p.callWithTimeout(ctx, tp, item)
+	if !start.IsZero() {
 		elapsed := time.Since(start)
 		if tp.timeout > 0 && elapsed > tp.timeout/2 {
-			tp.logger.Warnf("处理器执行耗时过长：%vms", elapsed.Microseconds())
-		} else {
-			tp.logger.Tracef("processor executed: %vms", elapsed.Microseconds())
+			tp.log.Warnf("处理器执行耗时过长：%vms", elapsed.Microseconds())
+		} else if traceEnabled {
+			tp.log.Tracef("processor executed: %vms", elapsed.Microseconds())
 		}
-	}()
-	next, err := p.callWithTimeout(ctx, tp, item)
+	}
 	if err != nil {
 		switch tp.errorStrategy {
 		case StopOnError:
@@ -107,16 +111,16 @@ func (p *Pipe[T]) process(ctx context.Context, tp *ProcessorInfo[T], item T) (T,
 		case ReturnNextOnError:
 			return next, err
 		case ContinueOnError:
-			tp.logger.Warnf("处理器 %s 出错但继续执行：%v", tp.name, err)
+			tp.log.Warnf("处理器 %s 出错但继续执行：%v", tp.name, err)
 			return item, nil
 		case RetryOnError:
 			for range tp.maxRetries {
-				tp.logger.Warnf("处理器 %s 因错误重试：%v", tp.name, err)
+				tp.log.Warnf("处理器 %s 因错误重试：%v", tp.name, err)
 				select {
 				case <-time.After(tp.retryInterval):
 					next, retryErr := p.callWithTimeout(ctx, tp, item)
 					if retryErr == nil {
-						tp.logger.Infof("处理器 %s 重试成功", tp.name)
+						tp.log.Infof("处理器 %s 重试成功", tp.name)
 						return next, nil
 					}
 					err = retryErr
@@ -124,7 +128,7 @@ func (p *Pipe[T]) process(ctx context.Context, tp *ProcessorInfo[T], item T) (T,
 					return item, ctx.Err()
 				}
 			}
-			tp.logger.Errorf("处理器 %s 在重试 %d 次后仍失败", tp.name, tp.maxRetries)
+			tp.log.Errorf("处理器 %s 在重试 %d 次后仍失败", tp.name, tp.maxRetries)
 			return item, err
 		}
 	}

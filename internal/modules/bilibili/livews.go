@@ -17,9 +17,9 @@ import (
 	"time"
 
 	"github.com/andybalholm/brotli"
+	"github.com/bilirec/bilirec/pkg/logger"
 	"github.com/gobwas/ws"
 	"github.com/gobwas/ws/wsutil"
-	"github.com/sirupsen/logrus"
 )
 
 // Bilibili live danmaku websocket protocol constants.
@@ -75,7 +75,7 @@ type LiveMessageClient struct {
 	connMu  sync.Mutex
 	conn    net.Conn
 
-	log *logrus.Entry
+	log logger.Logger
 }
 
 func NewLiveMessageClient(roomID, uid int, buvid string) *LiveMessageClient {
@@ -84,7 +84,7 @@ func NewLiveMessageClient(roomID, uid int, buvid string) *LiveMessageClient {
 		uid:      uid,
 		buvid:    buvid,
 		handlers: make(map[string][]LiveMessageHandler),
-		log:      logger.WithField("room", roomID),
+		log:      log.With("room", roomID),
 	}
 }
 

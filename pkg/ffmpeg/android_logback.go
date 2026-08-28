@@ -5,7 +5,7 @@ package ffmpeg
 import (
 	"context"
 
-	"github.com/sirupsen/logrus"
+	"github.com/bilirec/bilirec/pkg/logger"
 )
 
 type FFmpegLogPayload struct {
@@ -16,7 +16,7 @@ type FFmpegLogPayload struct {
 
 var (
 	logQueue  = make(chan *FFmpegLogPayload, 512)
-	globalLog = logrus.WithField("component", "ffmpeg_core")
+	globalLog = logger.Named("ffmpeg_core")
 )
 
 func init() {
@@ -42,11 +42,11 @@ func ConsumeNativeLog(sessionID int64, level int, message string) {
 // startLogConsumer 是專職負責 Disk I/O 的背景執行緒
 func startLogConsumer() {
 	for payload := range logQueue {
-		var log *logrus.Entry
-		if taskLog, found := activeSessions.LoadStale(payload.SessionID); found && taskLog != nil {
-			log = taskLog.WithField("component", "ffmpeg_core").WithField("session_id", payload.SessionID)
+		var log logger.Logger
+		if taskLog, found := activeSessions.LoadStale(payload.SessionID); found {
+			log = taskLog.With("component", "ffmpeg_core").With("session_id", payload.SessionID)
 		} else {
-			log = globalLog.WithField("session_id", payload.SessionID)
+			log = globalLog.With("session_id", payload.SessionID)
 		}
 
 		if payload.Level <= 16 {

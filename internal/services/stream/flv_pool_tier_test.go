@@ -7,9 +7,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bilirec/bilirec/pkg/logger"
+
 	"github.com/bilirec/bilirec/pkg/benchreport"
 	"github.com/bilirec/bilirec/pkg/pool"
-	"github.com/sirupsen/logrus"
 )
 
 func newTestChunkPools(defaultSize, highSize int) *pool.LazyDualPool[*pool.BucketedBytesPool] {
@@ -82,8 +83,8 @@ func BenchmarkFlvRead_4KPayload_DefaultVsHighPool(b *testing.B) {
 		highSize    = 1024 * 1024
 	)
 
-	logrus.SetLevel(logrus.WarnLevel)
-	defer logrus.SetLevel(logrus.InfoLevel)
+	logger.SetLevel(logger.WarnLevel)
+	defer logger.SetLevel(logger.InfoLevel)
 
 	newSvc := func() *Service {
 		return &Service{

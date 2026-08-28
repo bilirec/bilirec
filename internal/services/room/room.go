@@ -3,9 +3,10 @@ package room
 import (
 	"time"
 
+	"github.com/bilirec/bilirec/pkg/logger"
+
 	"github.com/bilirec/bilirec/internal/modules/bilibili"
 	"github.com/bilirec/bilirec/pkg/swr"
-	"github.com/sirupsen/logrus"
 	"go.uber.org/fx"
 )
 
@@ -14,7 +15,7 @@ const (
 	roomInfoHardTTL = 30 * time.Minute
 )
 
-var logger = logrus.WithField("service", "room")
+var log = logger.Named("room")
 
 type Service struct {
 	bilic *bilibili.Client

@@ -3,7 +3,7 @@ package metrics
 import (
 	vm "github.com/VictoriaMetrics/metrics"
 	"github.com/bilirec/bilirec/internal/modules/config"
-	"github.com/sirupsen/logrus"
+	"github.com/bilirec/bilirec/pkg/logger"
 	"go.uber.org/fx"
 )
 
@@ -16,7 +16,7 @@ const (
 	metricRoomInfo = "bilirec_room_info"
 )
 
-var logger = logrus.WithField("module", "metrics")
+var log = logger.Named("metrics")
 
 // Exporter owns the metrics set and the room registry. Its zero value is a
 // safe no-op, which lets consumers use metrics without feature checks.

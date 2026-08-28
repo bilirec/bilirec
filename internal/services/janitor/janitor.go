@@ -7,13 +7,14 @@ import (
 	"sync"
 	"time"
 
+	"github.com/bilirec/bilirec/pkg/logger"
+
 	"github.com/bilirec/bilirec/internal/services/convert"
 	"github.com/bilirec/bilirec/internal/services/recorder"
-	"github.com/sirupsen/logrus"
 	"go.uber.org/fx"
 )
 
-var logger = logrus.WithField("service", "janitor")
+var log = logger.Named("janitor")
 
 const (
 	janitorCheckInterval = 30 * time.Second
@@ -63,7 +64,7 @@ func (s *Service) run(ctx context.Context) {
 			// 狀態：系統正在運作中
 			if recorderCount > 0 || convertCount > 0 {
 				if !idleStart.IsZero() {
-					logger.Debugf("退出空闲窗口：recorders=%d, converts=%d", recorderCount, convertCount)
+					log.Debugf("退出空闲窗口：recorders=%d, converts=%d", recorderCount, convertCount)
 					idleStart = time.Time{} // 重置空閒時間
 				}
 				hasCleaned = false // 只要有任务在进行，就标记为未清理过，等待下一个空闲窗口
@@ -75,7 +76,7 @@ func (s *Service) run(ctx context.Context) {
 			}
 
 			if idleStart.IsZero() {
-				logger.Debugf("进入空闲窗口：recorders=%d, converts=%d, 开始倒计时", recorderCount, convertCount)
+				log.Debugf("进入空闲窗口：recorders=%d, converts=%d, 开始倒计时", recorderCount, convertCount)
 				idleStart = time.Now()
 				continue
 			}
@@ -92,11 +93,11 @@ func (s *Service) run(ctx context.Context) {
 }
 
 func (s *Service) performCleanup() {
-	logger.Info("当前无进行中的录制和转码，执行维护性 GC")
+	log.Info("当前无进行中的录制和转码，执行维护性 GC")
 
 	var m runtime.MemStats
 	runtime.ReadMemStats(&m)
-	logger.Infof("清理前: Alloc=%d MB, Sys=%d MB, NumGC=%d",
+	log.Infof("清理前: Alloc=%d MB, Sys=%d MB, NumGC=%d",
 		m.Alloc/1024/1024, m.Sys/1024/1024, m.NumGC)
 
 	runtime.GC()
@@ -104,6 +105,6 @@ func (s *Service) performCleanup() {
 	debug.FreeOSMemory()
 
 	runtime.ReadMemStats(&m)
-	logger.Infof("清理后：Alloc=%d MB，Sys=%d MB",
+	log.Infof("清理后：Alloc=%d MB，Sys=%d MB",
 		m.Alloc/1024/1024, m.Sys/1024/1024)
 }

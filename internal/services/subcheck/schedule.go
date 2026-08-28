@@ -116,7 +116,7 @@ func (s *Service) maybeRescale() {
 
 	roomCount, err := s.countLiveCheckRooms()
 	if err != nil {
-		logger.Warnf("统计订阅检查房间数失败：%v", err)
+		log.Warnf("统计订阅检查房间数失败：%v", err)
 		return
 	}
 
@@ -137,5 +137,5 @@ func (s *Service) maybeRescale() {
 	s.checkInterval = desired.interval
 	s.lastRescale = time.Now()
 
-	logger.Infof("subcheck 调度已调整：rooms=%d shards=%d interval=%s", roomCount, desired.shards, desired.interval)
+	log.Infof("subcheck 调度已调整：rooms=%d shards=%d interval=%s", roomCount, desired.shards, desired.interval)
 }

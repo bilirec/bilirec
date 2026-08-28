@@ -1,4 +1,4 @@
-﻿package convert
+package convert
 
 import (
 	"context"
@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"sync"
 	"time"
+
+	"github.com/bilirec/bilirec/pkg/logger"
 
 	"github.com/bilirec/bilirec/internal/modules/config"
 	"github.com/bilirec/bilirec/internal/services/path"
@@ -19,7 +21,6 @@ import (
 	"github.com/bilirec/bilirec/pkg/signeddownload"
 	"github.com/bilirec/bilirec/utils"
 	"github.com/puzpuzpuz/xsync/v4"
-	"github.com/sirupsen/logrus"
 	"go.etcd.io/bbolt"
 	"golang.org/x/sync/semaphore"
 )
@@ -36,7 +37,7 @@ const (
 
 type cloudConvertManager struct {
 	bucket     *db.Bucket
-	logger     *logrus.Entry
+	logger     logger.Logger
 	client     *cloudconvert.Client
 	serializer *pool.Serializer
 	getActives GetActiveRecordings
@@ -53,7 +54,7 @@ type cloudConvertManager struct {
 
 func newCloudConvertManager(client *cloudconvert.Client, pathSvc *path.Service, getActives GetActiveRecordings, deleter *sourceDeleter) ConvertManager {
 	return &cloudConvertManager{
-		logger:           logger.WithField("manager", "cloudconvert"),
+		logger:           log.With("manager", "cloudconvert"),
 		client:           client,
 		serializer:       pool.NewSerializer(),
 		getActives:       getActives,
@@ -249,7 +250,7 @@ func (c *cloudConvertManager) checkTaskStatusPeriodically(ctx context.Context, w
 							c.logSkipDuringRecording(actives)
 							continue
 						}
-						taskLog := c.logger.WithField("task_id", queue.TaskID)
+						taskLog := c.logger.With("task_id", queue.TaskID)
 						taskLog.Infof("正在提交 cloudconvert 任务 input=%s output=%s", queue.InputPath, queue.OutputPath)
 						if err := c.submitTask(queue); err != nil {
 							taskLog.Errorf("提交 cloudconvert 任务失败：%v", err)
@@ -312,7 +313,7 @@ func (c *cloudConvertManager) asyncOnFinished(ctx context.Context, queue *TaskQu
 		c.logger.Errorf("处理任务 id=%v 状态=%v 失败：%v", queue.TaskID, data.Status, err)
 		return
 	}
-	c.deleter.Schedule(queue, c.logger.WithField("task_id", queue.TaskID))
+	c.deleter.Schedule(queue, c.logger.With("task_id", queue.TaskID))
 }
 
 func (c *cloudConvertManager) asyncOnFailed(queue *TaskQueue, data cloudconvert.TaskData) {
@@ -365,7 +366,7 @@ func (c *cloudConvertManager) handleFinished(ctx context.Context, queue *TaskQue
 	c.presignedUrlPool.Delete(queue.InputPath)
 
 	if config.ReadOnly.DropFilePageCache() {
-		taskLog := c.logger.WithField("task_id", queue.TaskID)
+		taskLog := c.logger.With("task_id", queue.TaskID)
 		if err := filecache.DropFilePageCache(queue.OutputPath); err != nil {
 			taskLog.Warnf("释放输出文件页缓存失败：path=%s err=%v", queue.OutputPath, err)
 		} else {

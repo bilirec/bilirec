@@ -8,13 +8,13 @@ import (
 	"github.com/bilirec/bilirec/internal/modules/bilibili"
 	"github.com/bilirec/bilirec/internal/modules/config"
 	"github.com/bilirec/bilirec/internal/modules/metrics"
+	"github.com/bilirec/bilirec/pkg/logger"
 	"github.com/bilirec/bilirec/pkg/pool"
 	"github.com/puzpuzpuz/xsync/v4"
-	"github.com/sirupsen/logrus"
 	"go.uber.org/fx"
 )
 
-var logger = logrus.WithField("service", "danmaku")
+var log = logger.Named("danmaku")
 
 // Service records live danmaku (chat) into per-segment sidecar files paired
 // with the recorder's video output. It is deliberately decoupled from the
@@ -69,7 +69,7 @@ func (s *Service) StartSession(roomID int, recCtx context.Context, videoPath str
 
 	enc, err := NewFormatEncoder(s.outputFormat)
 	if err != nil {
-		logger.Errorf("房间 %d 弹幕输出格式无效：%v", roomID, err)
+		log.Errorf("房间 %d 弹幕输出格式无效：%v", roomID, err)
 		return
 	}
 
@@ -88,7 +88,7 @@ func (s *Service) StartSession(roomID int, recCtx context.Context, videoPath str
 		sess.writeLoop(videoPath, segmentStart)
 	})
 
-	logger.Infof("房间 %d 弹幕录制已开始：%s", roomID, PathForVideo(videoPath, enc.Ext()))
+	log.Infof("房间 %d 弹幕录制已开始：%s", roomID, PathForVideo(videoPath, enc.Ext()))
 }
 
 // ActiveSessions reports how many rooms currently have a danmaku session.
@@ -144,7 +144,7 @@ func (s *Service) Rotate(roomID int, newVideoPath string, newSegmentStart time.T
 	case sess.rotateCh <- rotateRequest{videoPath: newVideoPath, segmentStart: newSegmentStart}:
 		s.metrics.DanmakuRotation(roomID)
 	default:
-		logger.Warnf("房间 %d 弹幕分段轮换信号被丢弃（上一个轮换尚未处理）", roomID)
+		log.Warnf("房间 %d 弹幕分段轮换信号被丢弃（上一个轮换尚未处理）", roomID)
 		s.metrics.DanmakuRotationDropped(roomID)
 	}
 }

@@ -1,11 +1,12 @@
-﻿package processors
+package processors
 
 import (
 	"context"
 
+	"github.com/bilirec/bilirec/pkg/logger"
+
 	"github.com/bilirec/bilirec/pkg/hls"
 	"github.com/bilirec/bilirec/pkg/pipeline"
-	"github.com/sirupsen/logrus"
 )
 
 // TsContinuityFixerProcessor repairs MPEG-TS continuity counters at segment
@@ -34,13 +35,13 @@ func NewTsContinuityFixer() *pipeline.ProcessorInfo[[]byte] {
 	)
 }
 
-func (p *TsContinuityFixerProcessor) Open(_ context.Context, _ *logrus.Entry) error {
+func (p *TsContinuityFixerProcessor) Open(_ context.Context, _ logger.Logger) error {
 	p.fixer = hls.NewTsContinuityFixer()
 	return nil
 }
 
 // Process rewrites continuity counters in place and returns the (modified) data.
-func (p *TsContinuityFixerProcessor) Process(_ context.Context, log *logrus.Entry, data []byte) ([]byte, error) {
+func (p *TsContinuityFixerProcessor) Process(_ context.Context, log logger.Logger, data []byte) ([]byte, error) {
 	if p.fixer == nil {
 		p.fixer = hls.NewTsContinuityFixer()
 	}

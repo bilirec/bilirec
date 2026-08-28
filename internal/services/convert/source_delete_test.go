@@ -9,8 +9,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bilirec/bilirec/pkg/logger"
+
 	"github.com/bilirec/bilirec/pkg/backoff"
-	"github.com/sirupsen/logrus"
 )
 
 func TestMarkSourceForManualDelete(t *testing.T) {
@@ -66,7 +67,7 @@ func TestSchedule_DedupesSamePath(t *testing.T) {
 
 	ctx := context.Background()
 	d := newSourceDeleter(ctx)
-	log := logrus.NewEntry(logrus.New())
+	log := logger.Nop()
 
 	block := make(chan struct{})
 	var calls atomic.Int32
@@ -100,7 +101,7 @@ func TestSchedule_DedupesSamePath(t *testing.T) {
 func TestDelete_SucceedsWhenFileGone(t *testing.T) {
 	ctx := context.Background()
 	d := newSourceDeleter(ctx)
-	log := logrus.NewEntry(logrus.New())
+	log := logger.Nop()
 
 	missing := filepath.Join(t.TempDir(), "missing.flv")
 	queue := &TaskQueue{
@@ -133,7 +134,7 @@ func TestDelete_RenamesAfterMaxAttempts(t *testing.T) {
 
 	ctx := context.Background()
 	d := newSourceDeleter(ctx)
-	log := logrus.NewEntry(logrus.New())
+	log := logger.Nop()
 
 	origRemove := removeSourceFile
 	removeSourceFile = func(path string) error {

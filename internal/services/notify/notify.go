@@ -1,4 +1,4 @@
-﻿package notify
+package notify
 
 import (
 	"encoding/json"
@@ -11,9 +11,10 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/bilirec/bilirec/pkg/logger"
+
 	"github.com/bilirec/bilirec/internal/modules/config"
 	"github.com/bilirec/bilirec/pkg/db"
-	"github.com/sirupsen/logrus"
 	"go.uber.org/fx"
 )
 
@@ -46,7 +47,7 @@ type ServiceState struct {
 
 type LiveState string
 
-var logger = logrus.WithField("service", "notify")
+var log = logger.Named("notify")
 
 var (
 	ErrSSEDisabled     = errors.New("sse is disabled")
@@ -91,7 +92,7 @@ func NewService(lc fx.Lifecycle, cfg *config.Config) (*Service, error) {
 
 			if strings.TrimSpace(cfg.WebPushSubscriber) == "" {
 				s.state.Store(&ServiceState{Enabled: false})
-				logger.Info("Web Push 已禁用：设置 WEBPUSH_SUBSCRIBER 可启用")
+				log.Info("Web Push 已禁用：设置 WEBPUSH_SUBSCRIBER 可启用")
 				return nil // allow to be disabled
 			}
 
@@ -144,7 +145,7 @@ func (s *Service) PublishLiveState(roomID int, streamer string, roomTitle string
 		message = "直播間錄製已停止"
 	}
 
-	logger.Infof("正在推送房间 %d（%s）通知：%s", roomID, streamer, message)
+	log.Infof("正在推送房间 %d（%s）通知：%s", roomID, streamer, message)
 
 	s.publishJSON(Event{
 		Type:      string(state),

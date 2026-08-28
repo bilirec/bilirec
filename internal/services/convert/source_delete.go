@@ -8,10 +8,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/bilirec/bilirec/pkg/logger"
+
 	"github.com/bilirec/bilirec/pkg/backoff"
 	"github.com/bilirec/bilirec/pkg/ds"
 	"github.com/bilirec/bilirec/utils"
-	"github.com/sirupsen/logrus"
 )
 
 const (
@@ -47,7 +48,7 @@ func (d *sourceDeleter) Wait() {
 	d.wg.Wait()
 }
 
-func (d *sourceDeleter) Schedule(queue *TaskQueue, log *logrus.Entry) {
+func (d *sourceDeleter) Schedule(queue *TaskQueue, log logger.Logger) {
 	if !queue.DeleteSource || queue.InputPath == queue.OutputPath {
 		return
 	}
@@ -62,7 +63,7 @@ func (d *sourceDeleter) Schedule(queue *TaskQueue, log *logrus.Entry) {
 	})
 }
 
-func (d *sourceDeleter) deleteSource(queue *TaskQueue, log *logrus.Entry) {
+func (d *sourceDeleter) deleteSource(queue *TaskQueue, log logger.Logger) {
 	path := queue.InputPath
 	bo := newSourceDeleteBackoff()
 
@@ -97,7 +98,7 @@ func (d *sourceDeleter) deleteSource(queue *TaskQueue, log *logrus.Entry) {
 	d.handleDeleteFailure(queue, log, lastErr)
 }
 
-func (d *sourceDeleter) handleDeleteFailure(queue *TaskQueue, log *logrus.Entry, err error) {
+func (d *sourceDeleter) handleDeleteFailure(queue *TaskQueue, log logger.Logger, err error) {
 	renamed, renameErr := markSourceForManualDelete(queue.InputPath)
 	if renameErr != nil {
 		log.Errorf("在 %d 次尝试后仍无法删除源文件 %s（最后错误：%v），重命名也失败：%v",

@@ -32,12 +32,12 @@ func (s *Service) BeginServeCacheRelease(fullPath string) (done func()) {
 	if sess.timer != nil {
 		sess.timer.Stop()
 		sess.timer = nil
-		logger.Tracef("serve-cache-release: 取消待释放定时器 path=%s", fullPath)
+		log.Tracef("serve-cache-release: 取消待释放定时器 path=%s", fullPath)
 	}
 	sess.refCount++
 	refCount := sess.refCount
 	s.serveCacheMu.Unlock()
-	logger.Tracef("serve-cache-release: 开始服务 path=%s refCount=%d", fullPath, refCount)
+	log.Tracef("serve-cache-release: 开始服务 path=%s refCount=%d", fullPath, refCount)
 
 	return func() {
 		s.endServeCacheRelease(fullPath)
@@ -60,12 +60,12 @@ func (s *Service) endServeCacheRelease(fullPath string) {
 	refCount := sess.refCount
 	if refCount > 0 {
 		s.serveCacheMu.Unlock()
-		logger.Tracef("serve-cache-release: 服务结束 path=%s refCount=%d 仍有活动服务", fullPath, refCount)
+		log.Tracef("serve-cache-release: 服务结束 path=%s refCount=%d 仍有活动服务", fullPath, refCount)
 		return
 	}
 
 	path := fullPath
-	logger.Tracef("serve-cache-release: 进入空闲释放窗口 path=%s idleDelay=%s", path, idleDelay)
+	log.Tracef("serve-cache-release: 进入空闲释放窗口 path=%s idleDelay=%s", path, idleDelay)
 	sess.timer = time.AfterFunc(idleDelay, func() {
 		s.serveCacheMu.Lock()
 		defer s.serveCacheMu.Unlock()
@@ -75,7 +75,7 @@ func (s *Service) endServeCacheRelease(fullPath string) {
 			if active != nil {
 				refCount = active.refCount
 			}
-			logger.Tracef("serve-cache-release: 跳过释放 path=%s refCount=%d", path, refCount)
+			log.Tracef("serve-cache-release: 跳过释放 path=%s refCount=%d", path, refCount)
 			return
 		}
 		if active.timer != nil {
@@ -94,9 +94,9 @@ func (s *Service) dropPageCacheLocked(fullPath string) {
 		fn = filecache.DropFilePageCache
 	}
 	if err := fn(fullPath); err != nil {
-		logger.Debugf("serve-cache-release: 释放 page cache 失败 path=%s err=%v", fullPath, err)
+		log.Debugf("serve-cache-release: 释放 page cache 失败 path=%s err=%v", fullPath, err)
 	} else {
-		logger.Debugf("serve-cache-release: 释放 page cache 成功 path=%s", fullPath)
+		log.Debugf("serve-cache-release: 释放 page cache 成功 path=%s", fullPath)
 	}
 }
 
@@ -120,7 +120,7 @@ func (s *Service) stopServeCacheRelease() {
 	for path, sess := range s.serveCache {
 		if sess.timer != nil {
 			sess.timer.Stop()
-			logger.Debugf("serve-cache-release: 停止时取消待释放定时器 path=%s refCount=%d", path, sess.refCount)
+			log.Debugf("serve-cache-release: 停止时取消待释放定时器 path=%s refCount=%d", path, sess.refCount)
 		}
 		delete(s.serveCache, path)
 	}

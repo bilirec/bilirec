@@ -9,9 +9,9 @@ import (
 
 	"github.com/bilirec/bilirec/internal/modules/config"
 	"github.com/bilirec/bilirec/pkg/benchreport"
+	"github.com/bilirec/bilirec/pkg/logger"
 	"github.com/bytedance/sonic"
 	"github.com/bytedance/sonic/encoder"
-	"github.com/sirupsen/logrus"
 )
 
 // Danmaku parse/encode/write benchmarks. Reports ns/op, B/op, allocs/op, plus
@@ -21,7 +21,7 @@ import (
 
 func benchDanmakuSetup(b *testing.B) {
 	b.Helper()
-	logrus.SetLevel(logrus.ErrorLevel)
+	logger.SetLevel(logger.ErrorLevel)
 	if config.ReadOnly == nil {
 		config.ReadOnly = config.NewGlobalReadOnlyForTest(false, 0)
 	}

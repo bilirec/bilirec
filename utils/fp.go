@@ -1,10 +1,10 @@
-﻿package utils
+package utils
 
 import (
 	"strconv"
 	"time"
 
-	"github.com/sirupsen/logrus"
+	"github.com/bilirec/bilirec/pkg/logger"
 )
 
 func NilOrElse[T any](ptr *T, defaultValue T) T {
@@ -57,7 +57,7 @@ func MustAtoi64(s string) int64 {
 	return n
 }
 
-func WithRetry(attempts int, log *logrus.Entry, action string, fn func() error) error {
+func WithRetry(attempts int, log logger.Logger, action string, fn func() error) error {
 	var err error
 	for i := range attempts {
 		err = fn()

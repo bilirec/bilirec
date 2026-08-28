@@ -1,4 +1,4 @@
-﻿package processors
+package processors
 
 import (
 	"bytes"
@@ -6,9 +6,10 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/bilirec/bilirec/pkg/logger"
+
 	"github.com/bilirec/bilirec/pkg/hls"
 	"github.com/bilirec/bilirec/pkg/pipeline"
-	"github.com/sirupsen/logrus"
 )
 
 // ErrFmp4Discontinuity is returned when a new init segment (ftyp) is detected
@@ -64,7 +65,7 @@ func NewFmp4BoxGuard(bases *map[uint32]uint64, lastInit *[]byte) *pipeline.Proce
 	)
 }
 
-func (p *Fmp4BoxGuardProcessor) Open(_ context.Context, _ *logrus.Entry) error {
+func (p *Fmp4BoxGuardProcessor) Open(_ context.Context, _ logger.Logger) error {
 	p.seenMedia = false
 	return nil
 }
@@ -76,7 +77,7 @@ func (p *Fmp4BoxGuardProcessor) storeLastInit(data []byte) {
 	*p.lastInit = append((*p.lastInit)[:0], data...)
 }
 
-func (p *Fmp4BoxGuardProcessor) Process(_ context.Context, log *logrus.Entry, data []byte) ([]byte, error) {
+func (p *Fmp4BoxGuardProcessor) Process(_ context.Context, log logger.Logger, data []byte) ([]byte, error) {
 	if len(data) == 0 {
 		return data, nil
 	}

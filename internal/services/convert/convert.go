@@ -1,4 +1,4 @@
-﻿package convert
+package convert
 
 import (
 	"context"
@@ -13,12 +13,12 @@ import (
 	"github.com/bilirec/bilirec/pkg/cloudconvert"
 	"github.com/bilirec/bilirec/pkg/db"
 	"github.com/bilirec/bilirec/pkg/ffmpeg"
+	"github.com/bilirec/bilirec/pkg/logger"
 	"github.com/bilirec/bilirec/utils"
-	"github.com/sirupsen/logrus"
 	"go.uber.org/fx"
 )
 
-var logger = logrus.WithField("service", "convert")
+var log = logger.Named("convert")
 
 var (
 	ErrTaskNotFound              = errors.New("转码任务未找到")
@@ -65,13 +65,13 @@ func NewService(ls fx.Lifecycle, cfg *config.Config, pathSvc *path.Service) *Ser
 			deleter,
 		)
 	} else {
-		logger.Info("未提供 CloudConvert API Key，CloudConvert 已禁用")
+		log.Info("未提供 CloudConvert API Key，CloudConvert 已禁用")
 	}
 
 	if ffmpeg.Available() {
 		svc.managers["ffmpeg"] = newFFmpegConvertManager(svc.activeRecordings, deleter)
 	} else {
-		logger.Warn("ffmpeg 不可用，ffmpeg 转码管理器未初始化")
+		log.Warn("ffmpeg 不可用，ffmpeg 转码管理器未初始化")
 	}
 
 	stop := func() error {
@@ -92,7 +92,7 @@ func NewService(ls fx.Lifecycle, cfg *config.Config, pathSvc *path.Service) *Ser
 			for _, manager := range svc.managers {
 				if err := manager.StartWorker(ctx, &svc.wg, db); err != nil {
 					if err := stop(); err != nil {
-						logger.Warnf("回滚失败：%v", err)
+						log.Warnf("回滚失败：%v", err)
 					}
 					return fmt.Errorf("启动转码管理器失败：%v", err)
 				}
@@ -133,7 +133,7 @@ func (s *Service) Enqueue(path, format string, deleteSource bool) (*TaskQueue, e
 		if !pass && s.noConvertIfInvalid {
 			return nil, err
 		}
-		logger.Warn(err)
+		log.Warn(err)
 	}
 	return manager.Enqueue(path, outputFormat, format, deleteSource)
 }
@@ -213,7 +213,7 @@ func (s *Service) checkAvailableManagers() error {
 func fileSize(path string) *int64 {
 	info, err := os.Stat(path)
 	if err != nil {
-		logger.Warnf("获取路径 %s 的文件信息失败：%v", path, err)
+		log.Warnf("获取路径 %s 的文件信息失败：%v", path, err)
 		return nil
 	}
 	return utils.Ptr(info.Size())

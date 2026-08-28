@@ -11,13 +11,13 @@ import (
 	"github.com/bilirec/bilirec/internal/services/room"
 	"github.com/bilirec/bilirec/internal/services/subscribe"
 	"github.com/bilirec/bilirec/internal/testutil"
-	"github.com/sirupsen/logrus"
+	"github.com/bilirec/bilirec/pkg/logger"
 	"go.uber.org/fx"
 	"go.uber.org/fx/fxtest"
 )
 
 func init() {
-	logrus.SetLevel(logrus.DebugLevel)
+	logger.SetLevel(logger.DebugLevel)
 	if os.Getenv("CI") != "" {
 		os.Setenv("BILIBILI_LOGIN_MODE", "anonymous")
 	}

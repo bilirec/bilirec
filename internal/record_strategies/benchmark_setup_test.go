@@ -5,8 +5,9 @@ import (
 	"os"
 	"sync"
 
+	"github.com/bilirec/bilirec/pkg/logger"
+
 	"github.com/bilirec/bilirec/internal/modules/config"
-	"github.com/sirupsen/logrus"
 	"go.uber.org/fx"
 )
 
@@ -21,7 +22,7 @@ func ensureBenchmarkConfig() {
 		}
 		// Benchmarks measure full write path; disable SD-card deferred file creation.
 		_ = os.Setenv("SKIP_SMALL_FLUSH", "false")
-		logrus.SetLevel(logrus.ErrorLevel)
+		logger.SetLevel(logger.ErrorLevel)
 		app := fx.New(
 			config.Module,
 			fx.NopLogger,

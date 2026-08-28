@@ -19,15 +19,15 @@ import (
 	"github.com/bilirec/bilirec/internal/services/notify"
 	"github.com/bilirec/bilirec/internal/services/stream"
 	"github.com/bilirec/bilirec/pkg/ds"
+	"github.com/bilirec/bilirec/pkg/logger"
 	"github.com/bilirec/bilirec/pkg/pipeline"
 	"github.com/bilirec/bilirec/pkg/tx"
 	"github.com/bilirec/bilirec/utils"
 	"github.com/puzpuzpuz/xsync/v4"
-	"github.com/sirupsen/logrus"
 	"go.uber.org/fx"
 )
 
-var logger = logrus.WithField("service", "recorder")
+var log = logger.Named("recorder")
 
 type RecordStatus string
 
@@ -176,11 +176,11 @@ func (r *Service) Stop(roomId int) bool {
 		r.m.RecordingStopped(roomId)
 		r.m.UnregisterRecorderRoom(roomId)
 	} else {
-		logger.Warnf("未找到房间 %d 的录制任务", roomId)
+		log.Warnf("未找到房间 %d 的录制任务", roomId)
 	}
 
 	if hasPipe && !hasRecording {
-		logger.Warnf("发现房间 %d 的孤立管道，正在关闭...", roomId)
+		log.Warnf("发现房间 %d 的孤立管道，正在关闭...", roomId)
 		pipe.Close()
 	}
 
@@ -193,7 +193,7 @@ func (r *Service) prepare(roomId int, ch <-chan []byte, strategy rs.StreamRecord
 		defer r.recover(roomId)
 		err := r.rotate(roomId, ch, strategy, info, ctx, scheduleDurationCheck)
 		if err != nil {
-			logger.Errorf("轮转录制失败：%v", err)
+			log.Errorf("轮转录制失败：%v", err)
 		}
 	})
 
@@ -204,7 +204,7 @@ func (r *Service) prepare(roomId int, ch <-chan []byte, strategy rs.StreamRecord
 }
 
 func (r *Service) rotate(roomId int, ch <-chan []byte, strategy rs.StreamRecordStrategy, info *Info, ctx context.Context, userStart bool) error {
-	l := logger.WithField("room", roomId)
+	l := log.With("room", roomId)
 	defer strategy.Close()
 
 	segment := 0
@@ -291,7 +291,7 @@ func (r *Service) rotate(roomId int, ch <-chan []byte, strategy rs.StreamRecordS
 }
 
 func (r *Service) rev(roomId int, ch <-chan []byte, info *Info, ctx context.Context, pipe *pipeline.Pipe[[]byte]) error {
-	log := logger.WithField("room", roomId)
+	log := log.With("room", roomId)
 	r.m.StreamConnectionActive(roomId, true)
 	defer func() {
 		r.m.StreamConnectionActive(roomId, false)
@@ -322,7 +322,7 @@ func (r *Service) rev(roomId int, ch <-chan []byte, info *Info, ctx context.Cont
 }
 
 func (r *Service) checkRecordingDurationPeriodically(roomId int, ctx context.Context, maxDuration time.Duration) {
-	log := logger.WithField("room", roomId)
+	log := log.With("room", roomId)
 
 	// 0 means unlimited — skip the time-limit loop entirely
 	if maxDuration == 0 {
@@ -362,7 +362,7 @@ func (r *Service) checkRecordingDurationPeriodically(roomId int, ctx context.Con
 // uses startTime; -N suffixes are only for live rotation within one fileTime.
 // Multiple files per session is expected.
 func (r *Service) recover(roomId int) {
-	l := logger.WithField("room", roomId)
+	l := log.With("room", roomId)
 	info, ok := r.recording.Load(roomId)
 	if !ok {
 		l.Debugf("未找到录制任务，跳过恢复")
@@ -463,7 +463,7 @@ func (r *Service) recover(roomId int) {
 
 func (r *Service) finalize(roomId int, outputPath string) {
 	if outputPath == "" {
-		logger.Warnf("跳过房间 %d 的收尾：输出路径为空", roomId)
+		log.Warnf("跳过房间 %d 的收尾：输出路径为空", roomId)
 		return
 	}
 
@@ -471,45 +471,45 @@ func (r *Service) finalize(roomId int, outputPath string) {
 
 	fileInfo, err := os.Stat(outputPath)
 	if err != nil && config.ReadOnly.SkipSmallFlush() && os.IsNotExist(err) {
-		logger.Debugf("文件因为过小被而没有写入，跳过收尾：%s", outputPath)
+		log.Debugf("文件因为过小被而没有写入，跳过收尾：%s", outputPath)
 		r.m.RecordingSegmentDiscarded(roomId, metrics.ReasonSkippedSmall)
 		return
 	} else if err != nil {
-		logger.Errorf("获取房间 %d 录制文件状态失败：%v", roomId, err)
+		log.Errorf("获取房间 %d 录制文件状态失败：%v", roomId, err)
 		r.m.RecordingSegmentDiscarded(roomId, metrics.ReasonStatError)
 		return
 	} else if fileInfo.Size() < 1024 { // less than 1KB
-		logger.Warnf("房间 %d 的录制文件过小（%d 字节），跳过收尾并删除文件", roomId, fileInfo.Size())
+		log.Warnf("房间 %d 的录制文件过小（%d 字节），跳过收尾并删除文件", roomId, fileInfo.Size())
 		r.m.RecordingSegmentDiscarded(roomId, metrics.ReasonTiny)
 		if err := os.Remove(outputPath); err != nil {
-			logger.Errorf("删除空文件 %s 失败：%v", outputPath, err)
+			log.Errorf("删除空文件 %s 失败：%v", outputPath, err)
 		}
 		return
 	}
 
 	if !r.cfg.ConvertToMp4 {
-		logger.Debug("不需要转换为 mp4，跳过收尾")
+		log.Debug("不需要转换为 mp4，跳过收尾")
 		return
 	}
 
 	// 跳过已经转换为 mp4 的文件
 	if filepath.Ext(outputPath) == ".mp4" {
-		logger.Debugf("已经转换为 mp4，跳过收尾: %s", outputPath)
+		log.Debugf("已经转换为 mp4，跳过收尾: %s", outputPath)
 		return
 	}
 
 	if r.ctx.Err() != nil {
-		logger.Infof("服务正在停止，跳过房间 %d 的入队转码", roomId)
+		log.Infof("服务正在停止，跳过房间 %d 的入队转码", roomId)
 		return
 	}
 
 	// process finalization via convert service
 	if queue, err := r.cv.Enqueue(outputPath, "mp4", r.cfg.DeleteSourceAfterConvert); err != nil {
-		logger.Errorf("为房间 %d 入队转码失败：%v", roomId, err)
-		logger.Warnf("你可能需要为房间 %d 手动转码 mp4", roomId)
+		log.Errorf("为房间 %d 入队转码失败：%v", roomId, err)
+		log.Warnf("你可能需要为房间 %d 手动转码 mp4", roomId)
 	} else {
-		logger.Infof("已为房间 %d 入队转码任务：%s", roomId, queue.TaskID)
-		logger.Infof("输出路径将是：%s", queue.OutputPath)
+		log.Infof("已为房间 %d 入队转码任务：%s", roomId, queue.TaskID)
+		log.Infof("输出路径将是：%s", queue.OutputPath)
 	}
 }
 

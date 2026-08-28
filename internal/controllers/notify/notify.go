@@ -1,18 +1,19 @@
-﻿package notify
+package notify
 
 import (
 	"errors"
 	"strings"
 	"time"
 
+	"github.com/bilirec/bilirec/pkg/logger"
+
 	webpush "github.com/SherClockHolmes/webpush-go"
 	ns "github.com/bilirec/bilirec/internal/services/notify"
 	"github.com/gofiber/fiber/v3"
 	"github.com/gofiber/fiber/v3/middleware/sse"
-	"github.com/sirupsen/logrus"
 )
 
-var logger = logrus.WithField("controller", "notify")
+var log = logger.Named("notify")
 
 type Controller struct {
 	notifySvc  *ns.Service
@@ -76,7 +77,7 @@ func (c *Controller) webPushSubscribe(ctx fiber.Ctx) error {
 	}
 
 	if err := c.notifySvc.AddWebPushSubscription(sub); err != nil {
-		logger.Errorf("添加 Web Push 订阅失败：%v", err)
+		log.Errorf("添加 Web Push 订阅失败：%v", err)
 		return fiber.NewError(fiber.StatusBadRequest, "新增 Web Push 订阅失败")
 	}
 
@@ -110,7 +111,7 @@ func (c *Controller) webPushUnsubscribe(ctx fiber.Ctx) error {
 	}
 
 	if err := c.notifySvc.RemoveWebPushSubscription(endpoint); err != nil {
-		logger.Warnf("移除 Web Push 订阅失败：%s", endpoint)
+		log.Warnf("移除 Web Push 订阅失败：%s", endpoint)
 		return fiber.NewError(fiber.StatusNotFound, "取消 Web Push 订阅失败")
 	}
 

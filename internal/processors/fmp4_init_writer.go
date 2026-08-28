@@ -4,8 +4,9 @@ import (
 	"context"
 	"sync"
 
+	"github.com/bilirec/bilirec/pkg/logger"
+
 	"github.com/bilirec/bilirec/pkg/pipeline"
-	"github.com/sirupsen/logrus"
 )
 
 type fmp4InitWriterProcessor struct {
@@ -23,14 +24,14 @@ func NewFmp4InitWriter(pendingInit []byte) *pipeline.ProcessorInfo[[]byte] {
 	)
 }
 
-func (p *fmp4InitWriterProcessor) Open(_ context.Context, _ *logrus.Entry) error {
+func (p *fmp4InitWriterProcessor) Open(_ context.Context, _ logger.Logger) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.written = false
 	return nil
 }
 
-func (p *fmp4InitWriterProcessor) Process(_ context.Context, _ *logrus.Entry, data []byte) ([]byte, error) {
+func (p *fmp4InitWriterProcessor) Process(_ context.Context, _ logger.Logger, data []byte) ([]byte, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if len(data) == 0 {

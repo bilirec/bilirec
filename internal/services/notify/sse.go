@@ -47,7 +47,7 @@ func (s *Service) publishSSEPayload(payload []byte) {
 		select {
 		case ch <- payload:
 		default:
-			logger.Debugf("SSE 客户端 %d 发送缓冲区已满，丢弃本次通知", id)
+			log.Debugf("SSE 客户端 %d 发送缓冲区已满，丢弃本次通知", id)
 		}
 	}
 }

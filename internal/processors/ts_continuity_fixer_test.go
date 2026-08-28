@@ -4,8 +4,9 @@ import (
 	"context"
 	"testing"
 
+	"github.com/bilirec/bilirec/pkg/logger"
+
 	"github.com/bilirec/bilirec/internal/processors"
-	"github.com/sirupsen/logrus"
 )
 
 const (
@@ -36,12 +37,12 @@ func continuityCounter(pkt []byte) uint8 {
 
 func TestTsContinuityFixer_SkipReservedAdaptationFieldControlZero(t *testing.T) {
 	proc := &processors.TsContinuityFixerProcessor{}
-	if err := proc.Open(context.Background(), logrus.NewEntry(logrus.New())); err != nil {
+	if err := proc.Open(context.Background(), logger.Nop()); err != nil {
 		t.Fatalf("open processor: %v", err)
 	}
 	defer proc.Close()
 
-	log := logrus.NewEntry(logrus.New())
+	log := logger.Nop()
 	pid := uint16(256)
 
 	pkt1 := makeTSPacket(pid, 0x1, 5, false)

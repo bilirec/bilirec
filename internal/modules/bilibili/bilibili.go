@@ -1,4 +1,4 @@
-﻿package bilibili
+package bilibili
 
 import (
 	"context"
@@ -14,13 +14,13 @@ import (
 	bili "github.com/CuteReimu/bilibili/v2"
 	"github.com/bilirec/bilirec/internal/modules/config"
 	"github.com/bilirec/bilirec/pkg/fallback"
+	"github.com/bilirec/bilirec/pkg/logger"
 	"github.com/bilirec/bilirec/utils"
 	"github.com/go-resty/resty/v2"
-	"github.com/sirupsen/logrus"
 	"golang.org/x/sync/singleflight"
 )
 
-var logger = logrus.WithField("module", "bilibili")
+var log = logger.Named("bilibili")
 
 const liveReferer = "https://live.bilibili.com/"
 const liveOrigin = "https://live.bilibili.com"
@@ -84,7 +84,7 @@ func provider(cfg *config.Config, ls fx.Lifecycle) *Client {
 		fx.StartStopHook(
 			func() error {
 				if cfg.BilibiliLoginMode == "anonymous" {
-					logger.Info("使用匿名登录，跳过哔哩哔哩登录流程")
+					log.Info("使用匿名登录，跳过哔哩哔哩登录流程")
 					return nil
 				}
 
@@ -92,15 +92,15 @@ func provider(cfg *config.Config, ls fx.Lifecycle) *Client {
 				switch cfg.BilibiliLoginMode {
 				case "controller":
 					// Controller mode: preload only, don't block on QR
-					logger.Info("哔哩哔哩登录模式：controller（仅预加载）")
+					log.Info("哔哩哔哩登录模式：controller（仅预加载）")
 					return client.preloadCookies()
 				case "startup":
 					// Startup mode (default): full login flow at startup
-					logger.Info("开始哔哩哔哩登录流程")
+					log.Info("开始哔哩哔哩登录流程")
 					return client.loadCookiesOrLogin()
 				case "anonymous":
 					// Already handled above, keep this branch as a defensive fallback.
-					logger.Info("使用匿名登录，跳过哔哩哔哩登录流程")
+					log.Info("使用匿名登录，跳过哔哩哔哩登录流程")
 					return nil
 				default:
 					return fmt.Errorf("未知的哔哩哔哩登录模式：%s", cfg.BilibiliLoginMode)
@@ -148,7 +148,7 @@ func ensureBuvid3Cookie(client *resty.Client) {
 
 	uuid, err := utils.NewUUIDv4()
 	if err != nil {
-		logger.Warnf("生成 buvid3 Cookie 失败：%v", err)
+		log.Warnf("生成 buvid3 Cookie 失败：%v", err)
 		return
 	}
 

@@ -1,4 +1,4 @@
-﻿// @title BiliRec API
+// @title BiliRec API
 // @version 1.0
 // @description Bilibili Live Recording Service API
 // @termsOfService http://swagger.io/terms/
@@ -30,11 +30,12 @@ import (
 	"sync"
 	"time"
 
+	"github.com/bilirec/bilirec/pkg/logger"
+
 	_ "github.com/bilirec/bilirec/docs"
 	"github.com/bilirec/bilirec/internal/modules/config"
 	"github.com/bilirec/bilirec/utils"
 
-	"github.com/sirupsen/logrus"
 	"go.uber.org/fx"
 
 	jwt "github.com/gofiber/contrib/v3/jwt"
@@ -55,7 +56,7 @@ const (
 	defaultNoCacheControl   = "no-store, no-cache, must-revalidate"
 )
 
-var logger = logrus.WithField("module", "rest")
+var log = logger.Named("rest")
 
 func provider(ls fx.Lifecycle, cfg *config.Config) *fiber.App {
 	app := fiber.New(fiber.Config{
@@ -73,7 +74,7 @@ func provider(ls fx.Lifecycle, cfg *config.Config) *fiber.App {
 
 	if cfg.Debug {
 		hexStr := utils.RandomHexStringMust(32)
-		logger.Infof("你可以使用十六进制令牌 %q 登录 /debug/pprof", hexStr)
+		log.Infof("你可以使用十六进制令牌 %q 登录 /debug/pprof", hexStr)
 		authenticate := func(c fiber.Ctx) error {
 			if c.Get("Authorization") != hexStr {
 				return fiber.ErrUnauthorized
@@ -86,7 +87,7 @@ func provider(ls fx.Lifecycle, cfg *config.Config) *fiber.App {
 	app.Use(logging.New(logging.Config{
 		TimeZone: utils.EmptyOrElse(os.Getenv("TZ"), "Asia/Hong_Kong"),
 		Format:   "| ${status} | ${latency} | ${ip} | ${method} | ${path} | ${error}\n",
-		Stream:   logger.Writer(),
+		Stream:   log.WriterAt(logger.InfoLevel),
 		Next: func(c fiber.Ctx) bool {
 			if cfg.SilentAccessLog {
 				return c.Response().StatusCode() < 400
@@ -103,7 +104,7 @@ func provider(ls fx.Lifecycle, cfg *config.Config) *fiber.App {
 			Title:    "BiliRec API Documentation",
 		}))
 	} else {
-		logger.Warn("swagger 文件未找到，禁用 swagger 路由")
+		log.Warn("swagger 文件未找到，禁用 swagger 路由")
 	}
 
 	app.Use(cors.New(cors.Config{
@@ -137,7 +138,7 @@ func provider(ls fx.Lifecycle, cfg *config.Config) *fiber.App {
 	app.Get("/version", getVersionHandler())
 
 	if cfg.Username != "" && cfg.PasswordHash != "" {
-		logger.Info("REST API 已启用 JWT 认证")
+		log.Info("REST API 已启用 JWT 认证")
 		app.Post("/login",
 			limiter.New(limiter.Config{Max: 10, Expiration: 1 * time.Minute}),
 			loginHandler(cfg),
@@ -192,12 +193,12 @@ func provider(ls fx.Lifecycle, cfg *config.Config) *fiber.App {
 				}
 			},
 			func(ctx context.Context) error {
-				logger.Info("正在停止服务器")
+				log.Info("正在停止服务器")
 				if err := app.ShutdownWithContext(ctx); err != nil {
-					logger.Warnf("服务器关闭错误：%v", err)
+					log.Warnf("服务器关闭错误：%v", err)
 				}
 				wg.Wait()
-				logger.Info("服务器已停止")
+				log.Info("服务器已停止")
 				return nil
 			},
 		),
@@ -207,7 +208,7 @@ func provider(ls fx.Lifecycle, cfg *config.Config) *fiber.App {
 }
 
 func startHttpsServer(app *fiber.App, wg *sync.WaitGroup, addr string, cfg *config.Config) error {
-	logger.Infof("正在监听 HTTPS 服务器: %s", addr)
+	log.Infof("正在监听 HTTPS 服务器: %s", addr)
 	cert, err := tls.LoadX509KeyPair(cfg.ServerCrt, cfg.ServerKey)
 	if err != nil {
 		return fmt.Errorf("加载证书失败：%w", err)
@@ -223,21 +224,21 @@ func startHttpsServer(app *fiber.App, wg *sync.WaitGroup, addr string, cfg *conf
 	}
 	wg.Go(func() {
 		if err := app.Listener(listener, fiber.ListenConfig{DisableStartupMessage: !cfg.Debug}); err != nil {
-			logger.Errorf("HTTPS 服务器错误：%v", err)
+			log.Errorf("HTTPS 服务器错误：%v", err)
 		}
 	})
-	logger.Info("HTTPS 服务器已启动")
+	log.Info("HTTPS 服务器已启动")
 	return nil
 }
 
 func startHttpServer(app *fiber.App, wg *sync.WaitGroup, addr string, cfg *config.Config) error {
-	logger.Infof("正在监听 HTTP 服务器: %s", addr)
+	log.Infof("正在监听 HTTP 服务器: %s", addr)
 	wg.Go(func() {
 		if err := app.Listen(addr, fiber.ListenConfig{DisableStartupMessage: !cfg.Debug}); err != nil {
-			logger.Errorf("HTTP 服务器错误：%v", err)
+			log.Errorf("HTTP 服务器错误：%v", err)
 		}
 	})
-	logger.Info("HTTP 服务器已启动")
+	log.Info("HTTP 服务器已启动")
 	return nil
 }
 

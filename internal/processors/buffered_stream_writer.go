@@ -10,11 +10,11 @@ import (
 
 	"github.com/bilirec/bilirec/pkg/coordinator"
 	"github.com/bilirec/bilirec/pkg/filecache"
+	"github.com/bilirec/bilirec/pkg/logger"
 	"github.com/bilirec/bilirec/pkg/pipeline"
 	"github.com/bilirec/bilirec/pkg/pool"
 	"github.com/bilirec/bilirec/pkg/rw"
 	"github.com/bilirec/bilirec/utils"
-	"github.com/sirupsen/logrus"
 )
 
 const (
@@ -76,7 +76,7 @@ type BufferedStreamWriterProcessor struct {
 	dropFilePageCache       bool
 	sequentialWrite         bool
 	writer                  *rw.FlushLockedBufferedWriter
-	logger                  *logrus.Entry
+	logger                  logger.Logger
 	locker                  tryLocker
 
 	dataCh          chan []byte
@@ -144,7 +144,7 @@ func NewBufferedStreamWriter(path string, opts ...BufferedStreamWriterOptions) *
 	)
 }
 
-func (w *BufferedStreamWriterProcessor) Open(ctx context.Context, log *logrus.Entry) error {
+func (w *BufferedStreamWriterProcessor) Open(ctx context.Context, log logger.Logger) error {
 	// File creation is delayed when SD card protection is enabled. We keep
 	// small writes in memory until the total queued bytes reach skipSmallFlushThreshold.
 	if !w.sdcardProtection {
@@ -159,7 +159,7 @@ func (w *BufferedStreamWriterProcessor) Open(ctx context.Context, log *logrus.En
 		w.pendingBytes = 0
 	}
 
-	w.logger = log.WithField("file", w.path)
+	w.logger = log.With("file", w.path)
 	w.dataCh = make(chan []byte, w.chanBufferSize)
 
 	if w.sequentialWrite {
@@ -198,7 +198,7 @@ func (w *BufferedStreamWriterProcessor) periodicIOConfig() (periodicIOMode, time
 
 // Process copies data into the write goroutine's channel and immediately returns,
 // decoupling TCP receive from file I/O to prevent backpressure-induced frame drops.
-func (w *BufferedStreamWriterProcessor) Process(ctx context.Context, log *logrus.Entry, data []byte) ([]byte, error) {
+func (w *BufferedStreamWriterProcessor) Process(ctx context.Context, log logger.Logger, data []byte) ([]byte, error) {
 	if len(data) == 0 {
 		return data, nil
 	}

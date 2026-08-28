@@ -1,11 +1,12 @@
-﻿package processors
+package processors
 
 import (
 	"context"
 
+	"github.com/bilirec/bilirec/pkg/logger"
+
 	"github.com/bilirec/bilirec/pkg/flv"
 	"github.com/bilirec/bilirec/pkg/pipeline"
-	"github.com/sirupsen/logrus"
 )
 
 var (
@@ -14,7 +15,7 @@ var (
 
 type FlvStreamFixerProcessor struct {
 	fixer *flv.RealtimeFixer
-	log   *logrus.Entry
+	log   logger.Logger
 	own   bool
 }
 
@@ -42,7 +43,7 @@ func NewFlvStreamFixerWithFixer(fixer *flv.RealtimeFixer) *pipeline.ProcessorInf
 	)
 }
 
-func (p *FlvStreamFixerProcessor) Open(ctx context.Context, log *logrus.Entry) error {
+func (p *FlvStreamFixerProcessor) Open(ctx context.Context, log logger.Logger) error {
 	p.log = log
 	p.fixer.SetTimestampJumpReporter(func(w flv.TimestampJumpWarning) {
 		p.log.Warnf(
@@ -59,7 +60,7 @@ func (p *FlvStreamFixerProcessor) Open(ctx context.Context, log *logrus.Entry) e
 	return nil
 }
 
-func (p *FlvStreamFixerProcessor) Process(ctx context.Context, log *logrus.Entry, data []byte) ([]byte, error) {
+func (p *FlvStreamFixerProcessor) Process(ctx context.Context, log logger.Logger, data []byte) ([]byte, error) {
 	if len(data) == 0 {
 		return data, nil
 	}

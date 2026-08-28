@@ -27,12 +27,12 @@ import (
 	st "github.com/bilirec/bilirec/internal/services/stream"
 	sc "github.com/bilirec/bilirec/internal/services/subcheck"
 	su "github.com/bilirec/bilirec/internal/services/subscribe"
+	"github.com/bilirec/bilirec/pkg/logger"
 	"github.com/bilirec/bilirec/pkg/updatecheck"
 	"github.com/bilirec/bilirec/utils"
 	"go.uber.org/fx"
 	"go.uber.org/fx/fxevent"
 	"go.uber.org/zap"
-	"go.uber.org/zap/zapcore"
 )
 
 func MainModule() fx.Option {
@@ -83,10 +83,7 @@ func NewApp() *fx.App {
 			),
 		),
 		fx.StopTimeout(1*time.Minute),
-		fx.Provide(zapLogger),
-		fx.WithLogger(func(log *zap.Logger) fxevent.Logger {
-			return &fxevent.ZapLogger{Logger: log}
-		}),
+		fx.WithLogger(fxZapLogger),
 	)
 }
 
@@ -95,21 +92,12 @@ func NewAndroidApp() *fx.App {
 		MainModule(),
 		fx.StartTimeout(10*time.Second),
 		fx.StopTimeout(10*time.Second),
-		fx.Provide(zapLogger),
-		fx.WithLogger(func(log *zap.Logger) fxevent.Logger {
-			return &fxevent.ZapLogger{Logger: log}
-		}),
+		fx.WithLogger(fxZapLogger),
 	)
 }
 
-func zapLogger() (*zap.Logger, error) {
-	cfg := zap.NewDevelopmentConfig()
-
-	cfg.Level = zap.NewAtomicLevelAt(zapcore.WarnLevel)
-
-	if os.Getenv("DEBUG") == "true" {
-		cfg.Level = zap.NewAtomicLevelAt(zapcore.DebugLevel)
+func fxZapLogger() fxevent.Logger {
+	return &fxevent.ZapLogger{
+		Logger: logger.Named("fx").Zap().WithOptions(zap.IncreaseLevel(zap.WarnLevel)),
 	}
-
-	return cfg.Build()
 }

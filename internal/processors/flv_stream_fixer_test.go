@@ -3,11 +3,12 @@ package processors
 import (
 	"bytes"
 	"context"
+	"io"
 	"strings"
 	"testing"
 
 	"github.com/bilirec/bilirec/pkg/flv"
-	"github.com/sirupsen/logrus"
+	"github.com/bilirec/bilirec/pkg/logger"
 )
 
 func TestFlvStreamFixerProcessor_LogsTimestampJumpWarning(t *testing.T) {
@@ -17,11 +18,15 @@ func TestFlvStreamFixerProcessor_LogsTimestampJumpWarning(t *testing.T) {
 	processor := &FlvStreamFixerProcessor{fixer: fixer, own: false}
 
 	var logBuffer bytes.Buffer
-	logger := logrus.New()
-	logger.SetOutput(&logBuffer)
-	logger.SetLevel(logrus.WarnLevel)
+	color := false
+	logger.Init(logger.Options{Output: &logBuffer, Level: logger.WarnLevel, Color: &color})
+	t.Cleanup(func() {
+		logger.SetOutput(io.Discard)
+		logger.SetLevel(logger.InfoLevel)
+	})
+	log := logger.Named("test")
 
-	if err := processor.Open(context.Background(), logrus.NewEntry(logger)); err != nil {
+	if err := processor.Open(context.Background(), log); err != nil {
 		t.Fatalf("open processor: %v", err)
 	}
 
@@ -31,7 +36,7 @@ func TestFlvStreamFixerProcessor_LogsTimestampJumpWarning(t *testing.T) {
 		}
 	}()
 
-	if _, err := processor.Process(context.Background(), logrus.NewEntry(logger), flv.FlvHeader); err != nil {
+	if _, err := processor.Process(context.Background(), log, flv.FlvHeader); err != nil {
 		t.Fatalf("unexpected header error: %v", err)
 	}
 
@@ -45,7 +50,7 @@ func TestFlvStreamFixerProcessor_LogsTimestampJumpWarning(t *testing.T) {
 	in = append(in, tag1...)
 	in = append(in, tag2...)
 
-	if _, err := processor.Process(context.Background(), logrus.NewEntry(logger), in); err != nil {
+	if _, err := processor.Process(context.Background(), log, in); err != nil {
 		t.Fatalf("unexpected process error: %v", err)
 	}
 
