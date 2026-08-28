@@ -31,6 +31,9 @@ const (
 	TagHeaderSize     = 11
 	FlvHeaderSize     = 9
 	PrevTagSizeBytes  = 4
+	// MaxTagDataSize is a sanity ceiling for one FLV tag body. UI24 max is
+	// 0xFFFFFF (~16MiB); claims above this must not block parse-buffer trim.
+	MaxTagDataSize = 12 * 1024 * 1024
 
 	// 🔥 新增: 去重相關常量
 	MaxDedupCacheSize = 1000 // 最大去重緩存大小
@@ -88,8 +91,9 @@ func (t *Tag) Reset() {
 	t.IsKeyframe = false
 }
 
-// isWaitingForPartialTag reports whether available bytes begin a tag whose body
-// has not fully arrived yet.
+// isWaitingForPartialTag reports whether available bytes begin a plausible tag
+// whose body has not fully arrived yet. Oversized DataSize claims are treated
+// as non-tags so parse-buffer trim can still run.
 func isWaitingForPartialTag(available []byte) bool {
 	if len(available) < PrevTagSizeBytes+TagHeaderSize {
 		return false
@@ -97,6 +101,9 @@ func isWaitingForPartialTag(available []byte) bool {
 	dataSize := uint32(available[PrevTagSizeBytes+1])<<16 |
 		uint32(available[PrevTagSizeBytes+2])<<8 |
 		uint32(available[PrevTagSizeBytes+3])
+	if dataSize > MaxTagDataSize {
+		return false
+	}
 	total := PrevTagSizeBytes + TagHeaderSize + int(dataSize)
 	return len(available) < total
 }

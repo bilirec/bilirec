@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"time"
 
 	"github.com/bilirec/bilirec/internal/modules/bilibili"
@@ -357,6 +358,7 @@ func (r *Service) connectStream(
 			)
 			return nil, nil, nil, false, nil
 		} else if resp.StatusCode() != 200 {
+			drainAndCloseBody(resp.RawBody())
 			l.Errorf("non-200 response: %d, will try next url (protocol=%s, format=%s, codec=%s, qn=%d, url=%s)",
 				resp.StatusCode(),
 				streamInfo.Protocol,
@@ -388,6 +390,7 @@ func (r *Service) connectStream(
 
 		flvCh, flvErr := r.st.ReadFlvStream(resp, ctx, streamInfo.Qn, chunkPool, releaseChunkPool)
 		if flvErr != nil {
+			drainAndCloseBody(resp.RawBody())
 			l.Errorf("cannot capture url stream: %v, will try next url", flvErr)
 			return nil, nil, nil, false, nil
 		}
@@ -399,6 +402,14 @@ func (r *Service) connectStream(
 	}
 
 	return ch, strategy, chunkPool, true, nil
+}
+
+func drainAndCloseBody(body io.ReadCloser) {
+	if body == nil {
+		return
+	}
+	_, _ = io.Copy(io.Discard, body)
+	_ = body.Close()
 }
 
 func discardStreamCh(ch <-chan []byte, chunkPool *pool.BucketedBytesPool) {
