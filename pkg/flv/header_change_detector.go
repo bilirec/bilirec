@@ -1,4 +1,4 @@
-﻿package flv
+package flv
 
 import (
 	"bytes"
@@ -6,7 +6,7 @@ import (
 	"errors"
 )
 
-// ErrVideoHeaderChanged signals that the video sequence header (SPS/PPS) has
+// ErrVideoHeaderChanged signals that the video sequence header has
 // changed and the recording pipeline should rotate to a new file.
 var ErrVideoHeaderChanged = errors.New("视频序列头已变化，需要进行管道轮转")
 
@@ -99,12 +99,17 @@ func (d *HeaderChangeDetector) Close() {
 // SeedVideoHeader pre-seeds the detector with a known video sequence header so
 // it can detect changes from a mid-stream header injected by a prior rotation.
 // Pass the full FLV tag bytes (TagHeader + TagData + PrevTagSize) as stored in
-// FlvHeaderChangedError.VideoHeaderTag. Must be called after Reset().
+// FlvHeaderChangedError.VideoHeaderTag. Non-header payloads are ignored.
+// Must be called after Reset().
 func (d *HeaderChangeDetector) SeedVideoHeader(fullTagBytes []byte) {
 	if len(fullTagBytes) <= TagHeaderSize+PrevTagSizeBytes {
 		return
 	}
 	tagData := fullTagBytes[TagHeaderSize : len(fullTagBytes)-PrevTagSizeBytes]
+	_, isHeader, _ := ClassifyVideoTag(tagData)
+	if !isHeader {
+		return
+	}
 	d.lastVideoHeader = append([]byte(nil), tagData...)
 	d.lastVideoTag = append([]byte(nil), fullTagBytes...)
 }
@@ -230,22 +235,12 @@ func (d *HeaderChangeDetector) tagWithPrevSize(src []byte) []byte {
 	return d.tagBuf.Bytes()
 }
 
-// checkVideoHeader inspects a video tag's payload for AVC sequence header
-// changes. Returns ErrVideoHeaderChanged on a binary diff.
+// checkVideoHeader inspects a video tag's payload for sequence header
+// changes (AVC, HEVC codec id 12, or Enhanced FLV hvc1/hev1).
+// Returns ErrVideoHeaderChanged on a binary diff.
 func (d *HeaderChangeDetector) checkVideoHeader(tagData []byte, tagBytes []byte, tagOffset int, tagEnd int) error {
-	if len(tagData) < 2 {
-		return nil
-	}
-
-	// tagData[0]: FrameType(4 bits) | CodecID(4 bits)
-	// tagData[1]: AVCPacketType — only meaningful for AVC (CodecID == 7)
-	codecID := tagData[0] & 0x0F
-	if codecID != 7 { // not AVC/H.264 — skip
-		return nil
-	}
-
-	const avcSequenceHeader = 0x00
-	if tagData[1] != avcSequenceHeader {
+	_, isHeader, _ := ClassifyVideoTag(tagData)
+	if !isHeader {
 		return nil
 	}
 

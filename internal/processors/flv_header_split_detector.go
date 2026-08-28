@@ -23,7 +23,7 @@ type flvHeaderSplitDetectorProcessor struct {
 }
 
 // NewFlvHeaderSplitDetector returns a ProcessorInfo that signals pipe rotation
-// via ErrVideoHeaderChanged whenever the AVC sequence header changes.
+// via ErrVideoHeaderChanged whenever the video sequence header changes.
 func NewFlvHeaderSplitDetector() *pipeline.ProcessorInfo[[]byte] {
 	return pipeline.NewProcessorInfo(
 		"flv-header-split-detector",
@@ -72,7 +72,7 @@ func (p *flvHeaderSplitDetectorProcessor) Process(ctx context.Context, log logge
 
 	var headerChanged *flv.FlvHeaderChangedError
 	if errors.As(err, &headerChanged) {
-		log.Infof("🔀 视频序列头已变化（SPS/PPS 差异），触发管道轮转")
+		log.Infof("🔀 视频序列头已变化，触发管道轮转")
 		// Only return bytes after the changed video seq-header tag.
 		// Bytes before the changed tag belong to the old stream config and should
 		// not be replayed into the next segment.

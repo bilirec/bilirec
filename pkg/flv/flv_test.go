@@ -1,6 +1,7 @@
 package flv_test
 
 import (
+	"bytes"
 	"encoding/binary"
 	"errors"
 	"testing"
@@ -426,6 +427,128 @@ func TestHeaderChangeDetector_LastVideoHeaderReturnsCopy(t *testing.T) {
 	b := d.LastVideoHeader()
 	if a[0] == b[0] {
 		t.Fatal("LastVideoHeader should return a copy, got shared backing array")
+	}
+}
+
+func TestHeaderChangeDetector_HEVCLegacySequenceHeaderChange(t *testing.T) {
+	d := flv.NewHeaderChangeDetector()
+	defer d.Close()
+
+	h1 := []byte{0x1c, 0x00, 0x00, 0x00, 0x00, 0x01, 0x42, 0x00, 0x1e}
+	h2 := []byte{0x1c, 0x00, 0x00, 0x00, 0x00, 0x01, 0x64, 0x00, 0x29}
+
+	if err := d.DetectChange(buildFLVVideoTag(h1)); err != nil {
+		t.Fatalf("first HEVC-12 header should not trigger split, got err: %v", err)
+	}
+	err := d.DetectChange(buildFLVVideoTag(h2))
+	if !errors.Is(err, flv.ErrVideoHeaderChanged) {
+		t.Fatalf("expected ErrVideoHeaderChanged for HEVC-12, got: %v", err)
+	}
+}
+
+func TestHeaderChangeDetector_HEVCEnhancedSequenceHeaderChange(t *testing.T) {
+	d := flv.NewHeaderChangeDetector()
+	defer d.Close()
+
+	h1 := []byte{0x90, 'h', 'v', 'c', '1', 0x01, 0x42, 0x00, 0x1e}
+	h2 := []byte{0x90, 'h', 'v', 'c', '1', 0x01, 0x64, 0x00, 0x29}
+
+	if err := d.DetectChange(buildFLVVideoTag(h1)); err != nil {
+		t.Fatalf("first Enhanced header should not trigger split, got err: %v", err)
+	}
+	err := d.DetectChange(buildFLVVideoTag(h2))
+	if !errors.Is(err, flv.ErrVideoHeaderChanged) {
+		t.Fatalf("expected ErrVideoHeaderChanged for Enhanced HEVC, got: %v", err)
+	}
+}
+
+func TestHeaderChangeDetector_IgnoresHEVCNonSequenceVideo(t *testing.T) {
+	t.Run("hevc-12 nalu after header", func(t *testing.T) {
+		d := flv.NewHeaderChangeDetector()
+		defer d.Close()
+
+		hdr := []byte{0x1c, 0x00, 0x00, 0x00, 0x00, 0x01}
+		nalu := []byte{0x1c, 0x01, 0x00, 0x00, 0x00, 0xaa}
+		if err := d.DetectChange(buildFLVVideoTag(hdr)); err != nil {
+			t.Fatalf("first HEVC-12 header should not trigger split, got err: %v", err)
+		}
+		if err := d.DetectChange(buildFLVVideoTag(nalu)); err != nil {
+			t.Fatalf("HEVC-12 NALU should not trigger split, got err: %v", err)
+		}
+		got := d.LastVideoHeader()
+		if !bytes.Equal(got, hdr) {
+			t.Fatalf("LastVideoHeader = %x, want stored sequence header %x", got, hdr)
+		}
+	})
+
+	t.Run("enhanced coded frames after header", func(t *testing.T) {
+		d := flv.NewHeaderChangeDetector()
+		defer d.Close()
+
+		hdr := []byte{0x90, 'h', 'v', 'c', '1', 0x01}
+		coded := []byte{0x91, 'h', 'v', 'c', '1', 0xaa}
+		if err := d.DetectChange(buildFLVVideoTag(hdr)); err != nil {
+			t.Fatalf("first Enhanced header should not trigger split, got err: %v", err)
+		}
+		if err := d.DetectChange(buildFLVVideoTag(coded)); err != nil {
+			t.Fatalf("Enhanced CodedFrames should not trigger split, got err: %v", err)
+		}
+		got := d.LastVideoHeader()
+		if !bytes.Equal(got, hdr) {
+			t.Fatalf("LastVideoHeader = %x, want stored sequence header %x", got, hdr)
+		}
+	})
+}
+
+func TestHeaderChangeDetector_AVCToHEVCLegacyRotates(t *testing.T) {
+	d := flv.NewHeaderChangeDetector()
+	defer d.Close()
+
+	avc := []byte{0x17, 0x00, 0x00, 0x00, 0x00, 0x01, 0x42, 0x00, 0x1e}
+	hevc := []byte{0x1c, 0x00, 0x00, 0x00, 0x00, 0x01, 0x42, 0x00, 0x1e}
+
+	if err := d.DetectChange(buildFLVVideoTag(avc)); err != nil {
+		t.Fatalf("first AVC header should not trigger split, got err: %v", err)
+	}
+	err := d.DetectChange(buildFLVVideoTag(hevc))
+	if !errors.Is(err, flv.ErrVideoHeaderChanged) {
+		t.Fatalf("expected rotation on AVC to HEVC-12, got: %v", err)
+	}
+}
+
+func TestHeaderChangeDetector_IgnoresUnknownEnhancedFourCC(t *testing.T) {
+	d := flv.NewHeaderChangeDetector()
+	defer d.Close()
+
+	unknown := []byte{0x90, 'a', 'v', '0', '1', 0x01, 0x02}
+	if err := d.DetectChange(buildFLVVideoTag(unknown)); err != nil {
+		t.Fatalf("unknown FourCC should not rotate, got err: %v", err)
+	}
+	if d.LastVideoHeader() != nil {
+		t.Fatal("unknown FourCC must not be stored as video sequence header")
+	}
+
+	hevc := []byte{0x90, 'h', 'v', 'c', '1', 0x01, 0x02}
+	if err := d.DetectChange(buildFLVVideoTag(hevc)); err != nil {
+		t.Fatalf("first Enhanced HEVC header should not trigger split, got err: %v", err)
+	}
+	if err := d.DetectChange(buildFLVVideoTag(unknown)); err != nil {
+		t.Fatalf("unknown FourCC after a known header should not rotate, got err: %v", err)
+	}
+	got := d.LastVideoHeader()
+	if !bytes.Equal(got, hevc) {
+		t.Fatalf("LastVideoHeader = %x, want unchanged HEVC header %x", got, hevc)
+	}
+}
+
+func TestHeaderChangeDetector_SeedVideoHeaderIgnoresNALU(t *testing.T) {
+	d := flv.NewHeaderChangeDetector()
+	defer d.Close()
+
+	naluTag := buildFLVVideoTag([]byte{0x17, 0x01, 0x00, 0x00, 0x00, 0xaa})
+	d.SeedVideoHeader(naluTag)
+	if d.LastVideoHeader() != nil {
+		t.Fatal("seeded NALU must not become the baseline sequence header")
 	}
 }
 

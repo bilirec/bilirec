@@ -1,6 +1,7 @@
 package processors_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/binary"
 	"errors"
@@ -271,6 +272,152 @@ func TestFlvPipeline_ResolutionChangeRotation(t *testing.T) {
 		t.Fatal("expected non-empty VideoHeaderTag after rotation")
 	}
 	t.Logf("VideoHeaderTag: %d bytes, AudioHeaderTag: %d bytes", len(videoHdr), len(audioHdr))
+}
+
+func buildHEVCLegacyStream(hvccBytes []byte, numDataTags int, withPreamble bool) []byte {
+	var b []byte
+	if withPreamble {
+		b = append(b, flv.NewFileHeaderBytes()...)
+	}
+	seqData := make([]byte, 0, 5+len(hvccBytes))
+	seqData = append(seqData, 0x1c, 0x00, 0x00, 0x00, 0x00)
+	seqData = append(seqData, hvccBytes...)
+	b = append(b, flv.NewTagBytes(flv.TagTypeVideo, seqData)...)
+
+	frame := make([]byte, 6+50)
+	frame[0] = 0x2c
+	frame[1] = 0x01
+	for i := 0; i < numDataTags; i++ {
+		b = append(b, flv.NewTagBytes(flv.TagTypeVideo, frame)...)
+	}
+	return b
+}
+
+func buildHEVCEnhancedStream(hvccBytes []byte, numDataTags int, withPreamble bool) []byte {
+	var b []byte
+	if withPreamble {
+		b = append(b, flv.NewFileHeaderBytes()...)
+	}
+	seqData := make([]byte, 0, 5+len(hvccBytes))
+	seqData = append(seqData, 0x90, 'h', 'v', 'c', '1')
+	seqData = append(seqData, hvccBytes...)
+	b = append(b, flv.NewTagBytes(flv.TagTypeVideo, seqData)...)
+
+	frame := make([]byte, 5+50)
+	frame[0] = 0xa1 // ExHeader | inter | PacketTypeCodedFrames
+	frame[1], frame[2], frame[3], frame[4] = 'h', 'v', 'c', '1'
+	for i := 0; i < numDataTags; i++ {
+		b = append(b, flv.NewTagBytes(flv.TagTypeVideo, frame)...)
+	}
+	return b
+}
+
+func firstVideoTagData(t *testing.T, path string) []byte {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read %s: %v", path, err)
+	}
+	off := flv.FlvHeaderSize + flv.PrevTagSizeBytes
+	for off+flv.TagHeaderSize <= len(data) {
+		tagType := data[off]
+		dataSize := int(data[off+1])<<16 | int(data[off+2])<<8 | int(data[off+3])
+		tagEnd := off + flv.TagHeaderSize + dataSize
+		if tagEnd+flv.PrevTagSizeBytes > len(data) {
+			t.Fatalf("%s truncated video tag", path)
+		}
+		if tagType == flv.TagTypeVideo {
+			return data[off+flv.TagHeaderSize : tagEnd]
+		}
+		off = tagEnd + flv.PrevTagSizeBytes
+	}
+	t.Fatalf("%s has no video tag", path)
+	return nil
+}
+
+func runFLVHeaderRotationPipeline(t *testing.T, stream []byte, wantInjected []byte) {
+	t.Helper()
+
+	tmpDir := t.TempDir()
+	outFile := func(seg int) string {
+		return filepath.Join(tmpDir, "seg"+string(rune('0'+seg))+".flv")
+	}
+	sharedFixer := flv.NewRealtimeFixer()
+	defer sharedFixer.Close()
+
+	openPipe := func(videoHdr, audioHdr []byte, outPath string) *pipeline.Pipe[[]byte] {
+		p := pipeline.New(
+			processors.NewFlvStreamFixerWithFixer(sharedFixer),
+			processors.NewFlvHeaderSplitDetector(),
+			processors.NewFlvHeaderWriter(videoHdr, audioHdr),
+			processors.NewBufferedStreamWriter(outPath, processors.WithBufferSize(4*1024*1024)),
+		)
+		if err := p.Open(context.Background()); err != nil {
+			t.Fatalf("open pipeline: %v", err)
+		}
+		return p
+	}
+
+	const chunkSize = 512
+	segment := 0
+	var videoHdr, audioHdr []byte
+	pipe := openPipe(nil, nil, outFile(segment))
+	rotations := 0
+
+	for offset := 0; offset < len(stream); {
+		end := offset + chunkSize
+		if end > len(stream) {
+			end = len(stream)
+		}
+		_, procErr := pipe.Process(context.Background(), stream[offset:end])
+		offset = end
+
+		if procErr != nil {
+			var headerChanged *flv.FlvHeaderChangedError
+			if errors.As(procErr, &headerChanged) {
+				pipe.Close()
+				videoHdr = headerChanged.VideoHeaderTag
+				audioHdr = headerChanged.AudioHeaderTag
+				sharedFixer.ResetTimestampStore()
+				sharedFixer.ResetDedupCache()
+				rotations++
+				segment++
+				pipe = openPipe(videoHdr, audioHdr, outFile(segment))
+				continue
+			}
+			t.Fatalf("unexpected pipeline error at offset %d: %v", offset, procErr)
+		}
+	}
+	pipe.Close()
+
+	if rotations != 1 {
+		t.Fatalf("expected exactly 1 rotation, got %d", rotations)
+	}
+	if len(videoHdr) == 0 {
+		t.Fatal("expected non-empty VideoHeaderTag after rotation")
+	}
+
+	got := firstVideoTagData(t, outFile(1))
+	if len(got) < len(wantInjected) {
+		t.Fatalf("seg1 first video tag too short: %d < %d", len(got), len(wantInjected))
+	}
+	if !bytes.Equal(got[:len(wantInjected)], wantInjected) {
+		t.Fatalf("seg1 first video tag = %x, want prefix %x", got, wantInjected)
+	}
+}
+
+func TestFlvPipeline_ResolutionChangeRotation_HEVCLegacy(t *testing.T) {
+	streamLow := buildHEVCLegacyStream(avcc360p, 20, true)
+	streamHigh := buildHEVCLegacyStream(avcc720p, 20, false)
+	want := append([]byte{0x1c, 0x00, 0x00, 0x00, 0x00}, avcc720p...)
+	runFLVHeaderRotationPipeline(t, append(streamLow, streamHigh...), want)
+}
+
+func TestFlvPipeline_ResolutionChangeRotation_HEVCEnhanced(t *testing.T) {
+	streamLow := buildHEVCEnhancedStream(avcc360p, 20, true)
+	streamHigh := buildHEVCEnhancedStream(avcc720p, 20, false)
+	want := append([]byte{0x90, 'h', 'v', 'c', '1'}, avcc720p...)
+	runFLVHeaderRotationPipeline(t, append(streamLow, streamHigh...), want)
 }
 
 // TestFlvPipeline_ResolutionChangeRotation_RealFixtures uses local real-world

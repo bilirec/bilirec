@@ -153,17 +153,12 @@ func (rf *RealtimeFixer) Fix(input []byte) ([]byte, error) {
 		copy(tag.StreamID[:], headerSlice[8:11])
 
 		// Detect header/keyframe
-		if len(tagData) >= 2 {
-			switch tagType {
-			case TagTypeVideo:
-				firstByte := tagData[0]
-				secondByte := tagData[1]
-				tag.IsKeyframe = (firstByte & 0xF0) == 0x10
-				tag.IsHeader = secondByte == 0x00
-			case TagTypeAudio:
-				if (tagData[0]>>4) == 10 && len(tagData) >= 2 { // AAC
-					tag.IsHeader = tagData[1] == 0x00
-				}
+		switch tagType {
+		case TagTypeVideo:
+			_, tag.IsHeader, tag.IsKeyframe = ClassifyVideoTag(tagData)
+		case TagTypeAudio:
+			if len(tagData) >= 2 && (tagData[0]>>4) == 10 { // AAC
+				tag.IsHeader = tagData[1] == 0x00
 			}
 		}
 

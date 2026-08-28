@@ -200,13 +200,10 @@ func (af *AccumulateFixer) flushInternal() ([]byte, error) {
 		tag.Data = tagData
 		copy(tag.StreamID[:], headerBytes[8:11])
 
-		if len(tagData) >= 2 {
-			if tag.Type == TagTypeVideo {
-				tag.IsKeyframe = (tagData[0] & 0xF0) == 0x10
-				tag.IsHeader = tagData[1] == 0x00
-			} else if tag.Type == TagTypeAudio && (tagData[0]>>4) == 10 {
-				tag.IsHeader = tagData[1] == 0x00
-			}
+		if tag.Type == TagTypeVideo {
+			_, tag.IsHeader, tag.IsKeyframe = ClassifyVideoTag(tagData)
+		} else if tag.Type == TagTypeAudio && len(tagData) >= 2 && (tagData[0]>>4) == 10 {
+			tag.IsHeader = tagData[1] == 0x00
 		}
 
 		// 🔥 新增:  去重檢查
