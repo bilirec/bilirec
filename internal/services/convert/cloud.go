@@ -17,6 +17,7 @@ import (
 	"github.com/bilirec/bilirec/pkg/db"
 	"github.com/bilirec/bilirec/pkg/ds"
 	"github.com/bilirec/bilirec/pkg/filecache"
+	recfs "github.com/bilirec/bilirec/pkg/fs"
 	"github.com/bilirec/bilirec/pkg/pool"
 	"github.com/bilirec/bilirec/pkg/signeddownload"
 	"github.com/bilirec/bilirec/utils"
@@ -363,6 +364,7 @@ func (c *cloudConvertManager) handleFinished(ctx context.Context, queue *TaskQue
 	}
 
 	c.logger.Infof("已成功将任务 %s 的导出文件下载到 %s", queue.TaskID, queue.OutputPath)
+	recfs.NotifyFileChanged(queue.OutputPath)
 	c.presignedUrlPool.Delete(queue.InputPath)
 
 	if config.ReadOnly.DropFilePageCache() {

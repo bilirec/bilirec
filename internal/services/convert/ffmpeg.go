@@ -12,6 +12,7 @@ import (
 	"github.com/bilirec/bilirec/pkg/db"
 	"github.com/bilirec/bilirec/pkg/ffmpeg"
 	"github.com/bilirec/bilirec/pkg/filecache"
+	recfs "github.com/bilirec/bilirec/pkg/fs"
 	"github.com/bilirec/bilirec/pkg/pool"
 	"github.com/bilirec/bilirec/utils"
 	"github.com/puzpuzpuz/xsync/v4"
@@ -210,6 +211,8 @@ func (f *ffmpegConvertManager) asyncProcessTask(ctx context.Context, queue *Task
 		taskLog.Errorf("从队列移除 ffmpeg 任务失败：%v", err)
 		return
 	}
+
+	recfs.NotifyFileChanged(queue.OutputPath)
 
 	if config.ReadOnly.DropFilePageCache() {
 		if err := filecache.DropFilePageCache(queue.InputPath); err != nil {

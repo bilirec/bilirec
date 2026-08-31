@@ -12,6 +12,7 @@ import (
 
 	"github.com/bilirec/bilirec/pkg/backoff"
 	"github.com/bilirec/bilirec/pkg/ds"
+	recfs "github.com/bilirec/bilirec/pkg/fs"
 	"github.com/bilirec/bilirec/utils"
 )
 
@@ -77,6 +78,7 @@ func (d *sourceDeleter) deleteSource(queue *TaskQueue, log logger.Logger) {
 		err := removeSourceFile(path)
 		if err == nil {
 			log.Debugf("已删除源文件 %s", path)
+			recfs.NotifyFileChanged(path)
 			return
 		}
 		lastErr = err
@@ -105,6 +107,8 @@ func (d *sourceDeleter) handleDeleteFailure(queue *TaskQueue, log logger.Logger,
 			sourceDeleteMaxAttempts, queue.InputPath, err, renameErr)
 		return
 	}
+	recfs.NotifyFileChanged(queue.InputPath)
+	recfs.NotifyFileChanged(renamed)
 	log.Errorf("在 %d 次尝试后仍无法删除源文件 %s（最后错误：%v），已将其重命名为 %s，请手动删除",
 		sourceDeleteMaxAttempts, queue.InputPath, err, renamed)
 }

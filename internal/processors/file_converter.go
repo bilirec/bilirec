@@ -10,6 +10,7 @@ import (
 
 	"github.com/bilirec/bilirec/pkg/logger"
 
+	recfs "github.com/bilirec/bilirec/pkg/fs"
 	"github.com/bilirec/bilirec/pkg/pipeline"
 	"github.com/bilirec/bilirec/utils"
 )
@@ -80,12 +81,15 @@ func (p *FileConverterProcessor) Process(ctx context.Context, log logger.Logger,
 	if err := convertCmd.Run(); err != nil {
 		return path, err
 	}
+	recfs.NotifyFileChanged(newFileName)
 	return newFileName, nil
 }
 
 func (p *FileConverterProcessor) Close() error {
 	if p.deleteSource && p.oldPath != "" {
-		return os.Remove(p.oldPath)
+		err := os.Remove(p.oldPath)
+		recfs.NotifyFileChanged(p.oldPath)
+		return err
 	}
 	return nil
 }

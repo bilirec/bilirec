@@ -10,6 +10,7 @@ import (
 
 	"github.com/bilirec/bilirec/pkg/coordinator"
 	"github.com/bilirec/bilirec/pkg/filecache"
+	recfs "github.com/bilirec/bilirec/pkg/fs"
 	"github.com/bilirec/bilirec/pkg/logger"
 	"github.com/bilirec/bilirec/pkg/pipeline"
 	"github.com/bilirec/bilirec/pkg/pool"
@@ -279,6 +280,7 @@ func (w *BufferedStreamWriterProcessor) Close() error {
 			w.locker.Unlock()
 		}
 		closeErr = file.Close()
+		recfs.NotifyFileChanged(w.path)
 	}
 	w.writer = nil
 	w.file.Store(nil)

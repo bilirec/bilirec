@@ -15,6 +15,7 @@ import (
 
 	"github.com/bilirec/bilirec/internal/modules/config"
 	"github.com/bilirec/bilirec/internal/services/path"
+	recfs "github.com/bilirec/bilirec/pkg/fs"
 	"go.uber.org/fx"
 )
 
@@ -83,7 +84,7 @@ func (s *Service) ListTreeWithFilter(path string, filter func(fs.DirEntry) bool)
 		return nil, err
 	}
 
-	entries, err := os.ReadDir(fullPath)
+	entries, err := recfs.ReadDir(fullPath)
 	if err != nil {
 		return nil, err
 	}
@@ -121,7 +122,7 @@ func (s *Service) ListTreeWithOptions(path string, opts ListOptions) (*PagedTree
 		return nil, err
 	}
 
-	entries, err := os.ReadDir(fullPath)
+	entries, err := recfs.ReadDir(fullPath)
 	if err != nil {
 		return nil, err
 	}
