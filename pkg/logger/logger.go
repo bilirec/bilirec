@@ -75,21 +75,24 @@ func (l Logger) Enabled(lvl zapcore.Level) bool {
 	return l.zap().Core().Enabled(lvl)
 }
 
-func (l Logger) Debug(args ...any)                 { l.zap().Sugar().Debug(args...) }
-func (l Logger) Info(args ...any)                  { l.zap().Sugar().Info(args...) }
-func (l Logger) Warn(args ...any)                  { l.zap().Sugar().Warn(args...) }
-func (l Logger) Error(args ...any)                 { l.zap().Sugar().Error(args...) }
-func (l Logger) Debugf(format string, args ...any) { l.zap().Sugar().Debugf(format, args...) }
-func (l Logger) Infof(format string, args ...any)  { l.zap().Sugar().Infof(format, args...) }
-func (l Logger) Warnf(format string, args ...any)  { l.zap().Sugar().Warnf(format, args...) }
-func (l Logger) Errorf(format string, args ...any) { l.zap().Sugar().Errorf(format, args...) }
+func (l Logger) Debug(msg string) { l.zap().Debug(msg) }
+func (l Logger) Info(msg string)  { l.zap().Info(msg) }
+func (l Logger) Warn(msg string)  { l.zap().Warn(msg) }
+func (l Logger) Error(msg string) { l.zap().Error(msg) }
 
-func (l Logger) Tracef(format string, args ...any) {
+func (l Logger) Debugf(format string, args ...any) { l.logf(DebugLevel, format, args...) }
+func (l Logger) Infof(format string, args ...any)  { l.logf(InfoLevel, format, args...) }
+func (l Logger) Warnf(format string, args ...any)  { l.logf(WarnLevel, format, args...) }
+func (l Logger) Errorf(format string, args ...any) { l.logf(ErrorLevel, format, args...) }
+
+func (l Logger) Tracef(format string, args ...any) { l.logf(TraceLevel, format, args...) }
+
+func (l Logger) logf(lvl zapcore.Level, format string, args ...any) {
 	z := l.zap()
-	if !z.Core().Enabled(TraceLevel) {
+	if !z.Core().Enabled(lvl) {
 		return
 	}
-	z.Log(TraceLevel, fmt.Sprintf(format, args...))
+	z.Log(lvl, fmt.Sprintf(format, args...))
 }
 
 func (l Logger) WriterAt(lvl zapcore.Level) io.WriteCloser {
@@ -118,7 +121,34 @@ func kvToFields(kv []any) []zap.Field {
 		if key == "" {
 			continue
 		}
-		fields = append(fields, zap.Any(key, kv[i+1]))
+		fields = append(fields, anyToField(key, kv[i+1]))
 	}
 	return fields
+}
+
+func anyToField(key string, v any) zap.Field {
+	switch t := v.(type) {
+	case string:
+		return zap.String(key, t)
+	case int:
+		return zap.Int(key, t)
+	case int64:
+		return zap.Int64(key, t)
+	case int32:
+		return zap.Int32(key, t)
+	case uint:
+		return zap.Uint(key, t)
+	case uint64:
+		return zap.Uint64(key, t)
+	case bool:
+		return zap.Bool(key, t)
+	case float64:
+		return zap.Float64(key, t)
+	case error:
+		return zap.NamedError(key, t)
+	case fmt.Stringer:
+		return zap.Stringer(key, t)
+	default:
+		return zap.Any(key, t)
+	}
 }

@@ -79,10 +79,10 @@ func (c *Client) loadCookiesOrLogin() error {
 	}
 
 	if err := c.writeRefreshTokenToFile(result.RefreshToken); err != nil {
-		log.Warn(err)
+		log.Warnf("%v", err)
 	}
 	if err := c.writerCookiesToFile(); err != nil {
-		log.Warn(err)
+		log.Warnf("%v", err)
 	}
 
 	c.wg.Go(func() { c.refreshCookiesPeriodically(c.ctx, 10*time.Minute) })
@@ -213,7 +213,7 @@ func (c *Client) refreshCookiesPeriodically(ctx context.Context, interval time.D
 		select {
 		case <-ticker.C:
 			if err := c.refreshCookiesIfRequired(); err != nil {
-				log.Error(err)
+				log.Errorf("%v", err)
 			}
 		case <-ctx.Done():
 			return
@@ -355,11 +355,11 @@ func (c *Client) performQRLogin(qrcodeKey string) {
 			log.Infof("登录成功，当前账号：%s（mid：%d）", acc.Uname, acc.Mid)
 
 			if err := c.writeRefreshTokenToFile(result.RefreshToken); err != nil {
-				log.Warn(err)
+				log.Warnf("%v", err)
 			}
 
 			if err := c.writerCookiesToFile(); err != nil {
-				log.Warn(err)
+				log.Warnf("%v", err)
 			}
 
 			c.wg.Go(func() { c.refreshCookiesPeriodically(refreshCtx, 10*time.Minute) })

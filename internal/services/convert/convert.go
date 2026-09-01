@@ -133,7 +133,7 @@ func (s *Service) Enqueue(path, format string, deleteSource bool) (*TaskQueue, e
 		if !pass && s.noConvertIfInvalid {
 			return nil, err
 		}
-		log.Warn(err)
+		log.Warnf("%v", err)
 	}
 	return manager.Enqueue(path, outputFormat, format, deleteSource)
 }

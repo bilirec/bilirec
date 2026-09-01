@@ -39,6 +39,7 @@ type Config struct {
 	VictoriaLogsAccountID    string
 	VictoriaLogsProjectID    string
 	VictoriaLogsTimeout      time.Duration
+	VictoriaLogsRetryMax     int
 
 	FRPEnabled     bool
 	FRPServer      string
@@ -182,29 +183,30 @@ func provider(lc fx.Lifecycle) (*Config, error) {
 	frpToken := resolveFRPToken(frpServer, frpBaseDomain)
 
 	c := &Config{
-		BilibiliLoginMode:       strings.ToLower(strings.TrimSpace(utils.EmptyOrElse(os.Getenv("BILIBILI_LOGIN_MODE"), "controller"))),
-		Host:                    strings.TrimSpace(os.Getenv("HOST")),
-		Port:                    utils.EmptyOrElse(os.Getenv("PORT"), "8080"),
-		TrustedProxies:          parseCommaSeparatedValues(utils.EmptyOrElse(os.Getenv("TRUSTED_PROXIES"), "161.33.159.26")),
-		MetricsEnabled:          os.Getenv("METRICS_ENABLED") == "true",
-		MetricsHost:             strings.TrimSpace(os.Getenv("METRICS_HOST")),
-		MetricsPort:             utils.EmptyOrElse(os.Getenv("METRICS_PORT"), "9090"),
-		VictoriaLogsEnabled:     os.Getenv("VICTORIALOGS_ENABLED") == "true",
-		VictoriaLogsURL:         strings.TrimSpace(os.Getenv("VICTORIALOGS_URL")),
+		BilibiliLoginMode:        strings.ToLower(strings.TrimSpace(utils.EmptyOrElse(os.Getenv("BILIBILI_LOGIN_MODE"), "controller"))),
+		Host:                     strings.TrimSpace(os.Getenv("HOST")),
+		Port:                     utils.EmptyOrElse(os.Getenv("PORT"), "8080"),
+		TrustedProxies:           parseCommaSeparatedValues(utils.EmptyOrElse(os.Getenv("TRUSTED_PROXIES"), "161.33.159.26")),
+		MetricsEnabled:           os.Getenv("METRICS_ENABLED") == "true",
+		MetricsHost:              strings.TrimSpace(os.Getenv("METRICS_HOST")),
+		MetricsPort:              utils.EmptyOrElse(os.Getenv("METRICS_PORT"), "9090"),
+		VictoriaLogsEnabled:      os.Getenv("VICTORIALOGS_ENABLED") == "true",
+		VictoriaLogsURL:          strings.TrimSpace(os.Getenv("VICTORIALOGS_URL")),
 		VictoriaLogsStreamFields: utils.EmptyOrElse(strings.TrimSpace(os.Getenv("VICTORIALOGS_STREAM_FIELDS")), "app,logger"),
-		VictoriaLogsAccountID:   strings.TrimSpace(os.Getenv("VICTORIALOGS_ACCOUNT_ID")),
-		VictoriaLogsProjectID:   strings.TrimSpace(os.Getenv("VICTORIALOGS_PROJECT_ID")),
-		VictoriaLogsTimeout:     parseDurationOrDefault(os.Getenv("VICTORIALOGS_TIMEOUT"), 10*time.Second),
-		FRPEnabled:              os.Getenv("FRP_ENABLED") == "true",
-		FRPServer:               frpServer,
-		FRPToken:                frpToken,
-		FRPBaseDomain:           frpBaseDomain,
-		FRPHttps:                os.Getenv("FRP_HTTPS") == "true",
-		FRPSchemeHttps:          utils.EmptyOrElse(os.Getenv("FRP_SCHEME_HTTPS"), "true") == "true",
-		MaxConcurrentRecordings: utils.MustAtoi(utils.EmptyOrElse(os.Getenv("MAX_CONCURRENT_RECORDINGS"), "3")),
-		MaxRecordingHours:       utils.MustAtoi(utils.EmptyOrElse(os.Getenv("MAX_RECORDING_HOURS"), "5")),
-		MaxRecoveryAttempts:     utils.MustAtoi(utils.EmptyOrElse(os.Getenv("MAX_RECOVERY_ATTEMPTS"), "15")),
-		MaxRetryMinutes:         utils.MustAtoi(utils.EmptyOrElse(os.Getenv("MAX_RETRY_MINUTES"), "10")),
+		VictoriaLogsAccountID:    strings.TrimSpace(os.Getenv("VICTORIALOGS_ACCOUNT_ID")),
+		VictoriaLogsProjectID:    strings.TrimSpace(os.Getenv("VICTORIALOGS_PROJECT_ID")),
+		VictoriaLogsTimeout:      parseDurationOrDefault(os.Getenv("VICTORIALOGS_TIMEOUT"), 10*time.Second),
+		VictoriaLogsRetryMax:     utils.MustAtoi(utils.EmptyOrElse(os.Getenv("VICTORIALOGS_RETRY_MAX"), "2")),
+		FRPEnabled:               os.Getenv("FRP_ENABLED") == "true",
+		FRPServer:                frpServer,
+		FRPToken:                 frpToken,
+		FRPBaseDomain:            frpBaseDomain,
+		FRPHttps:                 os.Getenv("FRP_HTTPS") == "true",
+		FRPSchemeHttps:           utils.EmptyOrElse(os.Getenv("FRP_SCHEME_HTTPS"), "true") == "true",
+		MaxConcurrentRecordings:  utils.MustAtoi(utils.EmptyOrElse(os.Getenv("MAX_CONCURRENT_RECORDINGS"), "3")),
+		MaxRecordingHours:        utils.MustAtoi(utils.EmptyOrElse(os.Getenv("MAX_RECORDING_HOURS"), "5")),
+		MaxRecoveryAttempts:      utils.MustAtoi(utils.EmptyOrElse(os.Getenv("MAX_RECOVERY_ATTEMPTS"), "15")),
+		MaxRetryMinutes:          utils.MustAtoi(utils.EmptyOrElse(os.Getenv("MAX_RETRY_MINUTES"), "10")),
 		RecordingRecoveryDuration: strings.ToLower(strings.TrimSpace(
 			utils.EmptyOrElse(os.Getenv("RECORDING_RECOVERY_DURATION"), "preserve"),
 		)),

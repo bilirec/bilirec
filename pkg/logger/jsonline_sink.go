@@ -10,6 +10,9 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/bilirec/bilirec/pkg/backoff"
+	"github.com/bilirec/bilirec/pkg/pool"
 )
 
 const (
@@ -17,6 +20,14 @@ const (
 	defaultJSONLineFlushInterval = time.Second
 	defaultJSONLineBufferSize    = 4096
 	defaultJSONLineTimeout       = 10 * time.Second
+	defaultJSONLineRetryMax      = 2
+	jsonLineRetryBaseDelay       = 100 * time.Millisecond
+	jsonLineRetryMaxDelay        = time.Second
+)
+
+var (
+	jsonLinePool = pool.NewBytesSlicePool(512, 8<<10)
+	jsonBodyPool = pool.NewBytesSlicePool(defaultJSONLineBatchBytes, 96<<10)
 )
 
 // JSONLineOptions configures the VictoriaLogs JSON stream sink.
@@ -28,6 +39,7 @@ type JSONLineOptions struct {
 	AccountID     string
 	ProjectID     string
 	Timeout       time.Duration
+	RetryMax      int
 	BatchBytes    int
 	FlushInterval time.Duration
 	BufferSize    int
@@ -45,6 +57,7 @@ type JSONLineSink struct {
 	wg            sync.WaitGroup
 	batchBytes    int
 	flushInterval time.Duration
+	retryMax      int
 	dropped       atomic.Uint64
 	stopped       atomic.Bool
 }
@@ -66,6 +79,13 @@ func newJSONLineSink(opts JSONLineOptions) *JSONLineSink {
 	if bufferSize <= 0 {
 		bufferSize = defaultJSONLineBufferSize
 	}
+	retryMax := opts.RetryMax
+	if retryMax < 0 {
+		retryMax = 0
+	}
+	if retryMax == 0 && opts.RetryMax == 0 {
+		retryMax = defaultJSONLineRetryMax
+	}
 
 	s := &JSONLineSink{
 		url:           buildInsertURL(opts.URL, opts.StreamFields),
@@ -77,6 +97,7 @@ func newJSONLineSink(opts JSONLineOptions) *JSONLineSink {
 		done:          make(chan struct{}),
 		batchBytes:    batchBytes,
 		flushInterval: flushInterval,
+		retryMax:      retryMax,
 	}
 	s.wg.Add(1)
 	go s.run()
@@ -87,10 +108,12 @@ func (s *JSONLineSink) Write(p []byte) (int, error) {
 	if len(p) == 0 {
 		return 0, nil
 	}
-	line := append([]byte(nil), p...)
+	line := jsonLinePool.GetSized(len(p))
+	copy(line, p)
 	select {
 	case s.ch <- line:
 	default:
+		jsonLinePool.Put(line)
 		n := s.dropped.Add(1)
 		if n == 1 || n%1000 == 0 {
 			fmt.Fprintf(os.Stderr, "logger: victorialogs buffer full, dropped %d log lines\n", n)
@@ -137,9 +160,21 @@ func (s *JSONLineSink) run() {
 		if batch.Len() == 0 {
 			return
 		}
-		body := append([]byte(nil), batch.Bytes()...)
+		body := jsonBodyPool.GetSized(batch.Len())
+		copy(body, batch.Bytes())
 		batch.Reset()
-		s.post(body)
+		s.postWithRetry(body)
+		jsonBodyPool.Put(body)
+	}
+	appendLine := func(line []byte) {
+		if batch.Len() > 0 && batch.Len()+len(line) > s.batchBytes {
+			flush()
+		}
+		batch.Write(line)
+		if batch.Len() >= s.batchBytes {
+			flush()
+		}
+		jsonLinePool.Put(line)
 	}
 	drainPending := func() {
 		for {
@@ -148,7 +183,7 @@ func (s *JSONLineSink) run() {
 				if !ok {
 					return
 				}
-				batch.Write(line)
+				appendLine(line)
 			default:
 				return
 			}
@@ -159,14 +194,10 @@ func (s *JSONLineSink) run() {
 		select {
 		case line, ok := <-s.ch:
 			if !ok {
-				drainPending()
 				flush()
 				return
 			}
-			batch.Write(line)
-			if batch.Len() >= s.batchBytes {
-				flush()
-			}
+			appendLine(line)
 		case <-ticker.C:
 			drainPending()
 			flush()
@@ -177,14 +208,24 @@ func (s *JSONLineSink) run() {
 	}
 }
 
-func (s *JSONLineSink) post(body []byte) {
+func (s *JSONLineSink) postWithRetry(body []byte) {
+	bo := backoff.NewExpotential(jsonLineRetryBaseDelay, 2, jsonLineRetryMaxDelay)
+	for attempt := 0; ; attempt++ {
+		if !s.post(body) || attempt >= s.retryMax {
+			return
+		}
+		time.Sleep(bo.Next())
+	}
+}
+
+func (s *JSONLineSink) post(body []byte) bool {
 	if len(body) == 0 {
-		return
+		return false
 	}
 	req, err := http.NewRequest(http.MethodPost, s.url, bytes.NewReader(body))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "logger: victorialogs request: %v\n", err)
-		return
+		return false
 	}
 	req.Header.Set("Content-Type", "application/stream+json")
 	if s.accountID != "" {
@@ -197,11 +238,13 @@ func (s *JSONLineSink) post(body []byte) {
 	resp, err := s.client.Do(req)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "logger: victorialogs post: %v\n", err)
-		return
+		return true
 	}
 	_, _ = io.Copy(io.Discard, resp.Body)
 	_ = resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		fmt.Fprintf(os.Stderr, "logger: victorialogs post: HTTP %s\n", resp.Status)
+		return resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= http.StatusInternalServerError
 	}
+	return false
 }

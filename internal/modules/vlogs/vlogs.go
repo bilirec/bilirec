@@ -28,6 +28,7 @@ func provider(lc fx.Lifecycle, cfg *config.Config) {
 		AccountID:    cfg.VictoriaLogsAccountID,
 		ProjectID:    cfg.VictoriaLogsProjectID,
 		Timeout:      cfg.VictoriaLogsTimeout,
+		RetryMax:     cfg.VictoriaLogsRetryMax,
 	})
 
 	lc.Append(fx.StopHook(func(ctx context.Context) error {

@@ -68,6 +68,22 @@ func TestWriterAt(t *testing.T) {
 	}
 }
 
+func TestPrettyQuotedAndNestedFields(t *testing.T) {
+	buf := capture(t)
+	Named("x").With("path", "a b", "ok", true, "meta", map[string]int{"n": 1}).Info("hit")
+	Sync()
+	got := buf.String()
+	if !strings.Contains(got, `path="a b"`) {
+		t.Fatalf("quoted string: %q", got)
+	}
+	if !strings.Contains(got, "ok=true") {
+		t.Fatalf("bool: %q", got)
+	}
+	if !strings.Contains(got, `meta={"n":1}`) && !strings.Contains(got, `meta={"n": 1}`) {
+		t.Fatalf("nested json: %q", got)
+	}
+}
+
 func TestSetLevelAndNop(t *testing.T) {
 	buf := capture(t)
 	SetLevel(ErrorLevel)

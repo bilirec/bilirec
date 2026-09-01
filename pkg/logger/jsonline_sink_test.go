@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -111,6 +112,7 @@ func TestJSONLineSinkDropOnFull(t *testing.T) {
 		FlushInterval: time.Hour,
 		BatchBytes:    1 << 20,
 	})
+	t.Cleanup(func() { _ = s.Stop(noCancelCtx{}) })
 
 	done := make(chan struct{})
 	go func() {
@@ -166,6 +168,71 @@ func TestJSONLineSinkSyncFlushes(t *testing.T) {
 	}
 }
 
+func TestJSONLineSinkSplitsBatchesAtConfiguredSize(t *testing.T) {
+	var (
+		mu     sync.Mutex
+		bodies []string
+	)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		mu.Lock()
+		bodies = append(bodies, string(body))
+		mu.Unlock()
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	s := newJSONLineSink(JSONLineOptions{
+		URL:           srv.URL,
+		FlushInterval: time.Hour,
+		BatchBytes:    24,
+		BufferSize:    8,
+	})
+	t.Cleanup(func() { _ = s.Stop(noCancelCtx{}) })
+
+	for _, line := range []string{`{"_msg":"one"}` + "\n", `{"_msg":"two"}` + "\n", `{"_msg":"three"}` + "\n"} {
+		_, _ = s.Write([]byte(line))
+	}
+	_ = s.Stop(noCancelCtx{})
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(bodies) != 3 {
+		t.Fatalf("requests = %d, want 3", len(bodies))
+	}
+	for _, body := range bodies {
+		if len(body) > 24 {
+			t.Fatalf("batch length = %d, want at most 24: %q", len(body), body)
+		}
+	}
+}
+
+func TestJSONLineSinkRetriesTransientFailures(t *testing.T) {
+	var attempts atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if attempts.Add(1) <= 2 {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	s := newJSONLineSink(JSONLineOptions{
+		URL:           srv.URL,
+		FlushInterval: time.Hour,
+		RetryMax:      2,
+	})
+	t.Cleanup(func() { _ = s.Stop(noCancelCtx{}) })
+
+	_, _ = s.Write([]byte("{\"_msg\":\"retry-me\"}\n"))
+	_ = s.Stop(noCancelCtx{})
+
+	if got := attempts.Load(); got != 3 {
+		t.Fatalf("requests = %d, want 3", got)
+	}
+}
+
 func TestPrettyOutputUnchangedWithRemote(t *testing.T) {
 	buf := &bytes.Buffer{}
 	color := false
@@ -202,6 +269,6 @@ func TestPrettyOutputUnchangedWithRemote(t *testing.T) {
 type noCancelCtx struct{}
 
 func (noCancelCtx) Deadline() (time.Time, bool) { return time.Time{}, false }
-func (noCancelCtx) Done() <-chan struct{}      { return nil }
-func (noCancelCtx) Err() error                 { return nil }
-func (noCancelCtx) Value(any) any              { return nil }
+func (noCancelCtx) Done() <-chan struct{}       { return nil }
+func (noCancelCtx) Err() error                  { return nil }
+func (noCancelCtx) Value(any) any               { return nil }
