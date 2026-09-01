@@ -5,6 +5,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/bilirec/bilirec/pkg/logger"
 	"github.com/bilirec/bilirec/utils"
@@ -31,6 +32,13 @@ type Config struct {
 	MetricsEnabled bool
 	MetricsHost    string
 	MetricsPort    string
+
+	VictoriaLogsEnabled      bool
+	VictoriaLogsURL          string
+	VictoriaLogsStreamFields string
+	VictoriaLogsAccountID    string
+	VictoriaLogsProjectID    string
+	VictoriaLogsTimeout      time.Duration
 
 	FRPEnabled     bool
 	FRPServer      string
@@ -181,6 +189,12 @@ func provider(lc fx.Lifecycle) (*Config, error) {
 		MetricsEnabled:          os.Getenv("METRICS_ENABLED") == "true",
 		MetricsHost:             strings.TrimSpace(os.Getenv("METRICS_HOST")),
 		MetricsPort:             utils.EmptyOrElse(os.Getenv("METRICS_PORT"), "9090"),
+		VictoriaLogsEnabled:     os.Getenv("VICTORIALOGS_ENABLED") == "true",
+		VictoriaLogsURL:         strings.TrimSpace(os.Getenv("VICTORIALOGS_URL")),
+		VictoriaLogsStreamFields: utils.EmptyOrElse(strings.TrimSpace(os.Getenv("VICTORIALOGS_STREAM_FIELDS")), "app,logger"),
+		VictoriaLogsAccountID:   strings.TrimSpace(os.Getenv("VICTORIALOGS_ACCOUNT_ID")),
+		VictoriaLogsProjectID:   strings.TrimSpace(os.Getenv("VICTORIALOGS_PROJECT_ID")),
+		VictoriaLogsTimeout:     parseDurationOrDefault(os.Getenv("VICTORIALOGS_TIMEOUT"), 10*time.Second),
 		FRPEnabled:              os.Getenv("FRP_ENABLED") == "true",
 		FRPServer:               frpServer,
 		FRPToken:                frpToken,
@@ -297,6 +311,18 @@ func parseUsernameAndPassword(usernameKey, passwordKey string) (string, string, 
 		return "", "", err
 	}
 	return username, string(passwordHash), nil
+}
+
+func parseDurationOrDefault(raw string, fallback time.Duration) time.Duration {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return fallback
+	}
+	d, err := time.ParseDuration(raw)
+	if err != nil {
+		return fallback
+	}
+	return d
 }
 
 func parseCommaSeparatedValues(raw string) []string {

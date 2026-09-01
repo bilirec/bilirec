@@ -20,11 +20,14 @@ type Options struct {
 }
 
 var (
-	initMu sync.Mutex
-	gen    atomic.Uint64
-	root   atomic.Pointer[zap.Logger]
-	level  zap.AtomicLevel
-	sink   *swapWriter
+	initMu     sync.Mutex
+	gen        atomic.Uint64
+	root       atomic.Pointer[zap.Logger]
+	level      zap.AtomicLevel
+	sink       *swapWriter
+	remoteCore zapcore.Core
+	remoteSink *JSONLineSink
+	prettyColor bool
 )
 
 func Init(opts Options) {
@@ -95,6 +98,7 @@ func initLocked(opts Options) {
 			out = colorable.NewColorable(f)
 		}
 	}
+	prettyColor = useColor
 
 	if sink == nil {
 		sink = &swapWriter{w: out}
@@ -115,9 +119,17 @@ func initLocked(opts Options) {
 		level.SetLevel(lvl)
 	}
 
-	core := zapcore.NewCore(newPrettyEncoder(useColor), sink, level)
-	z := zap.New(core)
-	root.Store(z)
+	rebuildRoot()
+}
+
+func rebuildRoot() {
+	prettyCore := zapcore.NewCore(newPrettyEncoder(prettyColor), sink, level)
+	rc := remoteCore
+	if rc == nil {
+		rc = zapcore.NewNopCore()
+	}
+	core := zapcore.NewTee(prettyCore, rc)
+	root.Store(zap.New(core))
 	gen.Add(1)
 }
 

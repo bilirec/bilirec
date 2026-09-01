@@ -101,6 +101,12 @@ ENV BILIBILI_LOGIN_MODE=controller \
     METRICS_ENABLED=false \
     METRICS_HOST= \
     METRICS_PORT=9090 \
+    VICTORIALOGS_ENABLED=false \
+    VICTORIALOGS_URL= \
+    VICTORIALOGS_STREAM_FIELDS=app,logger \
+    VICTORIALOGS_ACCOUNT_ID= \
+    VICTORIALOGS_PROJECT_ID= \
+    VICTORIALOGS_TIMEOUT=10s \
     FRP_ENABLED=false \
     FRP_SERVER=tunnel.bilirec.org:7000 \
     FRP_TOKEN= \
@@ -188,6 +194,12 @@ ENV BILIBILI_LOGIN_MODE=controller \
 # Example in docker run:
 #   -e METRICS_ENABLED=true \
 #   -p 8080:8080 -p 9090:9090
+#
+# Optional VictoriaLogs remote logging (VICTORIALOGS_ENABLED, VICTORIALOGS_URL, ...):
+# Pushes structured logs to VictoriaLogs /insert/jsonline; failures do not stop bilirec.
+# Example in docker run:
+#   -e VICTORIALOGS_ENABLED=true \
+#   -e VICTORIALOGS_URL=http://victorialogs:9428
 
 ENV GOMEMLIMIT=768MiB
 ENV GOGC=100

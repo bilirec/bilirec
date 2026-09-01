@@ -14,6 +14,7 @@ import (
 	"github.com/bilirec/bilirec/internal/modules/bilibili"
 	"github.com/bilirec/bilirec/internal/modules/config"
 	"github.com/bilirec/bilirec/internal/modules/metrics"
+	"github.com/bilirec/bilirec/internal/modules/vlogs"
 	"github.com/bilirec/bilirec/internal/modules/rest"
 	co "github.com/bilirec/bilirec/internal/services/convert"
 	dm "github.com/bilirec/bilirec/internal/services/danmaku"
@@ -41,6 +42,7 @@ func MainModule() fx.Option {
 		bilibili.Module,
 		rest.Module,
 		metrics.Module,
+		vlogs.Module,
 
 		fx.Provide(pa.NewService),
 		fx.Provide(co.NewService),
