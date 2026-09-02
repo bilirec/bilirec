@@ -87,6 +87,39 @@ func (r *roomRegistry) globalGauge(name string) *vm.Gauge {
 	return actual
 }
 
+func (r *roomRegistry) globalCounter(name string) *vm.Counter {
+	key := counterKey{name: name}
+	if counter, ok := r.counters.Load(key); ok {
+		return counter
+	}
+
+	counter := r.set.GetOrCreateCounter(name)
+	actual, _ := r.counters.LoadOrStore(key, counter)
+	return actual
+}
+
+func (r *roomRegistry) providerCounter(name string, provider string) *vm.Counter {
+	key := counterKey{name: name, event: provider}
+	if counter, ok := r.counters.Load(key); ok {
+		return counter
+	}
+
+	counter := r.set.GetOrCreateCounter(name + providerLabel(provider))
+	actual, _ := r.counters.LoadOrStore(key, counter)
+	return actual
+}
+
+func (r *roomRegistry) providerGauge(name string, provider string) *vm.Gauge {
+	key := gaugeKey{name: name + provider, roomID: 0}
+	if gauge, ok := r.gauges.Load(key); ok {
+		return gauge
+	}
+
+	gauge := r.set.GetOrCreateGauge(name+providerLabel(provider), nil)
+	actual, _ := r.gauges.LoadOrStore(key, gauge)
+	return actual
+}
+
 func (r *roomRegistry) unregisterCounter(name string, roomID int) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -191,4 +224,8 @@ func roomReasonLabel(roomID int, reason string) string {
 		labelReason,
 		strconv.Quote(reason),
 	)
+}
+
+func providerLabel(provider string) string {
+	return fmt.Sprintf(`{provider=%s}`, strconv.Quote(provider))
 }

@@ -40,6 +40,10 @@ type JSONLineOptions struct {
 	ProjectID     string
 	Timeout       time.Duration
 	RetryMax      int
+	OnQueueBytes  func(int)
+	OnDropped     func()
+	OnFailed      func()
+	OnRetry       func()
 	BatchBytes    int
 	FlushInterval time.Duration
 	BufferSize    int
@@ -58,6 +62,10 @@ type JSONLineSink struct {
 	batchBytes    int
 	flushInterval time.Duration
 	retryMax      int
+	onQueueBytes  func(int)
+	onDropped     func()
+	onFailed      func()
+	onRetry       func()
 	dropped       atomic.Uint64
 	stopped       atomic.Bool
 }
@@ -98,6 +106,10 @@ func newJSONLineSink(opts JSONLineOptions) *JSONLineSink {
 		batchBytes:    batchBytes,
 		flushInterval: flushInterval,
 		retryMax:      retryMax,
+		onQueueBytes:  opts.OnQueueBytes,
+		onDropped:     opts.OnDropped,
+		onFailed:      opts.OnFailed,
+		onRetry:       opts.OnRetry,
 	}
 	s.wg.Add(1)
 	go s.run()
@@ -112,8 +124,14 @@ func (s *JSONLineSink) Write(p []byte) (int, error) {
 	copy(line, p)
 	select {
 	case s.ch <- line:
+		if s.onQueueBytes != nil {
+			s.onQueueBytes(len(line))
+		}
 	default:
 		jsonLinePool.Put(line)
+		if s.onDropped != nil {
+			s.onDropped()
+		}
 		n := s.dropped.Add(1)
 		if n == 1 || n%1000 == 0 {
 			fmt.Fprintf(os.Stderr, "logger: victorialogs buffer full, dropped %d log lines\n", n)
@@ -167,6 +185,9 @@ func (s *JSONLineSink) run() {
 		jsonBodyPool.Put(body)
 	}
 	appendLine := func(line []byte) {
+		if s.onQueueBytes != nil {
+			s.onQueueBytes(-len(line))
+		}
 		if batch.Len() > 0 && batch.Len()+len(line) > s.batchBytes {
 			flush()
 		}
@@ -214,6 +235,9 @@ func (s *JSONLineSink) postWithRetry(body []byte) {
 		if !s.post(body) || attempt >= s.retryMax {
 			return
 		}
+		if s.onRetry != nil {
+			s.onRetry()
+		}
 		time.Sleep(bo.Next())
 	}
 }
@@ -238,12 +262,18 @@ func (s *JSONLineSink) post(body []byte) bool {
 	resp, err := s.client.Do(req)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "logger: victorialogs post: %v\n", err)
+		if s.onFailed != nil {
+			s.onFailed()
+		}
 		return true
 	}
 	_, _ = io.Copy(io.Discard, resp.Body)
 	_ = resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		fmt.Fprintf(os.Stderr, "logger: victorialogs post: HTTP %s\n", resp.Status)
+		if s.onFailed != nil {
+			s.onFailed()
+		}
 		return resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= http.StatusInternalServerError
 	}
 	return false

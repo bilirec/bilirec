@@ -63,7 +63,85 @@ func TestExporterDisabledNoop(t *testing.T) {
 	e.AddDanmakuBytes(123, 1)
 	e.DanmakuRotation(123)
 	e.DanmakuRotationDropped(123)
+	e.SetConvertTasksPending("ffmpeg", 1)
+	e.SetConvertTasksProcessing("ffmpeg", 1)
 	e.DeleteRoom(123)
+}
+
+func TestVictoriaLogsMetricsRecordEvents(t *testing.T) {
+	registry := newRoomRegistry()
+	e := &Exporter{set: registry.set, registry: registry}
+
+	e.AddVictoriaLogsQueueBytes(128)
+	e.VictoriaLogsLogDropped()
+	e.VictoriaLogsRequestFailed()
+	e.VictoriaLogsRetry()
+
+	out := e.scrape()
+	for _, want := range []string{
+		"bilirec_victorialogs_queue_bytes 128",
+		"bilirec_victorialogs_logs_dropped_total 1",
+		"bilirec_victorialogs_requests_failed_total 1",
+		"bilirec_victorialogs_retries_total 1",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q in scrape output:\n%s", want, out)
+		}
+	}
+}
+
+func TestConvertTaskProcessingGauge(t *testing.T) {
+	registry := newRoomRegistry()
+	e := &Exporter{set: registry.set, registry: registry}
+
+	e.SetConvertTasksProcessing("ffmpeg", 2)
+	e.SetConvertTasksProcessing("cloudconvert", 1)
+
+	out := e.scrape()
+	for _, want := range []string{
+		`bilirec_convert_tasks_processing{provider="ffmpeg"} 2`,
+		`bilirec_convert_tasks_processing{provider="cloudconvert"} 1`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q in scrape output:\n%s", want, out)
+		}
+	}
+
+	e.SetConvertTasksProcessing("ffmpeg", 0)
+	e.SetConvertTasksProcessing("cloudconvert", 0)
+
+	out = e.scrape()
+	for _, want := range []string{
+		`bilirec_convert_tasks_processing{provider="ffmpeg"} 0`,
+		`bilirec_convert_tasks_processing{provider="cloudconvert"} 0`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q in scrape output:\n%s", want, out)
+		}
+	}
+}
+
+func TestConvertTasksPendingGauge(t *testing.T) {
+	registry := newRoomRegistry()
+	e := &Exporter{set: registry.set, registry: registry}
+
+	e.SetConvertTasksPending("ffmpeg", 2)
+	e.SetConvertTasksPending("cloudconvert", 1)
+
+	out := e.scrape()
+	for _, want := range []string{
+		`bilirec_convert_tasks_pending{provider="ffmpeg"} 2`,
+		`bilirec_convert_tasks_pending{provider="cloudconvert"} 1`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q in scrape output:\n%s", want, out)
+		}
+	}
+
+	e.SetConvertTasksPending("ffmpeg", 0)
+	if out = e.scrape(); !strings.Contains(out, `bilirec_convert_tasks_pending{provider="ffmpeg"} 0`) {
+		t.Errorf("pending gauge was not updated:\n%s", out)
+	}
 }
 
 func TestExporterEnabled(t *testing.T) {

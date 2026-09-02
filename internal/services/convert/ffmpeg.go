@@ -30,18 +30,20 @@ type ffmpegConvertManager struct {
 	serializer *pool.Serializer
 	getActives GetActiveRecordings
 	deleter    *sourceDeleter
+	metrics    *serviceMetrics
 
 	processing *xsync.Map[string, context.CancelFunc]
 	concurrent *semaphore.Weighted
 	cooldowns  *xsync.Map[string, time.Time]
 }
 
-func newFFmpegConvertManager(getActives GetActiveRecordings, deleter *sourceDeleter) ConvertManager {
+func newFFmpegConvertManager(getActives GetActiveRecordings, deleter *sourceDeleter, metrics *serviceMetrics) ConvertManager {
 	return &ffmpegConvertManager{
 		logger:     log.With("manager", "ffmpeg"),
 		serializer: pool.NewSerializer(),
 		getActives: getActives,
 		deleter:    deleter,
+		metrics:    metrics,
 		processing: xsync.NewMap[string, context.CancelFunc](),
 		concurrent: semaphore.NewWeighted(int64(config.ReadOnly.FFmpegMaxConcurrentTasks())),
 		cooldowns:  xsync.NewMap[string, time.Time](),
@@ -80,15 +82,22 @@ func (f *ffmpegConvertManager) Enqueue(inputPath, outputPath, format string, del
 	if err != nil {
 		return nil, err
 	}
-	err = f.bucket.Put([]byte(uuid), data)
+	if err = f.bucket.Put([]byte(uuid), data); err == nil {
+		f.metrics.taskQueued(ProviderFFmpeg)
+	}
 	return queue, err
 }
 
 func (f *ffmpegConvertManager) Cancel(taskID string) error {
-	if cancel, ok := f.processing.LoadAndDelete(taskID); ok {
+	cancel, active := f.processing.LoadAndDelete(taskID)
+	if active {
 		cancel()
 	}
-	return f.bucket.Delete([]byte(taskID))
+	if err := f.bucket.Delete([]byte(taskID)); err != nil {
+		return err
+	}
+	f.metrics.taskCancelled(ProviderFFmpeg)
+	return nil
 }
 
 func (f *ffmpegConvertManager) ListInProgress() ([]*TaskQueue, error) {
@@ -120,6 +129,7 @@ func (f *ffmpegConvertManager) runTaskPeriodically(ctx context.Context, wg *sync
 	for {
 		select {
 		case <-ticker.C:
+			f.updateGaugeMetrics()
 			actives := f.getActives()
 			allowDuringRecording := config.ReadOnly.FFmpegAllowDuringRecording()
 			allowDuringRecordingMaxActiveRecordings := config.ReadOnly.FFmpegAllowDuringRecordingMaxActiveRecordings()
@@ -169,7 +179,6 @@ func (f *ffmpegConvertManager) runTaskPeriodically(ctx context.Context, wg *sync
 
 				processCtx, cancel := context.WithCancel(ctx)
 				f.processing.Store(queue.TaskID, cancel)
-
 				taskLog.Infof("正在处理 ffmpeg 任务 input=%s output=%s", queue.InputPath, queue.OutputPath)
 				swg.Go(func() {
 					f.asyncProcessTask(processCtx, queue, taskLog)
@@ -187,6 +196,19 @@ func (f *ffmpegConvertManager) deleteTaskFromQueue(taskID string) error {
 	})
 }
 
+func (f *ffmpegConvertManager) updateGaugeMetrics() {
+	if !f.metrics.enabled {
+		return
+	}
+	count, err := f.bucket.Count()
+	if err != nil {
+		f.logger.Errorf("计算 ffmpeg 待处理任务数失败：%v", err)
+		return
+	}
+	processing := f.processing.Size()
+	f.metrics.setTaskMetrics(ProviderFFmpeg, max(0, count-processing), processing)
+}
+
 func (f *ffmpegConvertManager) asyncProcessTask(ctx context.Context, queue *TaskQueue, taskLog logger.Logger) {
 	defer func() {
 		if cancel, ok := f.processing.LoadAndDelete(queue.TaskID); ok {
@@ -197,6 +219,7 @@ func (f *ffmpegConvertManager) asyncProcessTask(ctx context.Context, queue *Task
 	defer f.concurrent.Release(1)
 
 	if err := f.processTask(ctx, queue, taskLog); err != nil {
+		f.metrics.taskFailed(ProviderFFmpeg)
 		taskLog.Errorf("ffmpeg 任务失败：%v", err)
 		// delay the tasks to interval * 2 to avoid multiple tasks failing at the same time and retrying immediately
 		delay := time.Duration(config.ReadOnly.FFmpegCheckIntervalSecs()) * time.Second * 2
@@ -205,6 +228,7 @@ func (f *ffmpegConvertManager) asyncProcessTask(ctx context.Context, queue *Task
 		taskLog.Warnf("任务已延后至 %v", delayTime.Format(time.RFC3339))
 		return
 	}
+	f.metrics.taskFinished(ProviderFFmpeg)
 
 	if err := f.deleteTaskFromQueue(queue.TaskID); err != nil {
 		taskLog.Errorf("从队列移除 ffmpeg 任务失败：%v", err)

@@ -99,6 +99,7 @@ func TestAttachJSONLinePostsNDJSON(t *testing.T) {
 
 func TestJSONLineSinkDropOnFull(t *testing.T) {
 	block := make(chan struct{})
+	var dropped atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		<-block
 		w.WriteHeader(http.StatusOK)
@@ -111,6 +112,7 @@ func TestJSONLineSinkDropOnFull(t *testing.T) {
 		BufferSize:    1,
 		FlushInterval: time.Hour,
 		BatchBytes:    1 << 20,
+		OnDropped:     func() { dropped.Add(1) },
 	})
 	t.Cleanup(func() { _ = s.Stop(noCancelCtx{}) })
 
@@ -126,6 +128,9 @@ func TestJSONLineSinkDropOnFull(t *testing.T) {
 	case <-done:
 	case <-time.After(2 * time.Second):
 		t.Fatal("Write blocked on full buffer")
+	}
+	if dropped.Load() == 0 {
+		t.Fatal("expected a dropped-log callback")
 	}
 }
 
@@ -172,6 +177,7 @@ func TestJSONLineSinkSplitsBatchesAtConfiguredSize(t *testing.T) {
 	var (
 		mu     sync.Mutex
 		bodies []string
+		queued atomic.Int32
 	)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
@@ -187,6 +193,7 @@ func TestJSONLineSinkSplitsBatchesAtConfiguredSize(t *testing.T) {
 		FlushInterval: time.Hour,
 		BatchBytes:    24,
 		BufferSize:    8,
+		OnQueueBytes:  func(n int) { queued.Add(int32(n)) },
 	})
 	t.Cleanup(func() { _ = s.Stop(noCancelCtx{}) })
 
@@ -205,10 +212,15 @@ func TestJSONLineSinkSplitsBatchesAtConfiguredSize(t *testing.T) {
 			t.Fatalf("batch length = %d, want at most 24: %q", len(body), body)
 		}
 	}
+	if got := queued.Load(); got != 0 {
+		t.Fatalf("queued bytes = %d, want 0", got)
+	}
 }
 
 func TestJSONLineSinkRetriesTransientFailures(t *testing.T) {
 	var attempts atomic.Int32
+	var failed atomic.Int32
+	var retries atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if attempts.Add(1) <= 2 {
 			w.WriteHeader(http.StatusServiceUnavailable)
@@ -222,6 +234,8 @@ func TestJSONLineSinkRetriesTransientFailures(t *testing.T) {
 		URL:           srv.URL,
 		FlushInterval: time.Hour,
 		RetryMax:      2,
+		OnFailed:      func() { failed.Add(1) },
+		OnRetry:       func() { retries.Add(1) },
 	})
 	t.Cleanup(func() { _ = s.Stop(noCancelCtx{}) })
 
@@ -230,6 +244,12 @@ func TestJSONLineSinkRetriesTransientFailures(t *testing.T) {
 
 	if got := attempts.Load(); got != 3 {
 		t.Fatalf("requests = %d, want 3", got)
+	}
+	if got := failed.Load(); got != 2 {
+		t.Fatalf("failed requests = %d, want 2", got)
+	}
+	if got := retries.Load(); got != 2 {
+		t.Fatalf("retries = %d, want 2", got)
 	}
 }
 

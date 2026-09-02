@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/bilirec/bilirec/internal/modules/config"
+	"github.com/bilirec/bilirec/internal/modules/metrics"
 	"github.com/bilirec/bilirec/internal/services/convert"
 	"github.com/bilirec/bilirec/internal/services/path"
 	"github.com/bilirec/bilirec/pkg/ffmpeg"
@@ -32,6 +33,7 @@ func TestFFmpegFailureCooldownAllowsOtherTaskIntegration(t *testing.T) {
 	var svc *convert.Service
 	app := fxtest.New(t,
 		config.Module,
+		metrics.Module,
 		fx.Provide(path.NewService),
 		fx.Provide(convert.NewService),
 		fx.Populate(&svc),
