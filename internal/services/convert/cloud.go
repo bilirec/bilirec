@@ -42,6 +42,7 @@ type cloudConvertManager struct {
 	serializer *pool.Serializer
 	getActives GetActiveRecordings
 	deleter    *sourceDeleter
+	metrics    *serviceMetrics
 
 	processing   ds.AtomicSet[string]
 	downloadPool *pool.BytesPool
@@ -52,13 +53,14 @@ type cloudConvertManager struct {
 	pathSvc *path.Service
 }
 
-func newCloudConvertManager(client *cloudconvert.Client, pathSvc *path.Service, getActives GetActiveRecordings, deleter *sourceDeleter) ConvertManager {
+func newCloudConvertManager(client *cloudconvert.Client, pathSvc *path.Service, getActives GetActiveRecordings, deleter *sourceDeleter, metrics *serviceMetrics) ConvertManager {
 	return &cloudConvertManager{
 		logger:           log.With("manager", "cloudconvert"),
 		client:           client,
 		serializer:       pool.NewSerializer(),
 		getActives:       getActives,
 		deleter:          deleter,
+		metrics:          metrics,
 		processing:       ds.NewSyncedSet[string](),
 		downloadPool:     pool.NewBytesPool(config.ReadOnly.DownloadBufferSize()),
 		concurrent:       semaphore.NewWeighted(int64(config.ReadOnly.CloudConvertMaxConcurrentDownloads())),
@@ -123,7 +125,26 @@ func (c *cloudConvertManager) Enqueue(inputPath, outputPath, format string, dele
 	}
 
 	err = c.bucket.Put([]byte(uuid), data)
+	if err == nil {
+		c.metrics.taskQueued(ProviderCloudConvert)
+		c.refreshGaugeMetrics()
+	}
 	return queue, err
+}
+
+// refreshGaugeMetrics recomputes pending/processing gauges from the queue
+// right after a state change, so short-lived states are not missed between
+// periodic refreshes.
+func (c *cloudConvertManager) refreshGaugeMetrics() {
+	if !c.metrics.enabled {
+		return
+	}
+	list, err := c.ListInProgress()
+	if err != nil {
+		c.logger.Errorf("刷新转码 gauge 失败：%v", err)
+		return
+	}
+	c.updateGaugeMetrics(list)
 }
 
 func (c *cloudConvertManager) submitTask(queue *TaskQueue) error {
@@ -131,7 +152,6 @@ func (c *cloudConvertManager) submitTask(queue *TaskQueue) error {
 	if err != nil {
 		return err
 	}
-
 	job, err := c.client.NewJobBuilder().
 		AddTask(cloudconvert.NewImportURLTask(importTaskName, &cloudconvert.ImportURLRequest{
 			URL:      url,
@@ -183,6 +203,7 @@ func (c *cloudConvertManager) submitTask(queue *TaskQueue) error {
 		return err
 	}
 
+	c.refreshGaugeMetrics()
 	return nil
 }
 
@@ -207,7 +228,12 @@ func (c *cloudConvertManager) Cancel(taskID string) error {
 			return err
 		}
 	}
-	return c.bucket.Delete([]byte(taskID))
+	if err := c.bucket.Delete([]byte(taskID)); err != nil {
+		return err
+	}
+	c.metrics.taskCancelled(ProviderCloudConvert)
+	c.refreshGaugeMetrics()
+	return nil
 }
 
 func (c *cloudConvertManager) ListInProgress() ([]*TaskQueue, error) {
@@ -244,6 +270,7 @@ func (c *cloudConvertManager) checkTaskStatusPeriodically(ctx context.Context, w
 			if list, err := c.ListInProgress(); err != nil {
 				c.logger.Errorf("列出进行中的任务失败：%v", err)
 			} else {
+				c.updateGaugeMetrics(list)
 				for _, queue := range list {
 					if queue.ConvertTaskID == "" {
 						if actives > 0 && !c.allowDuringRecording(actives) {
@@ -253,6 +280,7 @@ func (c *cloudConvertManager) checkTaskStatusPeriodically(ctx context.Context, w
 						taskLog := c.logger.With("task_id", queue.TaskID)
 						taskLog.Infof("正在提交 cloudconvert 任务 input=%s output=%s", queue.InputPath, queue.OutputPath)
 						if err := c.submitTask(queue); err != nil {
+							c.metrics.taskFailed(ProviderCloudConvert)
 							taskLog.Errorf("提交 cloudconvert 任务失败：%v", err)
 						}
 						continue
@@ -310,17 +338,23 @@ func (c *cloudConvertManager) checkTaskStatusPeriodically(ctx context.Context, w
 func (c *cloudConvertManager) asyncOnFinished(ctx context.Context, queue *TaskQueue, data cloudconvert.TaskData) {
 	defer c.processing.Remove(queue.TaskID)
 	if err := c.handleFinished(ctx, queue, &data); err != nil {
+		c.metrics.taskFailed(ProviderCloudConvert)
 		c.logger.Errorf("处理任务 id=%v 状态=%v 失败：%v", queue.TaskID, data.Status, err)
+		c.refreshGaugeMetrics()
 		return
 	}
+	c.metrics.taskFinished(ProviderCloudConvert)
 	c.deleter.Schedule(queue, c.logger.With("task_id", queue.TaskID))
+	c.refreshGaugeMetrics()
 }
 
 func (c *cloudConvertManager) asyncOnFailed(queue *TaskQueue, data cloudconvert.TaskData) {
 	defer c.processing.Remove(queue.TaskID)
+	c.metrics.taskFailed(ProviderCloudConvert)
 	if err := c.handleFailed(queue, &data); err != nil {
 		c.logger.Errorf("处理任务 id=%v 状态=%v 失败：%v", queue.TaskID, data.Status, err)
 	}
+	c.refreshGaugeMetrics()
 }
 
 func (c *cloudConvertManager) handleFinished(ctx context.Context, queue *TaskQueue, data *cloudconvert.TaskData) error {
@@ -420,6 +454,22 @@ func (c *cloudConvertManager) handleFailed(queue *TaskQueue, info *cloudconvert.
 	}
 
 	return nil
+}
+
+func (c *cloudConvertManager) updateGaugeMetrics(queues []*TaskQueue) {
+	if !c.metrics.enabled {
+		return
+	}
+	pending := 0
+	processing := 0
+	for _, queue := range queues {
+		if queue.ConvertTaskID == "" {
+			pending++
+		} else {
+			processing++
+		}
+	}
+	c.metrics.setTaskMetrics(ProviderCloudConvert, pending, processing)
 }
 
 func (c *cloudConvertManager) validateDownloadedOutputSize(queue *TaskQueue) error {

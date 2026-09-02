@@ -5,13 +5,15 @@ import (
 	"os"
 
 	"github.com/bilirec/bilirec/internal/modules/config"
+	"github.com/bilirec/bilirec/internal/modules/metrics"
 	"github.com/bilirec/bilirec/pkg/logger"
 	"go.uber.org/fx"
 )
 
 var log = logger.Named("vlogs")
 
-func provider(lc fx.Lifecycle, cfg *config.Config) {
+func provider(lc fx.Lifecycle, cfg *config.Config, exporter *metrics.Exporter) {
+	metrics := newModuleMetrics(exporter, cfg.VictoriaLogsEnabled && cfg.VictoriaLogsURL != "")
 	if !cfg.VictoriaLogsEnabled {
 		return
 	}
@@ -19,7 +21,6 @@ func provider(lc fx.Lifecycle, cfg *config.Config) {
 		log.Warn("VICTORIALOGS_ENABLED=true 但未设置 VICTORIALOGS_URL，远程日志已跳过")
 		return
 	}
-
 	instance, _ := os.Hostname()
 	sink := logger.AttachJSONLine(logger.JSONLineOptions{
 		URL:          cfg.VictoriaLogsURL,
@@ -29,6 +30,10 @@ func provider(lc fx.Lifecycle, cfg *config.Config) {
 		ProjectID:    cfg.VictoriaLogsProjectID,
 		Timeout:      cfg.VictoriaLogsTimeout,
 		RetryMax:     cfg.VictoriaLogsRetryMax,
+		OnQueueBytes: metrics.addQueueBytes,
+		OnDropped:    metrics.logDropped,
+		OnFailed:     metrics.requestFailed,
+		OnRetry:      metrics.retry,
 	})
 
 	lc.Append(fx.StopHook(func(ctx context.Context) error {

@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	"github.com/bilirec/bilirec/internal/modules/config"
+	"github.com/bilirec/bilirec/internal/modules/metrics"
 	"github.com/bilirec/bilirec/internal/services/path"
 	"github.com/bilirec/bilirec/pkg/cloudconvert"
 	"github.com/bilirec/bilirec/pkg/db"
@@ -38,9 +39,10 @@ type Service struct {
 	noConvertIfInvalid bool
 	getActives         GetActiveRecordings
 	wg                 sync.WaitGroup
+	metrics            *serviceMetrics
 }
 
-func NewService(ls fx.Lifecycle, cfg *config.Config, pathSvc *path.Service) *Service {
+func NewService(ls fx.Lifecycle, cfg *config.Config, pathSvc *path.Service, metrics *metrics.Exporter) *Service {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	deleter := newSourceDeleter(ctx)
@@ -51,6 +53,7 @@ func NewService(ls fx.Lifecycle, cfg *config.Config, pathSvc *path.Service) *Ser
 		ctx:                ctx,
 		deleter:            deleter,
 		noConvertIfInvalid: cfg.NoConvertIfInvalid,
+		metrics:            newServiceMetrics(metrics, false),
 	}
 
 	if cfg.CloudConvertApiKey != "" {
@@ -63,16 +66,19 @@ func NewService(ls fx.Lifecycle, cfg *config.Config, pathSvc *path.Service) *Ser
 			pathSvc,
 			svc.activeRecordings,
 			deleter,
+			svc.metrics,
 		)
 	} else {
 		log.Info("未提供 CloudConvert API Key，CloudConvert 已禁用")
 	}
 
 	if ffmpeg.Available() {
-		svc.managers["ffmpeg"] = newFFmpegConvertManager(svc.activeRecordings, deleter)
+		svc.managers["ffmpeg"] = newFFmpegConvertManager(svc.activeRecordings, deleter, svc.metrics)
 	} else {
 		log.Warn("ffmpeg 不可用，ffmpeg 转码管理器未初始化")
 	}
+	
+	svc.metrics.enabled = cfg.ConvertToMp4 && len(svc.managers) > 0
 
 	stop := func() error {
 		cancel()

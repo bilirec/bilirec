@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/bilirec/bilirec/internal/modules/config"
+	"github.com/bilirec/bilirec/internal/modules/metrics"
 	"github.com/bilirec/bilirec/internal/services/convert"
 	"github.com/bilirec/bilirec/utils"
 	"go.uber.org/fx"
@@ -23,6 +24,7 @@ func TestCloudConvert(t *testing.T) {
 	var svc *convert.Service
 	app := fxtest.New(t,
 		config.Module,
+		metrics.Module,
 		fx.Provide(convert.NewService),
 		fx.Populate(&svc),
 	)
@@ -45,6 +47,7 @@ func TestUntilCloudConvertCompleted(t *testing.T) {
 	var svc *convert.Service
 	app := fxtest.New(t,
 		config.Module,
+		metrics.Module,
 		fx.Provide(convert.NewService),
 		fx.Populate(&svc),
 	)
@@ -83,6 +86,7 @@ func TestCancelUnExistingCloudConvertTask(t *testing.T) {
 
 	app := fxtest.New(t,
 		config.Module,
+		metrics.Module,
 		fx.Provide(convert.NewService),
 		fx.Populate(&svc),
 	)
