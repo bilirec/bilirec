@@ -20,13 +20,13 @@ type Options struct {
 }
 
 var (
-	initMu     sync.Mutex
-	gen        atomic.Uint64
-	root       atomic.Pointer[zap.Logger]
-	level      zap.AtomicLevel
-	sink       *swapWriter
-	remoteCore zapcore.Core
-	remoteSink *JSONLineSink
+	initMu      sync.Mutex
+	gen         atomic.Uint64
+	root        atomic.Pointer[zap.Logger]
+	level       zap.AtomicLevel
+	sink        *swapWriter
+	localCore   zapcore.Core
+	remoteCore  zapcore.Core
 	prettyColor bool
 )
 
@@ -124,13 +124,40 @@ func initLocked(opts Options) {
 
 func rebuildRoot() {
 	prettyCore := zapcore.NewCore(newPrettyEncoder(prettyColor), sink, level)
-	rc := remoteCore
-	if rc == nil {
-		rc = zapcore.NewNopCore()
+	cores := []zapcore.Core{prettyCore}
+	if localCore != nil {
+		cores = append(cores, localCore)
 	}
-	core := zapcore.NewTee(prettyCore, rc)
+	if remoteCore != nil {
+		cores = append(cores, remoteCore)
+	}
+	core := zapcore.NewTee(cores...)
 	root.Store(zap.New(core))
 	gen.Add(1)
+}
+
+func SetLocalCore(core zapcore.Core) {
+	ensureInit()
+	initMu.Lock()
+	localCore = core
+	rebuildRoot()
+	initMu.Unlock()
+}
+
+func ClearLocalCore() {
+	SetLocalCore(nil)
+}
+
+func SetRemoteCore(core zapcore.Core) {
+	ensureInit()
+	initMu.Lock()
+	remoteCore = core
+	rebuildRoot()
+	initMu.Unlock()
+}
+
+func ClearRemoteCore() {
+	SetRemoteCore(nil)
 }
 
 func getRoot() *zap.Logger {

@@ -1,4 +1,4 @@
-package vlogs
+package logging
 
 import "github.com/bilirec/bilirec/internal/modules/metrics"
 

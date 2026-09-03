@@ -108,6 +108,17 @@ ENV BILIBILI_LOGIN_MODE=controller \
     VICTORIALOGS_PROJECT_ID= \
     VICTORIALOGS_TIMEOUT=10s \
     VICTORIALOGS_RETRY_MAX=2 \
+    LOCAL_LOGS_ENABLED=false \
+    LOCAL_LOGS_PATH= \
+    LOCAL_LOGS_FORMAT=pretty \
+    LOCAL_LOGS_MAX_SIZE_MB=20 \
+    LOCAL_LOGS_MAX_AGE_DAYS=7 \
+    LOCAL_LOGS_MAX_BACKUPS=3 \
+    LOCAL_LOGS_COMPRESS=false \
+    LOCAL_LOGS_BATCH_BYTES=65536 \
+    LOCAL_LOGS_FLUSH_INTERVAL=1s \
+    LOCAL_LOGS_BUFFER_SIZE=4096 \
+    LOCAL_LOGS_OVERFLOW=drop \
     FRP_ENABLED=false \
     FRP_SERVER=tunnel.bilirec.org:7000 \
     FRP_TOKEN= \
@@ -201,6 +212,13 @@ ENV BILIBILI_LOGIN_MODE=controller \
 # Example in docker run:
 #   -e VICTORIALOGS_ENABLED=true \
 #   -e VICTORIALOGS_URL=http://victorialogs:9428
+#
+# Optional local log file (LOCAL_LOGS_ENABLED, LOCAL_LOGS_PATH, ...):
+# Async file logging with lumberjack rotation; queue overflow defaults to drop (does not block recording).
+# Example in docker run:
+#   -e LOCAL_LOGS_ENABLED=true \
+#   -e LOCAL_LOGS_PATH=/app/logs/bilirec.log \
+#   -v /path/to/logs:/app/logs
 
 ENV GOMEMLIMIT=768MiB
 ENV GOGC=100
