@@ -1,0 +1,20 @@
+---
+description: New or changed Config env vars must be synced to .env, Dockerfile, and bilirec-docs
+alwaysApply: true
+---
+
+# Config Parameter Sync
+
+When adding, renaming, changing the default of, or removing a `Config` field / environment variable in `internal/modules/config/`:
+
+1. **`.env`** — add or update the commented example with the same default and a short Chinese comment.
+2. **`Dockerfile`** — add or update the matching `ENV` in the runtime image `ENV` block (same name and default as `config.go`).
+3. **bilirec-docs** (workspace `P:/Web/bilirec-docs`) — update **zh-cn only**:
+   - `src/content/docs/zh-cn/configuration/env-reference.mdx` (name, meaning, default)
+   - the relevant topic page (e.g. `local-logs.mdx`, `victorialogs.mdx`) when the option needs user-facing explanation
+   - then run `pnpm convert:zh-tw` in that repo
+   - never edit `zh-tw` MDX by hand
+
+Do this in the **same change**, not as a follow-up. Derive names and defaults from `config.go` source, not from old comments.
+
+If a parameter is removed, delete it from all three places as well.
