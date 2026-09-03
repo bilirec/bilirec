@@ -1,6 +1,7 @@
 package bilibili_test
 
 import (
+	"math"
 	"os"
 	"strings"
 	"testing"
@@ -14,6 +15,10 @@ import (
 	"go.uber.org/fx/fxtest"
 )
 
+// nonexistentRoomID must fit in 32-bit int (32-bit builds reject 9999999999)
+// and not be an assigned Bilibili room. 999999 is now a real room.
+const nonexistentRoomID = math.MaxInt32
+
 func TestGetStreamURLsNotExistRoom(t *testing.T) {
 	var client *bilibili.Client
 	app := fxtest.New(t,
@@ -26,25 +31,27 @@ func TestGetStreamURLsNotExistRoom(t *testing.T) {
 	app.RequireStart()
 	defer app.RequireStop()
 
-	_, err := client.GetStreamURLs(999999)
-	if err != nil {
-		if bilibili.IsErrRoomNotFound(err) {
-			t.Log("room not found as expected")
-			return
+	t.Run("v1", func(t *testing.T) {
+		_, err := client.GetStreamURLs(nonexistentRoomID)
+		if err == nil {
+			t.Fatal("expected room not found error, but got none")
 		}
-		t.Fatal(err)
-	}
-	t.Fatal("expected room not found error, but got none")
+		if !bilibili.IsErrRoomNotFound(err) {
+			t.Fatal(err)
+		}
+		t.Log("room not found as expected")
+	})
 
-	_, err = client.GetStreamURLsV2(999999)
-	if err != nil {
-		if bilibili.IsErrRoomNotFound(err) {
-			t.Log("room not found as expected")
-			return
+	t.Run("v2", func(t *testing.T) {
+		_, err := client.GetStreamURLsV2(nonexistentRoomID)
+		if err == nil {
+			t.Fatal("expected room not found error, but got none")
 		}
-		t.Fatal(err)
-	}
-	t.Fatal("expected room not found error, but got none")
+		if !bilibili.IsErrRoomNotFound(err) {
+			t.Fatal(err)
+		}
+		t.Log("room not found as expected")
+	})
 }
 
 func TestGetRoomInfoNotExistRoom(t *testing.T) {
@@ -59,7 +66,7 @@ func TestGetRoomInfoNotExistRoom(t *testing.T) {
 	app.RequireStart()
 	defer app.RequireStop()
 
-	_, err := client.GetLiveRoomInfo(999999)
+	_, err := client.GetLiveRoomInfo(nonexistentRoomID)
 	if err != nil {
 		if bilibili.IsErrRoomNotFound(err) {
 			t.Log("room not found as expected")
