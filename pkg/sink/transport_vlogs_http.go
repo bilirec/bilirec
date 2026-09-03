@@ -13,9 +13,8 @@ import (
 )
 
 const (
-	defaultVLogsTimeout  = 10 * time.Second
-	defaultVLogsRetryMax = 2
-	vlogsRetryBaseDelay  = 100 * time.Millisecond
+	defaultVLogsTimeout = 10 * time.Second
+	vlogsRetryBaseDelay = 100 * time.Millisecond
 	vlogsRetryMaxDelay   = time.Second
 )
 
@@ -47,9 +46,6 @@ func NewVLogsHTTPTransport(opts VLogsHTTPTransportOptions) *VLogsHTTPTransport {
 	retryMax := opts.RetryMax
 	if retryMax < 0 {
 		retryMax = 0
-	}
-	if retryMax == 0 && opts.RetryMax == 0 {
-		retryMax = defaultVLogsRetryMax
 	}
 
 	return &VLogsHTTPTransport{
@@ -88,7 +84,7 @@ func (t *VLogsHTTPTransport) post(body []byte) (bool, error) {
 	req, err := http.NewRequest(http.MethodPost, t.url, bytes.NewReader(body))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "logger: victorialogs request: %v\n", err)
-		return false, nil
+		return false, err
 	}
 	req.Header.Set("Content-Type", "application/stream+json")
 	if t.accountID != "" {

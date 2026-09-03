@@ -63,7 +63,6 @@ func wireRemoteVLogs(lc fx.Lifecycle, cfg *config.Config, exporter *metrics.Expo
 		Timeout:   cfg.VictoriaLogsTimeout,
 		RetryMax:  cfg.VictoriaLogsRetryMax,
 		OnRetry:   moduleMetrics.retry,
-		OnFailed:  moduleMetrics.requestFailed,
 	})
 
 	// Build buffered sink for remote
@@ -85,7 +84,7 @@ func wireRemoteVLogs(lc fx.Lifecycle, cfg *config.Config, exporter *metrics.Expo
 
 	enc := logger.NewVLogsEncoder()
 	remoteCore := zapcore.
-		NewCore(enc, zapcore.AddSync(bufferedSink), levelEnabler{}).
+		NewCore(enc, bufferedSink, levelEnabler{}).
 		With([]zapcore.Field{
 			zap.String("app", "bilirec"),
 			zap.String("instance", instance),
@@ -93,8 +92,7 @@ func wireRemoteVLogs(lc fx.Lifecycle, cfg *config.Config, exporter *metrics.Expo
 
 	logger.SetRemoteCore(remoteCore)
 	lc.Append(fx.StopHook(func(ctx context.Context) error {
-		defer logger.ClearRemoteCore()
-		return bufferedSink.Stop(ctx)
+		return shutdownSink(logger.ClearRemoteCore, bufferedSink, ctx)
 	}))
 
 	log.Infof("VictoriaLogs 远程日志已启用：%s", cfg.VictoriaLogsURL)

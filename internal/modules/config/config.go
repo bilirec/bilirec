@@ -51,6 +51,7 @@ type Config struct {
 	LocalLogsBatchBytes    int
 	LocalLogsFlushInterval time.Duration
 	LocalLogsBufferSize    int
+	LocalLogsOverflow      string
 
 	FRPEnabled     bool
 	FRPServer      string
@@ -218,6 +219,7 @@ func provider(lc fx.Lifecycle) (*Config, error) {
 		LocalLogsBatchBytes:      utils.MustAtoi(utils.EmptyOrElse(os.Getenv("LOCAL_LOGS_BATCH_BYTES"), "65536")),
 		LocalLogsFlushInterval:   parseDurationOrDefault(os.Getenv("LOCAL_LOGS_FLUSH_INTERVAL"), time.Second),
 		LocalLogsBufferSize:      utils.MustAtoi(utils.EmptyOrElse(os.Getenv("LOCAL_LOGS_BUFFER_SIZE"), "4096")),
+		LocalLogsOverflow:        parseLocalLogsOverflow(os.Getenv("LOCAL_LOGS_OVERFLOW")),
 		FRPEnabled:               os.Getenv("FRP_ENABLED") == "true",
 		FRPServer:                frpServer,
 		FRPToken:                 frpToken,
@@ -346,6 +348,15 @@ func parseDurationOrDefault(raw string, fallback time.Duration) time.Duration {
 		return fallback
 	}
 	return d
+}
+
+func parseLocalLogsOverflow(raw string) string {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "block":
+		return "block"
+	default:
+		return "drop"
+	}
 }
 
 func parseCommaSeparatedValues(raw string) []string {

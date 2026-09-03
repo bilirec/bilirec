@@ -79,6 +79,8 @@ func (s *AsyncBufferedSink) Write(p []byte) (int, error) {
 			if s.options.Hooks.OnQueueBytes != nil {
 				s.options.Hooks.OnQueueBytes(len(cp))
 			}
+		case <-s.stopCh:
+			return 0, ErrSinkStopped
 		default:
 			if s.options.Hooks.OnDropped != nil {
 				s.options.Hooks.OnDropped()

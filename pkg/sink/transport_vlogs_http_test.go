@@ -118,6 +118,38 @@ func TestVLogsTransportNoRetryOnClientError(t *testing.T) {
 	}
 }
 
+func TestVLogsTransportNoRetryWhenRetryMaxZero(t *testing.T) {
+	var attempts atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts.Add(1)
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer srv.Close()
+
+	tr := NewVLogsHTTPTransport(VLogsHTTPTransportOptions{
+		URL:      srv.URL,
+		RetryMax: 0,
+	})
+
+	err := tr.Consume([]byte(`{"_msg":"no-retry"}` + "\n"))
+	if err == nil {
+		t.Fatal("expected error on 503")
+	}
+	if got := attempts.Load(); got != 1 {
+		t.Fatalf("requests = %d, want 1 (RetryMax=0 disables retry)", got)
+	}
+}
+
+func TestVLogsTransportNewRequestError(t *testing.T) {
+	tr := NewVLogsHTTPTransport(VLogsHTTPTransportOptions{
+		URL: "://invalid-url",
+	})
+	err := tr.Consume([]byte(`{"_msg":"bad-url"}` + "\n"))
+	if err == nil {
+		t.Fatal("expected error for invalid request URL")
+	}
+}
+
 func TestVLogsTransportConsumeEmptyBatch(t *testing.T) {
 	tr := NewVLogsHTTPTransport(VLogsHTTPTransportOptions{
 		URL: "http://127.0.0.1:1/insert/jsonline",

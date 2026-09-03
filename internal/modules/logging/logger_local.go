@@ -8,9 +8,9 @@ import (
 	"github.com/bilirec/bilirec/internal/modules/config"
 	"github.com/bilirec/bilirec/pkg/logger"
 	logsink "github.com/bilirec/bilirec/pkg/sink"
-	"gopkg.in/natefinch/lumberjack.v2"
 	"go.uber.org/fx"
 	"go.uber.org/zap/zapcore"
+	"gopkg.in/natefinch/lumberjack.v2"
 )
 
 // levelEnabler delegates level checks to pkg/logger's dynamic level.
@@ -41,11 +41,15 @@ func wireLocalLogger(lc fx.Lifecycle, cfg *config.Config) {
 	}
 
 	tr := logsink.NewFileTransport(fileWriter)
+	overflow := logsink.OverflowDrop
+	if strings.ToLower(strings.TrimSpace(cfg.LocalLogsOverflow)) == "block" {
+		overflow = logsink.OverflowBlock
+	}
 	bufferedSink, err := logsink.NewAsyncBufferedSink(tr, logsink.Options{
 		BufferSize:    cfg.LocalLogsBufferSize,
 		BatchBytes:    cfg.LocalLogsBatchBytes,
 		FlushInterval: cfg.LocalLogsFlushInterval,
-		Overflow:      logsink.OverflowBlock,
+		Overflow:      overflow,
 	})
 	if err != nil {
 		log.Warnf("初始化本地日志失败，已跳过：%v", err)
@@ -61,12 +65,11 @@ func wireLocalLogger(lc fx.Lifecycle, cfg *config.Config) {
 		enc = logger.NewPrettyEncoder(false)
 	}
 
-	localCore := zapcore.NewCore(enc, zapcore.AddSync(bufferedSink), levelEnabler{})
+	localCore := zapcore.NewCore(enc, bufferedSink, levelEnabler{})
 	logger.SetLocalCore(localCore)
 
 	lc.Append(fx.StopHook(func(ctx context.Context) error {
-		defer logger.ClearLocalCore()
-		return bufferedSink.Stop(ctx)
+		return shutdownSink(logger.ClearLocalCore, bufferedSink, ctx)
 	}))
 
 	log.Infof("本地日志已启用：%s format=%s", logPath, cfg.LocalLogsFormat)

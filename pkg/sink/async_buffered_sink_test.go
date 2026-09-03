@@ -156,6 +156,56 @@ func TestSyncFlushesPendingData(t *testing.T) {
 	}
 }
 
+func TestDropPolicyReturnsStoppedWhenFullDuringShutdown(t *testing.T) {
+	block := make(chan struct{})
+	tr := &blockingTransport{blockCh: block}
+	s, err := NewAsyncBufferedSink(tr, Options{
+		BufferSize:    1,
+		BatchBytes:    1,
+		FlushInterval: time.Hour,
+		Overflow:      OverflowDrop,
+	})
+	if err != nil {
+		t.Fatalf("new sink: %v", err)
+	}
+
+	if _, err := s.Write([]byte("a")); err != nil {
+		t.Fatalf("first write: %v", err)
+	}
+	if _, err := s.Write([]byte("b")); err != nil {
+		t.Fatalf("second write: %v", err)
+	}
+
+	stopDone := make(chan struct{})
+	go func() {
+		close(block)
+		_ = s.Stop(noCancelCtx{})
+		close(stopDone)
+	}()
+
+	deadline := time.After(2 * time.Second)
+	for {
+		_, err := s.Write([]byte("c"))
+		if errors.Is(err, ErrSinkStopped) {
+			break
+		}
+		select {
+		case <-stopDone:
+			if err == nil {
+				t.Fatal("expected ErrSinkStopped after shutdown, got nil")
+			}
+			if !errors.Is(err, ErrSinkStopped) {
+				t.Fatalf("write after stop = %v, want ErrSinkStopped", err)
+			}
+			return
+		case <-deadline:
+			t.Fatal("timed out waiting for ErrSinkStopped during shutdown")
+		default:
+			time.Sleep(5 * time.Millisecond)
+		}
+	}
+}
+
 func TestStopDrainsPendingDataAndClosesTransport(t *testing.T) {
 	tr := &recordingTransport{}
 	s, err := NewAsyncBufferedSink(tr, Options{
