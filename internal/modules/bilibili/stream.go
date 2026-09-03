@@ -108,13 +108,14 @@ const v1StreamAPI = "https://api.live.bilibili.com/room/v1/Room/playUrl"
 const v2StreamAPI = "https://api.live.bilibili.com/xlive/web-room/v2/index/getRoomPlayInfo"
 
 const (
-	streamAPICodeRoomNotFound  = 19002003
-	streamAPICodeGeoRestricted = 60005
+	streamAPICodeRoomNotFound   = 19002003 // playUrl v1
+	streamAPICodeRoomNotFoundV2 = 60004    // getRoomPlayInfo v2
+	streamAPICodeGeoRestricted  = 60005
 )
 
 func mapStreamAPIError(code int, message string) error {
 	switch code {
-	case streamAPICodeRoomNotFound:
+	case streamAPICodeRoomNotFound, streamAPICodeRoomNotFoundV2:
 		return ErrRoomNotFound
 	case streamAPICodeGeoRestricted:
 		return ErrStreamGeoRestricted
