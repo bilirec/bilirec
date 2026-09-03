@@ -140,6 +140,16 @@ func appendLevel(line *buffer.Buffer, lvl zapcore.Level, color bool) {
 	}
 }
 
+// lowercaseLevelWithTrace renders TraceLevel (custom level = DebugLevel - 1)
+// as "trace"; other levels delegate to zapcore's lowercase encoder.
+func lowercaseLevelWithTrace(l zapcore.Level, enc zapcore.PrimitiveArrayEncoder) {
+	if l == TraceLevel {
+		enc.AppendString("trace")
+		return
+	}
+	zapcore.LowercaseLevelEncoder(l, enc)
+}
+
 func levelName(lvl zapcore.Level) string {
 	if lvl == TraceLevel {
 		return "TRACE"

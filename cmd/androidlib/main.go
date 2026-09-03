@@ -196,6 +196,9 @@ func defaultAndroidEnv(basePath string) map[string]string {
 		"LIVE_STREAM_WRITER_SYNC_PERIOD_SECS":        "0",
 		"LIVE_STREAM_WRITER_COLD_CACHE_RELEASE_SECS": "60",
 		"LIVE_STREAM_WRITER_FLUSH_PERIOD_SECS":       "15",
+		// 日誌統一寫入 bootstrap.log（不緩衝，bilirec-mobile 抓取的唯一來源），
+		// 不再啟用第二個緩衝的本地日誌檔。用戶仍可透過 config.Env 覆寫。
+		"LOCAL_LOGS_ENABLED":                         "false",
 		"SKIP_SMALL_FLUSH":                           "false",
 		"DROP_FILE_PAGE_CACHE":                       "true",
 		"SILENT_ACCESS_LOG":                          "true",

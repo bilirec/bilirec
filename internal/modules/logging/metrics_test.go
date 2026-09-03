@@ -1,4 +1,4 @@
-package vlogs
+package logging
 
 import "testing"
 

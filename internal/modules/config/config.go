@@ -41,6 +41,17 @@ type Config struct {
 	VictoriaLogsTimeout      time.Duration
 	VictoriaLogsRetryMax     int
 
+	LocalLogsEnabled       bool
+	LocalLogsPath          string
+	LocalLogsFormat        string
+	LocalLogsMaxSizeMB     int
+	LocalLogsMaxAgeDays    int
+	LocalLogsMaxBackups    int
+	LocalLogsCompress      bool
+	LocalLogsBatchBytes    int
+	LocalLogsFlushInterval time.Duration
+	LocalLogsBufferSize    int
+
 	FRPEnabled     bool
 	FRPServer      string
 	FRPToken       string
@@ -197,6 +208,16 @@ func provider(lc fx.Lifecycle) (*Config, error) {
 		VictoriaLogsProjectID:    strings.TrimSpace(os.Getenv("VICTORIALOGS_PROJECT_ID")),
 		VictoriaLogsTimeout:      parseDurationOrDefault(os.Getenv("VICTORIALOGS_TIMEOUT"), 10*time.Second),
 		VictoriaLogsRetryMax:     utils.MustAtoi(utils.EmptyOrElse(os.Getenv("VICTORIALOGS_RETRY_MAX"), "2")),
+		LocalLogsEnabled:         os.Getenv("LOCAL_LOGS_ENABLED") == "true",
+		LocalLogsPath:            strings.TrimSpace(os.Getenv("LOCAL_LOGS_PATH")),
+		LocalLogsFormat:          strings.ToLower(strings.TrimSpace(utils.EmptyOrElse(os.Getenv("LOCAL_LOGS_FORMAT"), "pretty"))),
+		LocalLogsMaxSizeMB:       utils.MustAtoi(utils.EmptyOrElse(os.Getenv("LOCAL_LOGS_MAX_SIZE_MB"), "20")),
+		LocalLogsMaxAgeDays:      utils.MustAtoi(utils.EmptyOrElse(os.Getenv("LOCAL_LOGS_MAX_AGE_DAYS"), "7")),
+		LocalLogsMaxBackups:      utils.MustAtoi(utils.EmptyOrElse(os.Getenv("LOCAL_LOGS_MAX_BACKUPS"), "3")),
+		LocalLogsCompress:        os.Getenv("LOCAL_LOGS_COMPRESS") == "true",
+		LocalLogsBatchBytes:      utils.MustAtoi(utils.EmptyOrElse(os.Getenv("LOCAL_LOGS_BATCH_BYTES"), "65536")),
+		LocalLogsFlushInterval:   parseDurationOrDefault(os.Getenv("LOCAL_LOGS_FLUSH_INTERVAL"), time.Second),
+		LocalLogsBufferSize:      utils.MustAtoi(utils.EmptyOrElse(os.Getenv("LOCAL_LOGS_BUFFER_SIZE"), "4096")),
 		FRPEnabled:               os.Getenv("FRP_ENABLED") == "true",
 		FRPServer:                frpServer,
 		FRPToken:                 frpToken,
