@@ -26,7 +26,7 @@ func TestGetStreamURLsNotExistRoom(t *testing.T) {
 	app.RequireStart()
 	defer app.RequireStop()
 
-	_, err := client.GetStreamURLs(9999999999)
+	_, err := client.GetStreamURLs(999999)
 	if err != nil {
 		if bilibili.IsErrRoomNotFound(err) {
 			t.Log("room not found as expected")
@@ -36,7 +36,7 @@ func TestGetStreamURLsNotExistRoom(t *testing.T) {
 	}
 	t.Fatal("expected room not found error, but got none")
 
-	_, err = client.GetStreamURLsV2(9999999999)
+	_, err = client.GetStreamURLsV2(999999)
 	if err != nil {
 		if bilibili.IsErrRoomNotFound(err) {
 			t.Log("room not found as expected")
@@ -59,7 +59,7 @@ func TestGetRoomInfoNotExistRoom(t *testing.T) {
 	app.RequireStart()
 	defer app.RequireStop()
 
-	_, err := client.GetLiveRoomInfo(9999999999)
+	_, err := client.GetLiveRoomInfo(999999)
 	if err != nil {
 		if bilibili.IsErrRoomNotFound(err) {
 			t.Log("room not found as expected")
