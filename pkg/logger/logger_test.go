@@ -2,10 +2,13 @@ package logger
 
 import (
 	"bytes"
+	"encoding/json"
 	"io"
 	"strings"
 	"testing"
 	"time"
+
+	"go.uber.org/zap/zapcore"
 )
 
 func capture(t *testing.T) *bytes.Buffer {
@@ -97,5 +100,39 @@ func TestSetLevelAndNop(t *testing.T) {
 	}
 	if !strings.Contains(got, "shown") {
 		t.Fatalf("missing error: %q", got)
+	}
+}
+
+func TestJSONEncodersPreserveNanosecondTime(t *testing.T) {
+	want := time.Date(2026, 9, 4, 7, 35, 4, 463821917, time.FixedZone("CST", 8*3600))
+	ent := zapcore.Entry{Level: zapcore.InfoLevel, Time: want, Message: "hit"}
+
+	cases := []struct {
+		name string
+		enc  zapcore.Encoder
+		key  string
+	}{
+		{name: "vlogs", enc: NewVLogsEncoder(), key: "_time"},
+		{name: "jsonline", enc: NewJsonLineEncoder(), key: "timestamp"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			buf, err := tc.enc.EncodeEntry(ent, nil)
+			if err != nil {
+				t.Fatalf("EncodeEntry: %v", err)
+			}
+			var row map[string]any
+			if err := json.Unmarshal(buf.Bytes(), &row); err != nil {
+				t.Fatalf("json: %v in %q", err, buf.String())
+			}
+			raw, _ := row[tc.key].(string)
+			got, err := time.Parse(time.RFC3339Nano, raw)
+			if err != nil {
+				t.Fatalf("parse %s=%q: %v", tc.key, raw, err)
+			}
+			if !got.Equal(want) {
+				t.Fatalf("%s: got %v want %v (raw=%q)", tc.key, got, want, raw)
+			}
+		})
 	}
 }
