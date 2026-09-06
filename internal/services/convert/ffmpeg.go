@@ -84,6 +84,7 @@ func (f *ffmpegConvertManager) Enqueue(inputPath, outputPath, format string, del
 	}
 	if err = f.bucket.Put([]byte(uuid), data); err == nil {
 		f.metrics.taskQueued(ProviderFFmpeg)
+		f.updateGaugeMetrics()
 	}
 	return queue, err
 }
@@ -97,6 +98,7 @@ func (f *ffmpegConvertManager) Cancel(taskID string) error {
 		return err
 	}
 	f.metrics.taskCancelled(ProviderFFmpeg)
+	f.updateGaugeMetrics()
 	return nil
 }
 
@@ -168,7 +170,10 @@ func (f *ffmpegConvertManager) runTaskPeriodically(ctx context.Context, wg *sync
 					taskLog.Warnf("输入文件 %s 已不存在，正在取消任务", queue.InputPath)
 					if err := f.deleteTaskFromQueue(queue.TaskID); err != nil {
 						taskLog.Errorf("从队列移除 ffmpeg 任务失败：%v", err)
+					} else {
+						f.metrics.taskCancelled(ProviderFFmpeg)
 					}
+					f.updateGaugeMetrics()
 					continue
 				}
 
@@ -179,6 +184,7 @@ func (f *ffmpegConvertManager) runTaskPeriodically(ctx context.Context, wg *sync
 
 				processCtx, cancel := context.WithCancel(ctx)
 				f.processing.Store(queue.TaskID, cancel)
+				f.updateGaugeMetrics()
 				taskLog.Infof("正在处理 ffmpeg 任务 input=%s output=%s", queue.InputPath, queue.OutputPath)
 				swg.Go(func() {
 					f.asyncProcessTask(processCtx, queue, taskLog)
@@ -214,6 +220,7 @@ func (f *ffmpegConvertManager) asyncProcessTask(ctx context.Context, queue *Task
 		if cancel, ok := f.processing.LoadAndDelete(queue.TaskID); ok {
 			cancel()
 		}
+		f.updateGaugeMetrics()
 	}()
 
 	defer f.concurrent.Release(1)
@@ -234,6 +241,7 @@ func (f *ffmpegConvertManager) asyncProcessTask(ctx context.Context, queue *Task
 		taskLog.Errorf("从队列移除 ffmpeg 任务失败：%v", err)
 		return
 	}
+	f.updateGaugeMetrics()
 
 	if config.ReadOnly.DropFilePageCache() {
 		if err := filecache.DropFilePageCache(queue.InputPath); err != nil {

@@ -1,5 +1,7 @@
 package metrics
 
+import "bytes"
+
 const (
 	metricConvertTasksQueuedTotal    = "bilirec_convert_tasks_queued_total"
 	metricConvertTasksCompletedTotal = "bilirec_convert_tasks_completed_total"
@@ -55,4 +57,15 @@ func (e *Exporter) SetConvertTasksProcessing(provider string, count int) {
 		return
 	}
 	e.registry.providerGauge(metricConvertTasksProcessing, provider).Set(float64(count))
+}
+
+// Scrape renders the whole metrics set in Prometheus text format. Used by
+// tests to assert gauge values after conversion lifecycle events.
+func (e *Exporter) Scrape() string {
+	if e.set == nil {
+		return ""
+	}
+	var buf bytes.Buffer
+	e.set.WritePrometheus(&buf)
+	return buf.String()
 }
