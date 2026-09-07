@@ -375,6 +375,7 @@ func (r *Service) recover(roomId int) {
 
 	info.status.Store(recoveringPtr)
 	r.m.StreamConnectionActive(roomId, false)
+	r.m.RecordingRecovering(roomId, true)
 	attempt := 1
 	retryStart := time.Now()
 	for {
@@ -393,6 +394,7 @@ func (r *Service) recover(roomId int) {
 		if err == nil {
 			l.Info("直播流恢复成功")
 			r.m.RecordingRecoverySucceeded(roomId)
+			r.m.RecordingRecovering(roomId, false)
 			info.backoff.Reset()
 			return
 		}

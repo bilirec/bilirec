@@ -42,6 +42,8 @@ func TestExporterDisabledNoop(t *testing.T) {
 	e.AddRecovery(123)
 	e.StreamConnectionActive(123, true)
 	e.StreamConnectionActive(123, false)
+	e.RecordingRecovering(123, true)
+	e.RecordingRecovering(123, false)
 	e.StreamConnectAttempt(123)
 	e.RecordingRotation(123)
 	e.RecordingStartFailed(123, ReasonDisk)
@@ -176,6 +178,7 @@ func TestExporterEnabled(t *testing.T) {
 		`bilirec_room_stream_bytes_total{room_id="123"} 1024`,
 		`bilirec_room_recording_sessions_total{room_id="123"} 1`,
 		`bilirec_room_recording_active{room_id="123"} 1`,
+		`bilirec_room_recording_recovering{room_id="123"} 0`,
 		`bilirec_room_live_status{room_id="123"} 1`,
 		`bilirec_room_live_sessions_total{room_id="123"} 1`,
 		`bilirec_room_stream_recovery_total{room_id="123"} 1`,
@@ -227,6 +230,7 @@ func TestExporterEnabled(t *testing.T) {
 	out = e.scrape()
 	for _, want := range []string{
 		`bilirec_room_recording_active{room_id="123"} 0`,
+		`bilirec_room_recording_recovering{room_id="123"} 0`,
 		`bilirec_room_stream_connection_active{room_id="123"} 0`,
 		`bilirec_danmaku_recording_active{room_id="123"} 0`,
 		`bilirec_danmaku_connection_active{room_id="123"} 0`,
@@ -378,6 +382,7 @@ func TestRecorderCountersSurviveUnregister(t *testing.T) {
 	}
 	for _, gone := range []string{
 		`bilirec_room_recording_active{room_id="123"}`,
+		`bilirec_room_recording_recovering{room_id="123"}`,
 		`bilirec_room_stream_connection_active{room_id="123"}`,
 	} {
 		if strings.Contains(out, gone) {
@@ -392,6 +397,48 @@ func TestRecorderCountersSurviveUnregister(t *testing.T) {
 	}
 	if !strings.Contains(out, `bilirec_room_recording_active{room_id="123"} 1`) {
 		t.Fatalf("second start should recreate recording_active:\n%s", out)
+	}
+	if !strings.Contains(out, `bilirec_room_recording_recovering{room_id="123"} 0`) {
+		t.Fatalf("second start should recreate recording_recovering at 0:\n%s", out)
+	}
+}
+
+func TestRecordingRecoveringGaugeLifecycle(t *testing.T) {
+	registry := newRoomRegistry()
+	e := &Exporter{
+		set:      registry.set,
+		registry: registry,
+	}
+
+	e.RecordingStarted(123, "主播")
+	out := e.scrape()
+	if !strings.Contains(out, `bilirec_room_recording_recovering{room_id="123"} 0`) {
+		t.Fatalf("RecordingStarted should create recovering gauge at 0:\n%s", out)
+	}
+
+	e.RecordingRecovering(123, true)
+	out = e.scrape()
+	if !strings.Contains(out, `bilirec_room_recording_recovering{room_id="123"} 1`) {
+		t.Fatalf("RecordingRecovering(true) should set gauge to 1:\n%s", out)
+	}
+
+	e.RecordingRecovering(123, false)
+	out = e.scrape()
+	if !strings.Contains(out, `bilirec_room_recording_recovering{room_id="123"} 0`) {
+		t.Fatalf("RecordingRecovering(false) should set gauge to 0:\n%s", out)
+	}
+
+	e.RecordingRecovering(123, true)
+	e.RecordingStopped(123)
+	out = e.scrape()
+	if !strings.Contains(out, `bilirec_room_recording_recovering{room_id="123"} 0`) {
+		t.Fatalf("RecordingStopped should clear recovering gauge:\n%s", out)
+	}
+
+	e.UnregisterRecorderRoom(123)
+	out = e.scrape()
+	if strings.Contains(out, `bilirec_room_recording_recovering{room_id="123"}`) {
+		t.Fatalf("UnregisterRecorderRoom should drop recovering gauge:\n%s", out)
 	}
 }
 

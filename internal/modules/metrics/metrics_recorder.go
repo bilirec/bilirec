@@ -6,6 +6,7 @@ const (
 	metricRoomRecordingSessionsTotal          = "bilirec_room_recording_sessions_total"
 	metricRoomStreamRecoveryTotal             = "bilirec_room_stream_recovery_total"
 	metricRoomRecordingActive                 = "bilirec_room_recording_active"
+	metricRoomRecordingRecovering             = "bilirec_room_recording_recovering"
 	metricRoomStreamConnectionActive          = "bilirec_room_stream_connection_active"
 	metricRoomStreamConnectAttemptsTotal      = "bilirec_room_stream_connect_attempts_total"
 	metricRoomRecordingRotationsTotal         = "bilirec_room_recording_rotations_total"
@@ -85,6 +86,7 @@ func (e *Exporter) RecordingStarted(roomID int, uname string) {
 	}
 	e.registry.counter(metricRoomRecordingSessionsTotal, roomID).Inc()
 	e.registry.gauge(metricRoomRecordingActive, roomID).Set(1)
+	e.registry.gauge(metricRoomRecordingRecovering, roomID).Set(0)
 	e.registry.globalGauge(metricActiveRecordings).Add(1)
 	e.registry.updateRoomInfo(roomID, uname)
 }
@@ -95,6 +97,7 @@ func (e *Exporter) RecordingStopped(roomID int) {
 		return
 	}
 	e.registry.gauge(metricRoomRecordingActive, roomID).Set(0)
+	e.registry.gauge(metricRoomRecordingRecovering, roomID).Set(0)
 	e.registry.gauge(metricRoomStreamConnectionActive, roomID).Set(0)
 	e.registry.globalGauge(metricActiveRecordings).Add(-1)
 }
@@ -116,6 +119,18 @@ func (e *Exporter) StreamConnectionActive(roomID int, active bool) {
 		e.registry.gauge(metricRoomStreamConnectionActive, roomID).Set(1)
 	} else {
 		e.registry.gauge(metricRoomStreamConnectionActive, roomID).Set(0)
+	}
+}
+
+// RecordingRecovering marks whether the room is inside the recovery loop.
+func (e *Exporter) RecordingRecovering(roomID int, active bool) {
+	if e.registry == nil {
+		return
+	}
+	if active {
+		e.registry.gauge(metricRoomRecordingRecovering, roomID).Set(1)
+	} else {
+		e.registry.gauge(metricRoomRecordingRecovering, roomID).Set(0)
 	}
 }
 
@@ -183,6 +198,7 @@ func (e *Exporter) UnregisterRecorderRoom(roomID int) {
 		return
 	}
 	e.registry.unregisterGauge(metricRoomRecordingActive, roomID)
+	e.registry.unregisterGauge(metricRoomRecordingRecovering, roomID)
 	e.registry.unregisterGauge(metricRoomStreamConnectionActive, roomID)
 }
 
