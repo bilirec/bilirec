@@ -138,3 +138,13 @@ func Run(ctx context.Context, taskLog logger.Logger, args ...string) error {
 func Available() bool {
 	return true
 }
+
+// ProbeAvailable is false until ffmpeg-kit ffprobe_execute is wired.
+func ProbeAvailable() bool {
+	return false
+}
+
+// Probe reports that ffprobe is not available on this Android build.
+func Probe(_ context.Context, _ logger.Logger, _ ...string) error {
+	return ErrProbeUnavailable
+}

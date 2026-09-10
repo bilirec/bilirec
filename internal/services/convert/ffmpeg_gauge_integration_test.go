@@ -115,36 +115,6 @@ func mustCreateFLV(t *testing.T, outPath string) {
 	}
 }
 
-// mustCreateLargeFLV produces a remux source whose copied output exceeds
-// MinimumExportedFileBytesRequired, so ValidateOutputFileSize accepts it and
-// asyncProcessTask takes the success path.
-func mustCreateLargeFLV(t *testing.T, outPath string) {
-	t.Helper()
-	cmd := exec.Command("ffmpeg",
-		"-y",
-		"-hide_banner",
-		"-loglevel", "error",
-		"-f", "lavfi",
-		"-i", "testsrc=size=640x360:rate=30:duration=20",
-		"-c:v", "libx264",
-		"-preset", "ultrafast",
-		"-crf", "0",
-		"-an",
-		"-f", "flv",
-		outPath,
-	)
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("create large flv %s: %v\n%s", outPath, err, out)
-	}
-	info, err := os.Stat(outPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if info.Size() < MinimumExportedFileBytesRequired*2 {
-		t.Fatalf("generated flv is %dB, want >= %dB for the success-path test", info.Size(), MinimumExportedFileBytesRequired*2)
-	}
-}
-
 // TestFFmpegEnqueueUpdatesGaugeImmediately verifies that the pending gauge is
 // refreshed by the enqueue event itself, without waiting for the check ticker.
 func TestFFmpegEnqueueUpdatesGaugeImmediately(t *testing.T) {
@@ -226,7 +196,7 @@ func TestFFmpegGaugeLifecycleSuccess(t *testing.T) {
 	svc, exporter := startFFmpegConvertApp(t, "0")
 
 	input := filepath.Join(t.TempDir(), "c.flv")
-	mustCreateLargeFLV(t, input)
+	mustCreateFLV(t, input)
 
 	q, err := svc.Enqueue(input, "mp4", false)
 	if err != nil {
@@ -260,6 +230,16 @@ func TestFFmpegGaugeLifecycleSuccess(t *testing.T) {
 	}
 	if got := mustScrapeValue(t, out, seriesFFmpegCompleted); got != 1 {
 		t.Fatalf("completed counter = %v, want 1 after completion", got)
+	}
+
+	if _, err := os.Stat(q.OutputPath); err != nil {
+		t.Fatalf("final mp4 missing after success: %v", err)
+	}
+	if filepath.Ext(q.OutputPath) != ".mp4" {
+		t.Fatalf("output path ext = %q, want .mp4", filepath.Ext(q.OutputPath))
+	}
+	if _, err := os.Stat(q.OutputPath + ".tmp"); !os.IsNotExist(err) {
+		t.Fatalf("staging tmp should not remain after success, stat err=%v", err)
 	}
 }
 

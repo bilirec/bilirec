@@ -261,14 +261,26 @@ func (f *ffmpegConvertManager) asyncProcessTask(ctx context.Context, queue *Task
 }
 
 func (f *ffmpegConvertManager) processTask(ctx context.Context, queue *TaskQueue, taskLog logger.Logger) error {
-
 	if !utils.IsFileExists(queue.InputPath) {
 		taskLog.Warnf("输入文件 %s 已不存在，跳过转码", queue.InputPath)
 		return nil
-	} else if utils.IsFileExists(queue.OutputPath) {
-		taskLog.Warnf("输出文件 %s 已存在，跳过转码", queue.OutputPath)
-		return nil
 	}
+
+	if utils.IsFileExists(queue.OutputPath) {
+		if err := validateOutputContainer(ctx, taskLog, queue.OutputPath, queue.OutputFormat); err == nil {
+			taskLog.Infof("输出文件 %s 已存在且校验通过，跳过转码", queue.OutputPath)
+			return nil
+		} else {
+			taskLog.Warnf("输出文件 %s 已存在但校验失败，将重转：%v", queue.OutputPath, err)
+		}
+	}
+
+	staging := utils.StagingPath(queue.OutputPath)
+	defer func() {
+		if err := utils.RemoveIfExists(staging); err != nil {
+			taskLog.Warnf("清理临时输出 %s 失败：%v", staging, err)
+		}
+	}()
 
 	if err := ffmpeg.Run(ctx, taskLog,
 		"-hide_banner",
@@ -283,11 +295,18 @@ func (f *ffmpegConvertManager) processTask(ctx context.Context, queue *TaskQueue
 		"+faststart",
 		"-c",
 		"copy",
-		queue.OutputPath,
+		"-f",
+		queue.OutputFormat,
+		staging,
 	); err != nil {
 		return err
-	} else if err := ValidateOutputFileSize(queue.InputPath, queue.OutputPath); err != nil {
+	}
+
+	if err := validateOutputContainer(ctx, taskLog, staging, queue.OutputFormat); err != nil {
 		return err
+	}
+	if err := utils.ReplaceFile(staging, queue.OutputPath); err != nil {
+		return fmt.Errorf("替换输出文件失败：%w", err)
 	}
 	return nil
 }

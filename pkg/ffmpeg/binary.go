@@ -53,3 +53,40 @@ func Available() bool {
 	_, err := exec.LookPath("ffmpeg")
 	return err == nil
 }
+
+// ProbeAvailable reports whether ffprobe is on PATH.
+func ProbeAvailable() bool {
+	_, err := exec.LookPath("ffprobe")
+	return err == nil
+}
+
+// Probe runs ffprobe with the given args. Extra args should include the input
+// path; callers that probe a .tmp file must pass -f <format> before -i.
+func Probe(ctx context.Context, taskLog logger.Logger, args ...string) error {
+	if !ProbeAvailable() {
+		return ErrProbeUnavailable
+	}
+
+	if taskLog.Enabled(logger.DebugLevel) {
+		cmd := exec.CommandContext(ctx, "ffprobe", args...)
+
+		debugWriter := taskLog.WriterAt(logger.DebugLevel)
+		defer debugWriter.Close()
+
+		cmd.Stdout = debugWriter
+		cmd.Stderr = debugWriter
+		return cmd.Run()
+	}
+
+	buf := ffmpegBufPool.Get()
+	defer ffmpegBufPool.Put(buf)
+
+	cmd := exec.CommandContext(ctx, "ffprobe", args...)
+	cmd.Stdout = nil
+	cmd.Stderr = buf
+	err := cmd.Run()
+	if err != nil {
+		taskLog.WithError(err).Errorf("ffprobe 执行失败，底层日志如下:\n%s", buf.String())
+	}
+	return err
+}

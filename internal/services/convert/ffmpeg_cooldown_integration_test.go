@@ -48,7 +48,7 @@ func TestFFmpegFailureCooldownAllowsOtherTaskIntegration(t *testing.T) {
 	if err := os.WriteFile(badInput, []byte("not-a-valid-flv"), 0644); err != nil {
 		t.Fatal(err)
 	}
-	createMinimalFLV(t, goodInput)
+	createConvertibleFLV(t, goodInput)
 
 	badQueue, err := svc.Enqueue(badInput, "mp4", false)
 	if err != nil {
@@ -91,7 +91,7 @@ func TestFFmpegFailureCooldownAllowsOtherTaskIntegration(t *testing.T) {
 	}
 }
 
-func createMinimalFLV(t *testing.T, outPath string) {
+func createConvertibleFLV(t *testing.T, outPath string) {
 	t.Helper()
 	cmd := exec.Command("ffmpeg",
 		"-y",
@@ -106,7 +106,7 @@ func createMinimalFLV(t *testing.T, outPath string) {
 		outPath,
 	)
 	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("create minimal flv %s: %v\n%s", outPath, err, out)
+		t.Fatalf("create convertible flv %s: %v\n%s", outPath, err, out)
 	}
 }
 

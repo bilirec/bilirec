@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -41,6 +42,31 @@ func ChangePathFormat(path string, newFormat string) string {
 func IsFileExists(path string) bool {
 	fi, err := os.Stat(path)
 	return err == nil && fi.Size() > 0
+}
+
+// StagingPath is the sibling temporary path used while writing an output file.
+func StagingPath(output string) string {
+	return output + ".tmp"
+}
+
+// ReplaceFile moves tmp onto final. On Windows Rename cannot overwrite, so
+// final is removed first when it already exists.
+func ReplaceFile(tmp, final string) error {
+	if err := os.Remove(final); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("remove existing file %s: %w", final, err)
+	}
+	if err := os.Rename(tmp, final); err != nil {
+		return fmt.Errorf("rename %s to %s: %w", tmp, final, err)
+	}
+	return nil
+}
+
+// RemoveIfExists deletes path. Missing files are not an error.
+func RemoveIfExists(path string) error {
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
 }
 
 // GetDiskSpace returns disk usage information for the given path

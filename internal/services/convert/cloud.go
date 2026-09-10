@@ -473,7 +473,7 @@ func (c *cloudConvertManager) updateGaugeMetrics(queues []*TaskQueue) {
 }
 
 func (c *cloudConvertManager) validateDownloadedOutputSize(queue *TaskQueue) error {
-	if err := ValidateOutputFileSize(queue.InputPath, queue.OutputPath); err == nil {
+	if err := validateOutputFileSize(queue.InputPath, queue.OutputPath); err == nil {
 		return nil
 	} else {
 		reason := err.Error()
