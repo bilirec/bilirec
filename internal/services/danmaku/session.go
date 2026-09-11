@@ -274,6 +274,10 @@ func (s *session) openSegment(req rotateRequest) {
 			processors.WithBytesPool(s.svc.pool),
 			processors.WithMinPeriodicFlushBytes(config.ReadOnly.DanmakuWriterMinPeriodicFlushBytes()),
 			processors.WithSequentialWrite(config.ReadOnly.SequentialWrite()),
+			processors.WithOnBytesWritten(func(n int) {
+				s.bytesWritten.Add(uint64(n))
+				s.svc.metrics.AddDanmakuBytes(s.roomID, n)
+			}),
 		),
 	)
 	if err := writerPipeline.Open(s.writerCtx); err != nil {
@@ -290,9 +294,6 @@ func (s *session) openSegment(req rotateRequest) {
 	if len(h) > 0 {
 		if _, err := s.writer.Process(s.writerCtx, h); err != nil {
 			log.Errorf("房间 %d 写入弹幕文件头失败：%v", s.roomID, err)
-		} else {
-			s.bytesWritten.Add(uint64(len(h)))
-			s.svc.metrics.AddDanmakuBytes(s.roomID, len(h))
 		}
 	}
 	s.svc.pool.PutBytes(h)
@@ -307,9 +308,6 @@ func (s *session) finalizeSegment() {
 	if len(f) > 0 {
 		if _, err := s.writer.Process(s.writerCtx, f); err != nil {
 			log.Errorf("房间 %d 写入弹幕文件尾失败：%v", s.roomID, err)
-		} else {
-			s.bytesWritten.Add(uint64(len(f)))
-			s.svc.metrics.AddDanmakuBytes(s.roomID, len(f))
 		}
 	}
 	s.svc.pool.PutBytes(f)
@@ -325,9 +323,6 @@ func (s *session) writeFragment(frag []byte) {
 	if s.writer != nil {
 		if _, err := s.writer.Process(s.writerCtx, frag); err != nil {
 			log.Errorf("房间 %d 写入弹幕失败：%v", s.roomID, err)
-		} else {
-			s.bytesWritten.Add(uint64(len(frag)))
-			s.svc.metrics.AddDanmakuBytes(s.roomID, len(frag))
 		}
 	}
 	s.svc.pool.PutBytes(frag)

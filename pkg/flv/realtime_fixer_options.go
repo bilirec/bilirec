@@ -72,4 +72,3 @@ func WithBufferSizes(initial, max int) RealtimeFixerOption {
 		}
 	}
 }
-

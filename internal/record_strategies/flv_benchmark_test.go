@@ -24,7 +24,7 @@ func BenchmarkFlvStrategy_PipelineWriterThroughput(b *testing.B) {
 	ctx := context.Background()
 	strategy := NewFlvStrategy(10000)
 	outputPath := filepath.Join(b.TempDir(), "bench.flv")
-	pipe, err := strategy.BuildPipeline(ctx, outputPath, &RotationState{Data: map[string][]byte{}})
+	pipe, err := strategy.BuildPipeline(ctx, outputPath, &RotationState{Data: map[string][]byte{}}, PipelineHooks{})
 	if err != nil {
 		b.Fatalf("BuildPipeline failed: %v", err)
 	}

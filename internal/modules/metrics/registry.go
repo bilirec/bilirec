@@ -30,17 +30,38 @@ type roomRegistry struct {
 	set      *vm.Set
 	mu       sync.Mutex
 	rooms    *xsync.Map[int, *roomEntry]
-	counters *xsync.Map[counterKey, *vm.Counter]
-	gauges   *xsync.Map[gaugeKey, *vm.Gauge]
+	counters      *xsync.Map[counterKey, *vm.Counter]
+	floatCounters *xsync.Map[counterKey, *vm.FloatCounter]
+	gauges        *xsync.Map[gaugeKey, *vm.Gauge]
 }
 
 func newRoomRegistry() *roomRegistry {
 	return &roomRegistry{
 		set:      vm.NewSet(),
 		rooms:    xsync.NewMap[int, *roomEntry](),
-		counters: xsync.NewMap[counterKey, *vm.Counter](),
-		gauges:   xsync.NewMap[gaugeKey, *vm.Gauge](),
+		counters:      xsync.NewMap[counterKey, *vm.Counter](),
+		floatCounters: xsync.NewMap[counterKey, *vm.FloatCounter](),
+		gauges:        xsync.NewMap[gaugeKey, *vm.Gauge](),
 	}
+}
+
+func (r *roomRegistry) floatCounter(name string, roomID int) *vm.FloatCounter {
+	key := counterKey{name: name, roomID: roomID}
+	if counter, ok := r.floatCounters.Load(key); ok {
+		return counter
+	}
+
+	counter := r.set.GetOrCreateFloatCounter(name + roomLabel(roomID))
+	actual, _ := r.floatCounters.LoadOrStore(key, counter)
+	return actual
+}
+
+func (r *roomRegistry) unregisterFloatCounter(name string, roomID int) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	r.set.UnregisterMetric(name + roomLabel(roomID))
+	r.floatCounters.Delete(counterKey{name: name, roomID: roomID})
 }
 
 func (r *roomRegistry) counter(name string, roomID int) *vm.Counter {

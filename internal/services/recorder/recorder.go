@@ -188,7 +188,6 @@ func (r *Service) Stop(roomId int) bool {
 }
 
 func (r *Service) prepare(roomId int, ch <-chan []byte, strategy rs.StreamRecordStrategy, ctx context.Context, info *Info, scheduleDurationCheck bool) error {
-
 	r.wg.Go(func() {
 		defer r.recover(roomId)
 		err := r.rotate(roomId, ch, strategy, info, ctx, scheduleDurationCheck)
@@ -209,6 +208,7 @@ func (r *Service) rotate(roomId int, ch <-chan []byte, strategy rs.StreamRecordS
 
 	segment := 0
 	state := &rs.RotationState{Data: map[string][]byte{}}
+	hooks := r.pipelineHooks(roomId, info)
 
 	for {
 		outputPath, err := r.rotateFilePath(info, segment, strategy.FileExtension())
@@ -222,7 +222,7 @@ func (r *Service) rotate(roomId int, ch <-chan []byte, strategy rs.StreamRecordS
 		// 失败或缺失不影响录播。userStart 仅在使用者发起的首次分段为 true，
 		// recovery 的首个分段走 Rotate（原弹幕 session 随 info.ctx 存活）。
 		// segmentStart 尽量贴近 pipe.Open 之后、首包写入之前，减少开录缓冲造成的偏移。
-		pipe, err := strategy.BuildPipeline(ctx, outputPath, state)
+		pipe, err := strategy.BuildPipeline(ctx, outputPath, state, hooks)
 		if err != nil {
 			r.m.RecordingPipelineError(roomId, metrics.ReasonOpen)
 			return fmt.Errorf("无法构建管道：%v", err)

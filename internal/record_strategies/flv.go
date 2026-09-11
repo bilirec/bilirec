@@ -43,9 +43,13 @@ func NewFlvStrategy(qn int) *FlvStrategy {
 
 func (s *FlvStrategy) FileExtension() string { return ".flv" }
 
-func (s *FlvStrategy) BuildPipeline(ctx context.Context, outputPath string, state *RotationState) (*pipeline.Pipe[[]byte], error) {
+func (s *FlvStrategy) BuildPipeline(ctx context.Context, outputPath string, state *RotationState, hooks PipelineHooks) (*pipeline.Pipe[[]byte], error) {
 	videoHdr := state.Data[flvStateVideoHdr]
 	audioHdr := state.Data[flvStateAudioHdr]
+
+	if hooks.OnTimestampJump != nil {
+		s.sharedFixer.SetTimestampJumpReporter(hooks.OnTimestampJump)
+	}
 
 	pipe := pipeline.New(
 		processors.NewFlvStreamFixerWithFixer(s.sharedFixer),
@@ -63,6 +67,10 @@ func (s *FlvStrategy) BuildPipeline(ctx context.Context, outputPath string, stat
 			processors.WithSDCardProtection(config.ReadOnly.SkipSmallFlush()),
 			processors.WithDropFilePageCache(config.ReadOnly.DropFilePageCache()),
 			processors.WithSequentialWrite(config.ReadOnly.SequentialWrite()),
+			processors.WithOnBytesWritten(hooks.OnBytesWritten),
+			processors.WithOnFlush(hooks.OnFlush),
+			processors.WithOnSync(hooks.OnSync),
+			processors.WithOnEnqueueWait(hooks.OnEnqueueWait),
 		),
 	)
 	return pipe, nil

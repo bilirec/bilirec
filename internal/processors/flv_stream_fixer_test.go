@@ -1,69 +1,63 @@
-package processors
+package processors_test
 
 import (
-	"bytes"
 	"context"
-	"io"
-	"strings"
 	"testing"
 
+	"github.com/bilirec/bilirec/internal/processors"
 	"github.com/bilirec/bilirec/pkg/flv"
-	"github.com/bilirec/bilirec/pkg/logger"
+	"github.com/bilirec/bilirec/pkg/pipeline"
 )
 
-func TestFlvStreamFixerProcessor_LogsTimestampJumpWarning(t *testing.T) {
+func TestFlvStreamFixer_OpenPreservesJumpReporter(t *testing.T) {
 	fixer := flv.NewRealtimeFixer()
 	defer fixer.Close()
 
-	processor := &FlvStreamFixerProcessor{fixer: fixer, own: false}
-
-	var logBuffer bytes.Buffer
-	color := false
-	logger.Init(logger.Options{Output: &logBuffer, Level: logger.WarnLevel, Color: &color})
-	t.Cleanup(func() {
-		logger.SetOutput(io.Discard)
-		logger.SetLevel(logger.InfoLevel)
+	var reporterCalls int
+	fixer.SetTimestampJumpReporter(func(w flv.TimestampJumpWarning) {
+		reporterCalls++
 	})
-	log := logger.Named("test")
 
-	if err := processor.Open(context.Background(), log); err != nil {
-		t.Fatalf("open processor: %v", err)
-	}
-
-	defer func() {
-		if err := processor.Close(); err != nil {
-			t.Fatalf("close processor: %v", err)
-		}
-	}()
-
-	if _, err := processor.Process(context.Background(), log, flv.FlvHeader); err != nil {
-		t.Fatalf("unexpected header error: %v", err)
+	pipe := pipeline.New(processors.NewFlvStreamFixerWithFixer(fixer))
+	ctx := context.Background()
+	if err := pipe.Open(ctx); err != nil {
+		t.Fatalf("open: %v", err)
 	}
 
 	tag1 := flv.NewTagBytes(flv.TagTypeAudio, []byte{0xaf, 0x01, 0x11})
-	setTimestamp(tag1, 0)
+	setTagTimestamp(tag1, 0)
 	tag2 := flv.NewTagBytes(flv.TagTypeAudio, []byte{0xaf, 0x01, 0x22})
-	setTimestamp(tag2, 1200)
+	setTagTimestamp(tag2, 1200)
 
 	in := make([]byte, 0, flv.PrevTagSizeBytes+len(tag1)+len(tag2))
 	in = append(in, 0, 0, 0, 0)
 	in = append(in, tag1...)
 	in = append(in, tag2...)
 
-	if _, err := processor.Process(context.Background(), log, in); err != nil {
-		t.Fatalf("unexpected process error: %v", err)
+	if _, err := fixer.Fix(flv.FlvHeader); err != nil {
+		t.Fatalf("header: %v", err)
+	}
+	if _, err := pipe.Process(ctx, in); err != nil {
+		t.Fatalf("process: %v", err)
+	}
+	if reporterCalls != 1 {
+		t.Fatalf("expected reporter to survive Open, got %d calls", reporterCalls)
 	}
 
-	logs := logBuffer.String()
-	if !strings.Contains(logs, "检测到 FLV 时间戳跳变") {
-		t.Fatalf("expected warning log, got: %s", logs)
+	// Re-open simulates segment rotation; reporter must still work.
+	if err := pipe.Open(ctx); err != nil {
+		t.Fatalf("re-open: %v", err)
 	}
-	if !strings.Contains(logs, "delta=1200ms") {
-		t.Fatalf("expected delta in warning log, got: %s", logs)
+	reporterCalls = 0
+	if _, err := pipe.Process(ctx, in); err != nil {
+		t.Fatalf("process after re-open: %v", err)
+	}
+	if reporterCalls != 1 {
+		t.Fatalf("expected reporter after re-open, got %d calls", reporterCalls)
 	}
 }
 
-func setTimestamp(tag []byte, timestamp uint32) {
+func setTagTimestamp(tag []byte, timestamp uint32) {
 	tag[4] = byte(timestamp >> 16)
 	tag[5] = byte(timestamp >> 8)
 	tag[6] = byte(timestamp)

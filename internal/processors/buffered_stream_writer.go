@@ -82,8 +82,13 @@ type BufferedStreamWriterProcessor struct {
 	dataCh          chan []byte
 	stopCh          chan struct{} // Signal to stop periodicIOWorker
 	wait            sync.WaitGroup
-	bytesWritten    int64
+	bytesWritten    atomic.Int64
 	releasedThrough int64
+
+	onBytesWritten func(n int)
+	onFlush        func(FlushEvent)
+	onSync         func(SyncEvent)
+	onEnqueueWait  func(EnqueueWaitEvent)
 	// bufferedBytes mirrors writer.Buffered() for cross-goroutine reads (e.g. periodic ready).
 	bufferedBytes atomic.Int64
 
@@ -110,6 +115,21 @@ var livePeriodicRoundRobin = coordinator.NewRoundRobin(defaultFlushPeriod)
 var globalMu sync.Mutex
 
 type BufferedStreamWriterOptions = func(*BufferedStreamWriterProcessor)
+
+type FlushEvent struct {
+	Duration time.Duration
+	Kind     string // "periodic" | "close"
+}
+
+type SyncEvent struct {
+	Duration time.Duration
+	Kind     string // "periodic" | "close"
+}
+
+type EnqueueWaitEvent struct {
+	Duration time.Duration
+	Bytes    int
+}
 
 func NewBufferedStreamWriter(path string, opts ...BufferedStreamWriterOptions) *pipeline.ProcessorInfo[[]byte] {
 	processor := &BufferedStreamWriterProcessor{
@@ -206,8 +226,20 @@ func (w *BufferedStreamWriterProcessor) Process(ctx context.Context, log logger.
 	cp := w.bytesPool.GetSized(len(data))
 	copy(cp, data)
 
+	var waitStart time.Time
+	trackWait := w.onEnqueueWait != nil
+	if trackWait {
+		waitStart = time.Now()
+	}
+
 	select {
 	case w.dataCh <- cp:
+		if trackWait {
+			w.onEnqueueWait(EnqueueWaitEvent{
+				Duration: time.Since(waitStart),
+				Bytes:    len(cp),
+			})
+		}
 	case <-ctx.Done():
 		w.bytesPool.Put(cp)
 		return data, ctx.Err()
@@ -252,14 +284,19 @@ func (w *BufferedStreamWriterProcessor) Close() error {
 	}
 
 	if w.writer != nil {
+		flushStart := time.Now()
 		if err := w.writer.Flush(); err != nil {
 			w.logger.Warnf("刷新写入器失败：%v", err)
 		} else {
 			w.syncBufferedBytes()
+			w.emitFlush(time.Since(flushStart), "close")
 			if file := w.file.Load(); file != nil {
+				syncStart := time.Now()
 				w.locker.Lock()
 				if err := file.Sync(); err != nil {
 					w.logger.Warnf("同步文件失败：%v", err)
+				} else {
+					w.emitSync(time.Since(syncStart), "close")
 				}
 				w.locker.Unlock()
 			}
@@ -268,7 +305,7 @@ func (w *BufferedStreamWriterProcessor) Close() error {
 
 	var closeErr error
 	if file := w.file.Load(); file != nil {
-		w.logger.Debugf("file path: %s, total written %vB", w.path, w.bytesWritten)
+		w.logger.Debugf("file path: %s, total written %vB", w.path, w.bytesWritten.Load())
 		if w.dropFilePageCache {
 			w.locker.Lock()
 			if err := filecache.DropOpenFileCache(file); err != nil {
@@ -383,10 +420,34 @@ func (w *BufferedStreamWriterProcessor) handleDataChunk(data []byte) {
 		if err != nil {
 			w.logger.Warnf("写入数据失败：%v", err)
 		}
-		w.bytesWritten += int64(n)
+		w.addWrittenBytes(n)
 		w.syncBufferedBytes()
 		w.bytesPool.Put(data)
 	}
+}
+
+func (w *BufferedStreamWriterProcessor) addWrittenBytes(n int) {
+	if n <= 0 {
+		return
+	}
+	w.bytesWritten.Add(int64(n))
+	if w.onBytesWritten != nil {
+		w.onBytesWritten(n)
+	}
+}
+
+func (w *BufferedStreamWriterProcessor) emitFlush(d time.Duration, kind string) {
+	if w.onFlush == nil {
+		return
+	}
+	w.onFlush(FlushEvent{Duration: d, Kind: kind})
+}
+
+func (w *BufferedStreamWriterProcessor) emitSync(d time.Duration, kind string) {
+	if w.onSync == nil {
+		return
+	}
+	w.onSync(SyncEvent{Duration: d, Kind: kind})
 }
 
 func (w *BufferedStreamWriterProcessor) syncBufferedBytes() {
@@ -410,7 +471,9 @@ func (w *BufferedStreamWriterProcessor) doPeriodicFlush() {
 		return
 	}
 	w.syncBufferedBytes()
-	if flushCost := time.Since(flushStart); flushCost > defaultSlowFlushWarnThreshold {
+	flushCost := time.Since(flushStart)
+	w.emitFlush(flushCost, "periodic")
+	if flushCost > defaultSlowFlushWarnThreshold {
 		w.logger.Warnf("周期性 flush 较慢：耗时=%s", flushCost)
 	}
 }
@@ -481,7 +544,9 @@ func (w *BufferedStreamWriterProcessor) doPeriodicFsync() {
 		w.logger.Warnf("同步文件失败：%v", err)
 		return
 	}
-	if syncCost := time.Since(syncStart); syncCost > slowSyncWarnThreshold {
+	syncCost := time.Since(syncStart)
+	w.emitSync(syncCost, "periodic")
+	if syncCost > slowSyncWarnThreshold {
 		w.logger.Warnf("周期性 sync 较慢：耗时=%s", syncCost)
 	}
 	if w.coldCacheReleasePeriod > 0 {
@@ -506,7 +571,7 @@ func (w *BufferedStreamWriterProcessor) releaseColdPrefixLocked(file *os.File, w
 	if writer == nil {
 		return
 	}
-	onDisk := atomic.LoadInt64(&w.bytesWritten) - int64(writer.Buffered())
+	onDisk := w.bytesWritten.Load() - int64(writer.Buffered())
 	plan, ok := planColdRelease(onDisk, w.releasedThrough, w.bufferSize)
 	if !ok {
 		return
@@ -632,7 +697,7 @@ func (w *BufferedStreamWriterProcessor) writePendingChunksToWriter() {
 		if err != nil {
 			w.logger.Warnf("写入待缓存数据失败：%v", err)
 		}
-		w.bytesWritten += int64(n)
+		w.addWrittenBytes(n)
 		w.bytesPool.Put(chunk)
 	}
 	w.pendingChunks = w.pendingChunks[:0]
@@ -666,5 +731,29 @@ func WithMinPeriodicFlushBytes(n int) BufferedStreamWriterOptions {
 		if n > 0 {
 			p.minPeriodicFlushBytes = n
 		}
+	}
+}
+
+func WithOnBytesWritten(fn func(n int)) BufferedStreamWriterOptions {
+	return func(p *BufferedStreamWriterProcessor) {
+		p.onBytesWritten = fn
+	}
+}
+
+func WithOnFlush(fn func(FlushEvent)) BufferedStreamWriterOptions {
+	return func(p *BufferedStreamWriterProcessor) {
+		p.onFlush = fn
+	}
+}
+
+func WithOnSync(fn func(SyncEvent)) BufferedStreamWriterOptions {
+	return func(p *BufferedStreamWriterProcessor) {
+		p.onSync = fn
+	}
+}
+
+func WithOnEnqueueWait(fn func(EnqueueWaitEvent)) BufferedStreamWriterOptions {
+	return func(p *BufferedStreamWriterProcessor) {
+		p.onEnqueueWait = fn
 	}
 }

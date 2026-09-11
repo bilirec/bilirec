@@ -38,9 +38,10 @@ type ErrHandleResult struct {
 //
 // Lifecycle per recording session:
 //
-//  1. BuildPipeline(ctx, outputPath, state) — called at the start of each segment.
+//  1. BuildPipeline(ctx, outputPath, state, hooks) — called at the start of each segment.
 //     For segment 0, state.Data is empty. For subsequent segments, state contains
-//     whatever a previous HandleErr(Action=Rotate) returned.
+//     whatever a previous HandleErr(Action=Rotate) returned. hooks observe the
+//     segment pipeline (writer I/O for all formats; timestamp jumps for FLV).
 //
 //  2. HandleErr(err) — called when the pipeline returns an error.
 //     Returns ErrActionRotate to continue with a new segment.
@@ -51,7 +52,7 @@ type StreamRecordStrategy interface {
 	// FileExtension returns the output file extension including the leading dot,
 	// e.g. ".flv", ".ts", ".mp4".
 	FileExtension() string
-	BuildPipeline(ctx context.Context, outputPath string, state *RotationState) (*pipeline.Pipe[[]byte], error)
+	BuildPipeline(ctx context.Context, outputPath string, state *RotationState, hooks PipelineHooks) (*pipeline.Pipe[[]byte], error)
 	HandleErr(err error) ErrHandleResult
 	Close() error
 }

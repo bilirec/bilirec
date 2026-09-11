@@ -28,7 +28,7 @@ func NewHlsTsStrategy(qn int) *HlsTsStrategy {
 
 func (s *HlsTsStrategy) FileExtension() string { return ".ts" }
 
-func (s *HlsTsStrategy) BuildPipeline(ctx context.Context, outputPath string, state *RotationState) (*pipeline.Pipe[[]byte], error) {
+func (s *HlsTsStrategy) BuildPipeline(ctx context.Context, outputPath string, state *RotationState, hooks PipelineHooks) (*pipeline.Pipe[[]byte], error) {
 	pipe := pipeline.New(
 		processors.NewSegmentDedup(),
 		processors.NewTsContinuityFixer(),
@@ -44,6 +44,10 @@ func (s *HlsTsStrategy) BuildPipeline(ctx context.Context, outputPath string, st
 			processors.WithSDCardProtection(config.ReadOnly.SkipSmallFlush()),
 			processors.WithDropFilePageCache(config.ReadOnly.DropFilePageCache()),
 			processors.WithSequentialWrite(config.ReadOnly.SequentialWrite()),
+			processors.WithOnBytesWritten(hooks.OnBytesWritten),
+			processors.WithOnFlush(hooks.OnFlush),
+			processors.WithOnSync(hooks.OnSync),
+			processors.WithOnEnqueueWait(hooks.OnEnqueueWait),
 		),
 	)
 	return pipe, nil

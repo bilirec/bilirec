@@ -42,7 +42,7 @@ func NewHlsFmp4Strategy(qn int) *HlsFmp4Strategy {
 
 func (s *HlsFmp4Strategy) FileExtension() string { return ".fmp4" }
 
-func (s *HlsFmp4Strategy) BuildPipeline(ctx context.Context, outputPath string, state *RotationState) (*pipeline.Pipe[[]byte], error) {
+func (s *HlsFmp4Strategy) BuildPipeline(ctx context.Context, outputPath string, state *RotationState, hooks PipelineHooks) (*pipeline.Pipe[[]byte], error) {
 	pendingInit := state.Data[fmp4StatePendingInit]
 	pipe := pipeline.New(
 		processors.NewSegmentDedup(),
@@ -61,6 +61,10 @@ func (s *HlsFmp4Strategy) BuildPipeline(ctx context.Context, outputPath string, 
 			processors.WithSDCardProtection(config.ReadOnly.SkipSmallFlush()),
 			processors.WithDropFilePageCache(config.ReadOnly.DropFilePageCache()),
 			processors.WithSequentialWrite(config.ReadOnly.SequentialWrite()),
+			processors.WithOnBytesWritten(hooks.OnBytesWritten),
+			processors.WithOnFlush(hooks.OnFlush),
+			processors.WithOnSync(hooks.OnSync),
+			processors.WithOnEnqueueWait(hooks.OnEnqueueWait),
 		),
 	)
 	return pipe, nil

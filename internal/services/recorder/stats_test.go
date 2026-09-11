@@ -3,8 +3,10 @@ package recorder
 import (
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/bilirec/bilirec/pkg/ds"
+	"github.com/puzpuzpuz/xsync/v4"
 )
 
 func TestIsRecording_DanmakuSidecarStem(t *testing.T) {
@@ -35,5 +37,28 @@ func TestRecordingFileStem(t *testing.T) {
 	}
 	if got := recordingFileStem("noext"); got != "" {
 		t.Fatalf("expected empty stem for extensionless name, got %q", got)
+	}
+}
+
+func TestGetStatsSeparatesReadAndWritten(t *testing.T) {
+	svc := &Service{
+		recording: xsync.NewMap[int, *Info](),
+	}
+	info := &Info{}
+	info.startTime = time.Now()
+	info.bytesRead.Store(5000)
+	info.bytesWritten.Store(3000)
+
+	svc.recording.Store(42, info)
+
+	stats, ok := svc.GetStats(42)
+	if !ok {
+		t.Fatal("expected stats")
+	}
+	if stats.BytesRead != 5000 {
+		t.Fatalf("bytes_read = %d, want 5000", stats.BytesRead)
+	}
+	if stats.BytesWritten != 3000 {
+		t.Fatalf("bytes_written = %d, want 3000", stats.BytesWritten)
 	}
 }

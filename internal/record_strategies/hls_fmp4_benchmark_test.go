@@ -38,7 +38,7 @@ func BenchmarkHlsFmp4Strategy_PipelineThroughput(b *testing.B) {
 	ctx := context.Background()
 	strategy := NewHlsFmp4Strategy(10000)
 	outputPath := filepath.Join(b.TempDir(), "bench.fmp4")
-	pipe, err := strategy.BuildPipeline(ctx, outputPath, &RotationState{Data: map[string][]byte{}})
+	pipe, err := strategy.BuildPipeline(ctx, outputPath, &RotationState{Data: map[string][]byte{}}, PipelineHooks{})
 	if err != nil {
 		b.Fatalf("BuildPipeline failed: %v", err)
 	}

@@ -3,6 +3,13 @@ package metrics
 const (
 	metricActiveRecordings                    = "bilirec_active_recordings"
 	metricRoomStreamBytesTotal                = "bilirec_room_stream_bytes_total"
+	metricRoomStreamBytesWrittenTotal         = "bilirec_room_stream_bytes_written_total"
+	metricRoomStreamTimestampJumpsTotal       = "bilirec_room_stream_timestamp_jumps_total"
+	metricRoomStreamTimestampJumpCollapsedSec = "bilirec_room_stream_timestamp_jump_collapsed_seconds_total"
+	metricRoomStreamEnqueueWaitsTotal         = "bilirec_room_stream_enqueue_waits_total"
+	metricRoomStreamEnqueueWaitSecondsTotal   = "bilirec_room_stream_enqueue_wait_seconds_total"
+	metricRoomStreamSlowFlushesTotal          = "bilirec_room_stream_slow_flushes_total"
+	metricRoomStreamSlowSyncsTotal            = "bilirec_room_stream_slow_syncs_total"
 	metricRoomRecordingSessionsTotal          = "bilirec_room_recording_sessions_total"
 	metricRoomStreamRecoveryTotal             = "bilirec_room_stream_recovery_total"
 	metricRoomRecordingActive                 = "bilirec_room_recording_active"
@@ -70,7 +77,7 @@ var (
 	}
 )
 
-// AddStreamBytes accumulates the number of bytes written for a room.
+// AddStreamBytes accumulates TCP bytes read from the live stream for a room.
 func (e *Exporter) AddStreamBytes(roomID int, n int) {
 	if e.registry == nil {
 		return
@@ -207,6 +214,13 @@ func (e *Exporter) unregisterRecorderCounters(roomID int) {
 		return
 	}
 	e.registry.unregisterCounter(metricRoomStreamBytesTotal, roomID)
+	e.registry.unregisterCounter(metricRoomStreamBytesWrittenTotal, roomID)
+	e.registry.unregisterCounter(metricRoomStreamTimestampJumpsTotal, roomID)
+	e.registry.unregisterFloatCounter(metricRoomStreamTimestampJumpCollapsedSec, roomID)
+	e.registry.unregisterCounter(metricRoomStreamEnqueueWaitsTotal, roomID)
+	e.registry.unregisterFloatCounter(metricRoomStreamEnqueueWaitSecondsTotal, roomID)
+	e.registry.unregisterCounter(metricRoomStreamSlowFlushesTotal, roomID)
+	e.registry.unregisterCounter(metricRoomStreamSlowSyncsTotal, roomID)
 	e.registry.unregisterCounter(metricRoomRecordingSessionsTotal, roomID)
 	e.registry.unregisterCounter(metricRoomStreamRecoveryTotal, roomID)
 	e.registry.unregisterCounter(metricRoomStreamConnectAttemptsTotal, roomID)

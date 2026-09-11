@@ -54,7 +54,7 @@ func TestHlsFmp4Strategy_SkipsDuplicateInitInSingleFile(t *testing.T) {
 	strategy := NewHlsFmp4Strategy(10000)
 	outPath := filepath.Join(t.TempDir(), "single.fmp4")
 
-	pipe, err := strategy.BuildPipeline(ctx, outPath, &RotationState{Data: map[string][]byte{}})
+	pipe, err := strategy.BuildPipeline(ctx, outPath, &RotationState{Data: map[string][]byte{}}, PipelineHooks{})
 	if err != nil {
 		t.Fatalf("BuildPipeline: %v", err)
 	}
@@ -97,7 +97,7 @@ func TestHlsFmp4Strategy_RotatesOnChangedInitWithPendingReplay(t *testing.T) {
 	seg0 := filepath.Join(dir, "seg0.fmp4")
 	seg1 := filepath.Join(dir, "seg1.fmp4")
 
-	pipe0, err := strategy.BuildPipeline(ctx, seg0, &RotationState{Data: map[string][]byte{}})
+	pipe0, err := strategy.BuildPipeline(ctx, seg0, &RotationState{Data: map[string][]byte{}}, PipelineHooks{})
 	if err != nil {
 		t.Fatalf("BuildPipeline seg0: %v", err)
 	}
@@ -129,7 +129,7 @@ func TestHlsFmp4Strategy_RotatesOnChangedInitWithPendingReplay(t *testing.T) {
 		t.Fatal("expected pending init in rotation state")
 	}
 
-	pipe1, err := strategy.BuildPipeline(ctx, seg1, handle.State)
+	pipe1, err := strategy.BuildPipeline(ctx, seg1, handle.State, PipelineHooks{})
 	if err != nil {
 		t.Fatalf("BuildPipeline seg1: %v", err)
 	}

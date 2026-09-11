@@ -14,6 +14,7 @@ import (
 type Info struct {
 	status             atomic.Pointer[RecordStatus]
 	bytesRead          atomic.Uint64
+	bytesWritten       atomic.Uint64
 	actualQn           atomic.Int32
 	actualStreamFormat ds.Atomic[string]
 	isAudioOnly        atomic.Bool

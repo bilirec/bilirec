@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/bilirec/bilirec/pkg/flv"
 )
@@ -272,6 +273,44 @@ func TestRealtimeFixer_ReportsTimestampJump(t *testing.T) {
 	secondTs := uint32(secondHeader[7])<<24 | uint32(secondHeader[4])<<16 | uint32(secondHeader[5])<<8 | uint32(secondHeader[6])
 	if secondTs != 22 {
 		t.Fatalf("expected repaired timestamp 22ms, got %d", secondTs)
+	}
+}
+
+func TestRealtimeFixer_JumpReporterDoesNotHoldFixLock(t *testing.T) {
+	fixer := flv.NewRealtimeFixer()
+	defer fixer.Close()
+
+	fixer.SetTimestampJumpReporter(func(w flv.TimestampJumpWarning) {
+		fixer.SetTimestampJumpLogger(func(flv.TimestampJumpWarning) {})
+		_, _, _ = fixer.GetDedupStats()
+	})
+
+	if _, err := fixer.Fix(flv.FlvHeader); err != nil {
+		t.Fatalf("unexpected header error: %v", err)
+	}
+
+	tag1 := flv.NewTagBytes(flv.TagTypeAudio, []byte{0xaf, 0x01, 0x11})
+	setTimestamp(tag1, 0)
+	tag2 := flv.NewTagBytes(flv.TagTypeAudio, []byte{0xaf, 0x01, 0x22})
+	setTimestamp(tag2, 1200)
+
+	in := make([]byte, 0, flv.PrevTagSizeBytes+len(tag1)+len(tag2))
+	in = append(in, 0, 0, 0, 0)
+	in = append(in, tag1...)
+	in = append(in, tag2...)
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		if _, err := fixer.Fix(in); err != nil {
+			t.Errorf("unexpected fix error: %v", err)
+		}
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Fix deadlocked: jump reporter must not run while Fix holds mu")
 	}
 }
 

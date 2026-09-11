@@ -9,6 +9,7 @@ import (
 )
 
 type Stats struct {
+	BytesRead           uint64       `json:"bytes_read"`
 	BytesWritten        uint64       `json:"bytes_written"`
 	DanmakuBytesWritten uint64       `json:"danmaku_bytes_written"`
 	RecordDanmaku       bool         `json:"record_danmaku"`
@@ -58,9 +59,14 @@ func (r *Service) GetStats(roomId int) (*Stats, bool) {
 	if info.room != nil {
 		roomTitle = info.room.Title
 	}
+	var danmakuBytes uint64
+	if r.dm != nil {
+		danmakuBytes = r.dm.GetBytesWritten(roomId)
+	}
 	return &Stats{
-		BytesWritten:        info.bytesRead.Load(),
-		DanmakuBytesWritten: r.dm.GetBytesWritten(roomId),
+		BytesRead:           info.bytesRead.Load(),
+		BytesWritten:        info.bytesWritten.Load(),
+		DanmakuBytesWritten: danmakuBytes,
 		RecordDanmaku:       info.startOptions.recordDanmaku,
 		Status:              status,
 		StartTime:           info.startTime.Unix(),

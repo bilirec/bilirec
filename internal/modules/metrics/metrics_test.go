@@ -5,6 +5,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/bilirec/bilirec/internal/modules/config"
 	"go.uber.org/fx"
@@ -33,7 +34,13 @@ func TestExporterDisabledNoop(t *testing.T) {
 	if e.registry != nil {
 		t.Fatal("disabled exporter must have nil registry")
 	}
+	if e.Enabled() {
+		t.Fatal("disabled exporter must report Enabled false")
+	}
 	// All methods must be safe no-ops.
+	if e.StreamSession(123) != nil {
+		t.Fatal("disabled exporter must return a nil stream session")
+	}
 	e.AddStreamBytes(123, 1024)
 	e.RecordingStarted(123, "uname")
 	e.RecordingStopped(123)
@@ -148,9 +155,21 @@ func TestConvertTasksPendingGauge(t *testing.T) {
 
 func TestExporterEnabled(t *testing.T) {
 	e := newExporter(t, true)
+	if !e.Enabled() {
+		t.Fatal("enabled exporter must report Enabled true")
+	}
 
 	e.RecordingStarted(123, "主播A")
 	e.AddStreamBytes(123, 1024)
+	sess := e.StreamSession(123)
+	if sess == nil {
+		t.Fatal("enabled exporter must return a stream session")
+	}
+	sess.AddBytesWritten(900)
+	sess.RecordTimestampJump(1200)
+	sess.RecordEnqueueWait(50 * time.Millisecond)
+	sess.RecordSlowFlush()
+	sess.RecordSlowSync()
 	e.SetLiveStatus(123, "主播A", true)
 	e.LiveSessionDetected(123)
 	e.AddRecovery(123)
@@ -176,6 +195,12 @@ func TestExporterEnabled(t *testing.T) {
 	out := e.scrape()
 	for _, want := range []string{
 		`bilirec_room_stream_bytes_total{room_id="123"} 1024`,
+		`bilirec_room_stream_bytes_written_total{room_id="123"} 900`,
+		`bilirec_room_stream_timestamp_jumps_total{room_id="123"} 1`,
+		`bilirec_room_stream_timestamp_jump_collapsed_seconds_total{room_id="123"} 1.2`,
+		`bilirec_room_stream_enqueue_waits_total{room_id="123"} 1`,
+		`bilirec_room_stream_slow_flushes_total{room_id="123"} 1`,
+		`bilirec_room_stream_slow_syncs_total{room_id="123"} 1`,
 		`bilirec_room_recording_sessions_total{room_id="123"} 1`,
 		`bilirec_room_recording_active{room_id="123"} 1`,
 		`bilirec_room_recording_recovering{room_id="123"} 0`,
@@ -250,6 +275,34 @@ func TestExporterEnabled(t *testing.T) {
 	e.DeleteRoom(123)
 	if out = e.scrape(); strings.Contains(out, `room_id="123"`) {
 		t.Errorf("DeleteRoom should remove all series of room 123:\n%s", out)
+	}
+}
+
+func TestStreamSession_EagerCountersAndEnqueueThreshold(t *testing.T) {
+	e := newExporter(t, true)
+	sess := e.StreamSession(789)
+	if sess == nil {
+		t.Fatal("expected non-nil session")
+	}
+
+	sess.RecordEnqueueWait(500 * time.Microsecond)
+	out := e.scrape()
+	if strings.Contains(out, `bilirec_room_stream_enqueue_waits_total{room_id="789"} 1`) {
+		t.Fatalf("StreamSession should ignore sub-threshold waits:\n%s", out)
+	}
+
+	sess.AddBytesWritten(100)
+	sess.RecordEnqueueWait(15 * time.Millisecond)
+	sess.RecordTimestampJump(1200)
+	out = e.scrape()
+	for _, want := range []string{
+		`bilirec_room_stream_bytes_written_total{room_id="789"} 100`,
+		`bilirec_room_stream_enqueue_waits_total{room_id="789"} 1`,
+		`bilirec_room_stream_timestamp_jumps_total{room_id="789"} 1`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q in scrape output:\n%s", want, out)
+		}
 	}
 }
 

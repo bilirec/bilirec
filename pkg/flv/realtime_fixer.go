@@ -26,6 +26,8 @@ type RealtimeFixer struct {
 	lastDedupClean    int32 // timestamp of last dedup clean
 	fixCalls          uint32
 	jumpReporter      TimestampJumpReporter
+	jumpLogger        TimestampJumpReporter
+	pendingJumps      []TimestampJumpWarning
 }
 
 func NewRealtimeFixer(opts ...RealtimeFixerOption) *RealtimeFixer {
@@ -61,6 +63,12 @@ func (rf *RealtimeFixer) SetTimestampJumpReporter(reporter TimestampJumpReporter
 	rf.jumpReporter = reporter
 }
 
+func (rf *RealtimeFixer) SetTimestampJumpLogger(logger TimestampJumpReporter) {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+	rf.jumpLogger = logger
+}
+
 func (rf *RealtimeFixer) GetDedupStats() (duplicates int64, cacheSize int, cacheCapacity int) {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
@@ -87,6 +95,9 @@ func (rf *RealtimeFixer) shrinkOutputBuffer() {
 //   - non-nil []byte contains serialized FLV tags ready for downstream processing.
 func (rf *RealtimeFixer) Fix(input []byte) ([]byte, error) {
 	rf.mu.Lock()
+	rf.pendingJumps = rf.pendingJumps[:0]
+	// Defers run LIFO: Unlock first, then emit jump callbacks outside the lock.
+	defer rf.emitPendingJumps()
 	defer rf.mu.Unlock()
 
 	rf.buffer.Write(input)
@@ -320,13 +331,28 @@ func (rf *RealtimeFixer) trimParseBufferToTail(keep int) {
 	rf.buffer.Write(b[len(b)-keep:])
 }
 
+func (rf *RealtimeFixer) emitPendingJumps() {
+	jumps := append([]TimestampJumpWarning(nil), rf.pendingJumps...)
+	reporter := rf.jumpReporter
+	logger := rf.jumpLogger
+	for _, w := range jumps {
+		if reporter != nil {
+			reporter(w)
+		}
+		if logger != nil {
+			logger(w)
+		}
+	}
+}
+
 func (rf *RealtimeFixer) fixTimestamp(tag *Tag) {
 	ts := rf.tsStore
 	currentTimestamp := tag.Timestamp
 	previousTimestamp := ts.LastOriginal
 	previousOffset := ts.CurrentOffset
 	wasFirstChunk := ts.FirstChunk
-	var jumpWarning *TimestampJumpWarning
+	var jumpWarning TimestampJumpWarning
+	hasJump := false
 
 	if ts.FirstChunk {
 		ts.FirstChunk = false
@@ -336,7 +362,7 @@ func (rf *RealtimeFixer) fixTimestamp(tag *Tag) {
 	diff := currentTimestamp - previousTimestamp
 
 	if diff < -JumpThreshold || (ts.LastOriginal == 0 && diff < 0) {
-		jumpWarning = &TimestampJumpWarning{
+		jumpWarning = TimestampJumpWarning{
 			CurrentTimestamp:  currentTimestamp,
 			PreviousTimestamp: previousTimestamp,
 			Delta:             diff,
@@ -344,9 +370,10 @@ func (rf *RealtimeFixer) fixTimestamp(tag *Tag) {
 			IsRotationSegment: rf.isRotationSegment,
 			TagType:           tag.Type,
 		}
+		hasJump = true
 		ts.CurrentOffset = currentTimestamp - ts.NextTimestampTarget
 	} else if diff > JumpThreshold {
-		jumpWarning = &TimestampJumpWarning{
+		jumpWarning = TimestampJumpWarning{
 			CurrentTimestamp:  currentTimestamp,
 			PreviousTimestamp: previousTimestamp,
 			Delta:             diff,
@@ -354,15 +381,16 @@ func (rf *RealtimeFixer) fixTimestamp(tag *Tag) {
 			IsRotationSegment: rf.isRotationSegment,
 			TagType:           tag.Type,
 		}
+		hasJump = true
 		ts.CurrentOffset = currentTimestamp - ts.NextTimestampTarget
 	}
 
 	ts.LastOriginal = currentTimestamp
-	if jumpWarning != nil {
+	if hasJump {
 		jumpWarning.AppliedOffset = ts.CurrentOffset
 		skipTransientResetJump := rf.isRotationSegment && jumpWarning.PreviousTimestamp == 0 && ts.NextTimestampTarget > 0
-		if rf.jumpReporter != nil && !wasFirstChunk && !skipTransientResetJump {
-			rf.jumpReporter(*jumpWarning)
+		if !wasFirstChunk && !skipTransientResetJump {
+			rf.pendingJumps = append(rf.pendingJumps, jumpWarning)
 		}
 	}
 

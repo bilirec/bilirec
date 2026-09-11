@@ -40,6 +40,11 @@ func provider(lc fx.Lifecycle, cfg *config.Config) *Exporter {
 	return exporter
 }
 
+// Enabled reports whether metrics export is active for this process.
+func (e *Exporter) Enabled() bool {
+	return e.registry != nil
+}
+
 // DeleteRoom removes all metric series belonging to a room.
 func (e *Exporter) DeleteRoom(roomID int) {
 	if e.registry == nil {
