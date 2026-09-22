@@ -15,14 +15,29 @@ import (
 )
 
 const (
-	broadcastsEndpoint   = "https://workers.vrp.moe/laplace/ranking?type=danmakus"
-	envLiveRoomID        = "BILIBILI_TEST_ROOM_ID"
-	envLiveRoomIDs       = "BILIBILI_TEST_ROOM_IDS"
-	broadcastsFetchTimeout = 90 * time.Second
+	listRecordingEndpoint  = "https://api.ukamnads.icu/api/info/listrecording"
+	envLiveRoomID          = "BILIBILI_TEST_ROOM_ID"
+	envLiveRoomIDs         = "BILIBILI_TEST_ROOM_IDS"
+	listRecordingFetchTimeout = 90 * time.Second
 )
 
+type listRecordingResponse struct {
+	Code    int                   `json:"code"`
+	Message string                `json:"message"`
+	Data    []listRecordingEntry  `json:"data"`
+}
+
+type listRecordingEntry struct {
+	Channel listRecordingChannel `json:"channel"`
+}
+
+type listRecordingChannel struct {
+	RoomID   int  `json:"roomId"`
+	IsLiving bool `json:"isLiving"`
+}
+
 type broadcastEntry struct {
-	RoomID int `json:"roomid"`
+	RoomID int
 }
 
 var (
@@ -32,7 +47,7 @@ var (
 )
 
 // LiveRoomID returns one live room ID, preferring environment overrides when set.
-// It skips the test if no live rooms can be obtained from the broadcast API.
+// It skips the test if no live rooms can be obtained from the listrecording API.
 func LiveRoomID(tb testing.TB) int {
 	tb.Helper()
 	ids := LiveRoomIDs(tb, 1)
@@ -43,7 +58,7 @@ func LiveRoomID(tb testing.TB) int {
 	return ids[0]
 }
 
-// LiveRoomIDs returns n live room IDs, shuffling the cached broadcast pool.
+// LiveRoomIDs returns n live room IDs, shuffling the cached listrecording pool.
 // If environment overrides are set, they are used first.
 func LiveRoomIDs(tb testing.TB, n int) []int {
 	tb.Helper()
@@ -143,7 +158,7 @@ func cachedBroadcastRoomIDs(tb testing.TB) []int {
 }
 
 func fetchBroadcastRoomIDs() ([]int, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), broadcastsFetchTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), listRecordingFetchTimeout)
 	defer cancel()
 
 	payload, err := fetchBroadcastPage(ctx)
@@ -165,13 +180,13 @@ func fetchBroadcastRoomIDs() ([]int, error) {
 	}
 
 	if len(ids) == 0 {
-		return nil, fmt.Errorf("broadcast API 未返回有效的直播间 ID")
+		return nil, fmt.Errorf("listrecording API 未返回有效的直播间 ID")
 	}
 	return ids, nil
 }
 
 func fetchBroadcastPage(ctx context.Context) ([]broadcastEntry, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, broadcastsEndpoint, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, listRecordingEndpoint, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -185,12 +200,24 @@ func fetchBroadcastPage(ctx context.Context) ([]broadcastEntry, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("broadcast API 返回状态 %s", resp.Status)
+		return nil, fmt.Errorf("listrecording API 返回状态 %s", resp.Status)
 	}
 
-	var payload []broadcastEntry
-	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+	var body listRecordingResponse
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
 		return nil, err
+	}
+	if body.Code != 200 {
+		return nil, fmt.Errorf("listrecording API 返回 code %d: %s", body.Code, body.Message)
+	}
+
+	payload := make([]broadcastEntry, 0, len(body.Data))
+	for _, item := range body.Data {
+		roomID := item.Channel.RoomID
+		if roomID <= 0 || !item.Channel.IsLiving {
+			continue
+		}
+		payload = append(payload, broadcastEntry{RoomID: roomID})
 	}
 	return payload, nil
 }
