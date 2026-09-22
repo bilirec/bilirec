@@ -91,6 +91,12 @@ func (s *Service) StartSession(roomID int, recCtx context.Context, videoPath str
 	log.Infof("房间 %d 弹幕录制已开始：%s", roomID, PathForVideo(videoPath, enc.Ext()))
 }
 
+// IsSessionActive reports whether a room has a live danmaku recording session.
+func (s *Service) IsSessionActive(roomID int) bool {
+	sess, ok := s.sessions.Load(roomID)
+	return ok && sess != nil && !sess.isDone()
+}
+
 // ActiveSessions reports how many rooms currently have a danmaku session.
 // When danmaku recording is disabled this is always zero.
 func (s *Service) ActiveSessions() int {

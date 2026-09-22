@@ -1,5 +1,31 @@
 package config
 
+import "strings"
+
+// ParseWebhookURLs splits WEBHOOK_URLS (newline-separated) into POST targets.
+func ParseWebhookURLs(raw string) []string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil
+	}
+	var out []string
+	for line := range strings.SplitSeq(raw, "\n") {
+		line = strings.TrimSpace(line)
+		if line != "" {
+			out = append(out, line)
+		}
+	}
+	return out
+}
+
+// WebhookConfigured reports whether WEBHOOK_URLS contains at least one non-empty URL line.
+func (c *Config) WebhookConfigured() bool {
+	if c == nil {
+		return false
+	}
+	return len(ParseWebhookURLs(c.WebhookURLs)) > 0
+}
+
 // IsHighQualityQn reports whether the stream quality level uses the high-tier
 // read-buffer pool (2K/4K and above).
 func IsHighQualityQn(qn int) bool {

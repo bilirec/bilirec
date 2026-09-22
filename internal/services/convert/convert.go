@@ -11,6 +11,7 @@ import (
 	"github.com/bilirec/bilirec/internal/modules/config"
 	"github.com/bilirec/bilirec/internal/modules/metrics"
 	"github.com/bilirec/bilirec/internal/services/path"
+	"github.com/bilirec/bilirec/internal/services/webhook"
 	"github.com/bilirec/bilirec/pkg/cloudconvert"
 	"github.com/bilirec/bilirec/pkg/db"
 	"github.com/bilirec/bilirec/pkg/ffmpeg"
@@ -39,13 +40,14 @@ type Service struct {
 	noConvertIfInvalid bool
 	getActives         GetActiveRecordings
 	wg                 sync.WaitGroup
-	metrics            *serviceMetrics
+	sidecars           *serviceSidecars
 }
 
-func NewService(ls fx.Lifecycle, cfg *config.Config, pathSvc *path.Service, metrics *metrics.Exporter) *Service {
+func NewService(ls fx.Lifecycle, cfg *config.Config, pathSvc *path.Service, metrics *metrics.Exporter, webhookSvc *webhook.Service) *Service {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	deleter := newSourceDeleter(ctx)
+	sidecars := &serviceSidecars{}
 
 	svc := &Service{
 		cloudthreshold:     cfg.CloudConvertThreshold,
@@ -53,9 +55,8 @@ func NewService(ls fx.Lifecycle, cfg *config.Config, pathSvc *path.Service, metr
 		ctx:                ctx,
 		deleter:            deleter,
 		noConvertIfInvalid: cfg.NoConvertIfInvalid,
-		metrics:            newServiceMetrics(metrics, false),
+		sidecars:           sidecars,
 	}
-
 	if cfg.CloudConvertApiKey != "" {
 		svc.managers["cloudconvert"] = newCloudConvertManager(
 			cloudconvert.NewClient(
@@ -66,19 +67,24 @@ func NewService(ls fx.Lifecycle, cfg *config.Config, pathSvc *path.Service, metr
 			pathSvc,
 			svc.activeRecordings,
 			deleter,
-			svc.metrics,
+			sidecars,
 		)
 	} else {
 		log.Info("未提供 CloudConvert API Key，CloudConvert 已禁用")
 	}
 
 	if ffmpeg.Available() {
-		svc.managers["ffmpeg"] = newFFmpegConvertManager(svc.activeRecordings, deleter, svc.metrics)
+		svc.managers["ffmpeg"] = newFFmpegConvertManager(svc.activeRecordings, deleter, sidecars)
 	} else {
 		log.Warn("ffmpeg 不可用，ffmpeg 转码管理器未初始化")
 	}
 
-	svc.metrics.enabled = cfg.ConvertToMp4 && len(svc.managers) > 0
+	if cfg.ConvertToMp4 && len(svc.managers) > 0 {
+		sidecars.exporter = metrics
+		if cfg.WebhookConfigured() {
+			sidecars.webhook = webhookSvc
+		}
+	}
 
 	stop := func() error {
 		cancel()

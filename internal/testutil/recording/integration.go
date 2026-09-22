@@ -30,6 +30,7 @@ import (
 	"github.com/bilirec/bilirec/internal/services/recorder"
 	"github.com/bilirec/bilirec/internal/services/room"
 	"github.com/bilirec/bilirec/internal/services/stream"
+	"github.com/bilirec/bilirec/internal/services/webhook"
 	"github.com/shirou/gopsutil/v4/cpu"
 	"github.com/shirou/gopsutil/v4/process"
 	"go.uber.org/fx"
@@ -80,6 +81,7 @@ func NewSession(t *testing.T) *Session {
 		fx.Provide(path.NewService),
 		fx.Provide(stream.NewService),
 		fx.Provide(room.NewService),
+		fx.Provide(webhook.NewService),
 		fx.Provide(convert.NewService),
 		fx.Provide(notify.NewService),
 		fx.Provide(danmaku.NewService),

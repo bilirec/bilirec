@@ -15,6 +15,7 @@ import (
 	"github.com/bilirec/bilirec/internal/services/notify"
 	"github.com/bilirec/bilirec/internal/services/recorder"
 	"github.com/bilirec/bilirec/internal/services/room"
+	"github.com/bilirec/bilirec/internal/services/webhook"
 	"github.com/bilirec/bilirec/internal/services/subscribe"
 	"github.com/bilirec/bilirec/pkg/coordinator"
 	"github.com/bilirec/bilirec/pkg/db"
@@ -40,8 +41,10 @@ type Service struct {
 	subSvc         *subscribe.Service
 	roomSvc        *room.Service
 	recSvc         *recorder.Service
-	notifySvc      *notify.Service
-	m              *metrics.Exporter
+	notifySvc *notify.Service
+	wh        *webhook.Service
+	webhookOn bool
+	m         *metrics.Exporter
 	bucket         *db.Bucket
 	sessionKeys    *xsync.Map[int, string]
 	autoStartRetry *xsync.Map[int, autoStartRetry]
@@ -60,18 +63,22 @@ type Service struct {
 	wg     sync.WaitGroup
 }
 
-func NewService(lc fx.Lifecycle, cfg *config.Config, subSvc *subscribe.Service, roomSvc *room.Service, recSvc *recorder.Service, notifySvc *notify.Service, m *metrics.Exporter) *Service {
+func NewService(lc fx.Lifecycle, cfg *config.Config, subSvc *subscribe.Service, roomSvc *room.Service, recSvc *recorder.Service, notifySvc *notify.Service, m *metrics.Exporter, webhookSvc *webhook.Service) *Service {
 	ctx, cancel := context.WithCancel(context.Background())
 	s := &Service{
 		subSvc:         subSvc,
 		roomSvc:        roomSvc,
 		recSvc:         recSvc,
 		notifySvc:      notifySvc,
-		m:              m,
+		webhookOn: cfg.WebhookConfigured(),
+		m:         m,
 		sessionKeys:    xsync.NewMap[int, string](),
 		autoStartRetry: xsync.NewMap[int, autoStartRetry](),
 		ctx:            ctx,
-		cancel:         cancel,
+		cancel: cancel,
+	}
+	if cfg.WebhookConfigured() {
+		s.wh = webhookSvc
 	}
 
 	lc.Append(fx.StartStopHook(
@@ -249,7 +256,9 @@ func (s *Service) tryStartShardAutoRecordRooms(shardIndex, shardCount int) {
 		s.m.SetLiveStatus(roomID, info.Uname, isLive)
 
 		if !isLive || currentSessionKey == "" {
-			s.clearSessionState(roomID)
+			if s.clearSessionState(roomID) {
+				s.emitStreamEnded(info)
+			}
 			continue
 		}
 
@@ -263,6 +272,7 @@ func (s *Service) tryStartShardAutoRecordRooms(shardIndex, shardCount int) {
 		if !isRetry {
 			log.Debugf("new live session detected for room %d (%s), key: %s", roomID, info.Uname, currentSessionKey)
 			s.m.LiveSessionDetected(roomID)
+			s.emitStreamStarted(info)
 		}
 
 		state := notify.LiveStateLiveDetected
@@ -363,15 +373,16 @@ func (s *Service) markSessionState(roomID int, sessionKey string) {
 	}
 }
 
-func (s *Service) clearSessionState(roomID int) {
+func (s *Service) clearSessionState(roomID int) bool {
 	s.autoStartRetry.Delete(roomID)
 	_, loaded := s.sessionKeys.LoadAndDelete(roomID)
 	if !loaded {
-		return
+		return false
 	}
 	if err := s.bucket.Delete([]byte(strconv.Itoa(roomID))); err != nil {
 		log.Warnf("清理房间 %d 会话状态失败：%v", roomID, err)
 	}
+	return true
 }
 
 func (s *Service) invalidateStaleRooms(rooms map[int]*subscribe.RoomConfig) {

@@ -11,6 +11,7 @@ import (
 	"github.com/bilirec/bilirec/internal/modules/metrics"
 	"github.com/bilirec/bilirec/internal/services/convert"
 	"github.com/bilirec/bilirec/internal/services/path"
+	"github.com/bilirec/bilirec/internal/services/webhook"
 	"github.com/bilirec/bilirec/pkg/ffmpeg"
 	"github.com/bilirec/bilirec/utils"
 	"go.uber.org/fx"
@@ -35,6 +36,7 @@ func TestFFmpegFailureCooldownAllowsOtherTaskIntegration(t *testing.T) {
 		config.Module,
 		metrics.Module,
 		fx.Provide(path.NewService),
+		fx.Provide(webhook.NewService),
 		fx.Provide(convert.NewService),
 		fx.Populate(&svc),
 	)

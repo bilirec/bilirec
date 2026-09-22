@@ -140,6 +140,10 @@ func (r *Service) internalStart(p internalStartParams) error {
 		info.chunkPool = chunkPool
 		info.SetStream(streamInfo.Qn, streamInfo.IsAudioOnly, streamInfo.Format)
 
+		if p.mode == startModeUser {
+			r.emitSessionStarted(info)
+		}
+
 		return r.prepare(p.roomId, ch, strategy, info.ctx, info, p.mode == startModeUser)
 	}
 
@@ -193,6 +197,11 @@ func (r *Service) commitSession(
 		return info, nil
 	}
 
+	sessionID, err := utils.NewUUIDv4()
+	if err != nil {
+		return nil, fmt.Errorf("无法生成录制会话 ID：%w", err)
+	}
+
 	info := &Info{
 		ctx:          p.ctx,
 		cancel:       p.cancel,
@@ -201,6 +210,7 @@ func (r *Service) commitSession(
 		fileTime:     now,
 		room:         roomInfo,
 		maxDuration:  maxDuration,
+		sessionID:    sessionID,
 		backoff: backoff.NewSequence(
 			2*time.Second,
 			2*time.Second,

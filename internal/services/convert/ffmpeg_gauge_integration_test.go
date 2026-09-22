@@ -13,6 +13,7 @@ import (
 	"github.com/bilirec/bilirec/internal/modules/config"
 	"github.com/bilirec/bilirec/internal/modules/metrics"
 	"github.com/bilirec/bilirec/internal/services/path"
+	"github.com/bilirec/bilirec/internal/services/webhook"
 	"github.com/bilirec/bilirec/pkg/ffmpeg"
 	"go.uber.org/fx"
 	"go.uber.org/fx/fxtest"
@@ -50,6 +51,7 @@ func startFFmpegConvertApp(t *testing.T, intervalSecs string) (*Service, *metric
 		config.Module,
 		metrics.Module,
 		fx.Provide(path.NewService),
+		fx.Provide(webhook.NewService),
 		fx.Provide(NewService),
 		fx.Populate(&svc, &exporter),
 	)

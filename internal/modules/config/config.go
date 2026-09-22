@@ -91,6 +91,7 @@ type Config struct {
 	FrontendURL        *url.URL
 	WebPushSubscriber  string
 	NotifySSEToken     string
+	WebhookURLs        string // newline-separated BililiveRecorder v2 webhook targets
 	Username           string
 	PasswordHash       string
 	ViewerUsername     string
@@ -247,6 +248,7 @@ func provider(lc fx.Lifecycle) (*Config, error) {
 		PublicBaseUrl:                      utils.EmptyOrElse(os.Getenv("PUBLIC_BASE_URL"), utils.EmptyOrElse(os.Getenv("BACKEND_HOST"), "")),
 		WebPushSubscriber:                  utils.EmptyOrElse(os.Getenv("WEBPUSH_SUBSCRIBER"), "mailto:webpush@example.com"),
 		NotifySSEToken:                     strings.TrimSpace(os.Getenv("NOTIFY_SSE_TOKEN")),
+		WebhookURLs:                        os.Getenv("WEBHOOK_URLS"),
 		Username:                           username,
 		PasswordHash:                       string(passwordHash),
 		ViewerUsername:                     viewerUsername,

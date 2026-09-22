@@ -41,8 +41,8 @@ type cloudConvertManager struct {
 	client     *cloudconvert.Client
 	serializer *pool.Serializer
 	getActives GetActiveRecordings
-	deleter    *sourceDeleter
-	metrics    *serviceMetrics
+	deleter  *sourceDeleter
+	sidecars *serviceSidecars
 
 	processing   ds.AtomicSet[string]
 	downloadPool *pool.BytesPool
@@ -53,14 +53,14 @@ type cloudConvertManager struct {
 	pathSvc *path.Service
 }
 
-func newCloudConvertManager(client *cloudconvert.Client, pathSvc *path.Service, getActives GetActiveRecordings, deleter *sourceDeleter, metrics *serviceMetrics) ConvertManager {
+func newCloudConvertManager(client *cloudconvert.Client, pathSvc *path.Service, getActives GetActiveRecordings, deleter *sourceDeleter, sidecars *serviceSidecars) ConvertManager {
 	return &cloudConvertManager{
 		logger:           log.With("manager", "cloudconvert"),
 		client:           client,
 		serializer:       pool.NewSerializer(),
 		getActives:       getActives,
 		deleter:          deleter,
-		metrics:          metrics,
+		sidecars:         sidecars,
 		processing:       ds.NewSyncedSet[string](),
 		downloadPool:     pool.NewBytesPool(config.ReadOnly.DownloadBufferSize()),
 		concurrent:       semaphore.NewWeighted(int64(config.ReadOnly.CloudConvertMaxConcurrentDownloads())),
@@ -126,7 +126,7 @@ func (c *cloudConvertManager) Enqueue(inputPath, outputPath, format string, dele
 
 	err = c.bucket.Put([]byte(uuid), data)
 	if err == nil {
-		c.metrics.taskQueued(ProviderCloudConvert)
+		c.sidecars.metricsTaskQueued(ProviderCloudConvert)
 		c.refreshGaugeMetrics()
 	}
 	return queue, err
@@ -136,7 +136,7 @@ func (c *cloudConvertManager) Enqueue(inputPath, outputPath, format string, dele
 // right after a state change, so short-lived states are not missed between
 // periodic refreshes.
 func (c *cloudConvertManager) refreshGaugeMetrics() {
-	if !c.metrics.enabled {
+	if c.sidecars.exporter == nil {
 		return
 	}
 	list, err := c.ListInProgress()
@@ -231,7 +231,7 @@ func (c *cloudConvertManager) Cancel(taskID string) error {
 	if err := c.bucket.Delete([]byte(taskID)); err != nil {
 		return err
 	}
-	c.metrics.taskCancelled(ProviderCloudConvert)
+	c.sidecars.metricsTaskCancelled(ProviderCloudConvert)
 	c.refreshGaugeMetrics()
 	return nil
 }
@@ -280,7 +280,7 @@ func (c *cloudConvertManager) checkTaskStatusPeriodically(ctx context.Context, w
 						taskLog := c.logger.With("task_id", queue.TaskID)
 						taskLog.Infof("正在提交 cloudconvert 任务 input=%s output=%s", queue.InputPath, queue.OutputPath)
 						if err := c.submitTask(queue); err != nil {
-							c.metrics.taskFailed(ProviderCloudConvert)
+							c.sidecars.metricsTaskFailed(ProviderCloudConvert)
 							taskLog.Errorf("提交 cloudconvert 任务失败：%v", err)
 						}
 						continue
@@ -338,19 +338,20 @@ func (c *cloudConvertManager) checkTaskStatusPeriodically(ctx context.Context, w
 func (c *cloudConvertManager) asyncOnFinished(ctx context.Context, queue *TaskQueue, data cloudconvert.TaskData) {
 	defer c.processing.Remove(queue.TaskID)
 	if err := c.handleFinished(ctx, queue, &data); err != nil {
-		c.metrics.taskFailed(ProviderCloudConvert)
+		c.sidecars.metricsTaskFailed(ProviderCloudConvert)
 		c.logger.Errorf("处理任务 id=%v 状态=%v 失败：%v", queue.TaskID, data.Status, err)
 		c.refreshGaugeMetrics()
 		return
 	}
-	c.metrics.taskFinished(ProviderCloudConvert)
+	c.sidecars.metricsTaskFinished(ProviderCloudConvert)
+	c.sidecars.webhookConvertSucceeded(queue)
 	c.deleter.Schedule(queue, c.logger.With("task_id", queue.TaskID))
 	c.refreshGaugeMetrics()
 }
 
 func (c *cloudConvertManager) asyncOnFailed(queue *TaskQueue, data cloudconvert.TaskData) {
 	defer c.processing.Remove(queue.TaskID)
-	c.metrics.taskFailed(ProviderCloudConvert)
+	c.sidecars.metricsTaskFailed(ProviderCloudConvert)
 	if err := c.handleFailed(queue, &data); err != nil {
 		c.logger.Errorf("处理任务 id=%v 状态=%v 失败：%v", queue.TaskID, data.Status, err)
 	}
@@ -457,7 +458,7 @@ func (c *cloudConvertManager) handleFailed(queue *TaskQueue, info *cloudconvert.
 }
 
 func (c *cloudConvertManager) updateGaugeMetrics(queues []*TaskQueue) {
-	if !c.metrics.enabled {
+	if c.sidecars.exporter == nil {
 		return
 	}
 	pending := 0
@@ -469,7 +470,7 @@ func (c *cloudConvertManager) updateGaugeMetrics(queues []*TaskQueue) {
 			processing++
 		}
 	}
-	c.metrics.setTaskMetrics(ProviderCloudConvert, pending, processing)
+	c.sidecars.metricsSetTaskGauges(ProviderCloudConvert, pending, processing)
 }
 
 func (c *cloudConvertManager) validateDownloadedOutputSize(queue *TaskQueue) error {

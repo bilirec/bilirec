@@ -29,6 +29,9 @@ type Info struct {
 	room         *bilibili.LiveRoomInfoDetail
 	backoff      backoff.Backoff
 	chunkPool    *pool.BucketedBytesPool
+
+	sessionID       string
+	segmentOpenTime time.Time
 }
 
 func (r *Info) SetStream(qn int, audioOnly bool, streamFormat string) {

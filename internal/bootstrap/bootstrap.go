@@ -28,6 +28,7 @@ import (
 	st "github.com/bilirec/bilirec/internal/services/stream"
 	sc "github.com/bilirec/bilirec/internal/services/subcheck"
 	su "github.com/bilirec/bilirec/internal/services/subscribe"
+	wh "github.com/bilirec/bilirec/internal/services/webhook"
 	"github.com/bilirec/bilirec/pkg/logger"
 	"github.com/bilirec/bilirec/pkg/updatecheck"
 	"github.com/bilirec/bilirec/utils"
@@ -52,6 +53,7 @@ func MainModule() fx.Option {
 		fx.Provide(ro.NewService),
 		fx.Provide(su.NewService),
 		fx.Provide(no.NewService),
+		fx.Provide(wh.NewService),
 		fx.Provide(fi.NewService),
 
 		fx.Invoke(ja.NewService),
