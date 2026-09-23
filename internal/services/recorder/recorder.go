@@ -305,7 +305,11 @@ func (r *Service) rev(roomId int, ch <-chan []byte, info *Info, ctx context.Cont
 	log := log.With("room", roomId)
 	r.m.StreamConnectionActive(roomId, true)
 	defer func() {
-		r.m.StreamConnectionActive(roomId, false)
+		// Stop() already calls RecordingStopped + UnregisterRecorderRoom; clearing
+		// connection here would re-register the gauge at 0 after unregister.
+		if _, stillRecording := r.recording.Load(roomId); stillRecording {
+			r.m.StreamConnectionActive(roomId, false)
+		}
 		pipe.Close()
 		outputPath := info.OutputPath()
 		go r.finalize(roomId, info, outputPath, info.isAudioOnly.Load())
