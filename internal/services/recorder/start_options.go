@@ -7,10 +7,11 @@ import (
 )
 
 type RecordStartOptions struct {
-	hasDuration   bool
-	duration      time.Duration
-	streamOptions []bilibili.GetStreamURLsOption
-	recordDanmaku bool
+	hasDuration           bool
+	duration              time.Duration
+	streamOptions         []bilibili.GetStreamURLsOption
+	recordDanmaku         bool
+	deleteOldestOnLowDisk bool
 }
 
 type RecordStartOption func(*RecordStartOptions)
@@ -38,6 +39,14 @@ func WithStreamOptions(opts ...bilibili.GetStreamURLsOption) RecordStartOption {
 func WithRecordDanmaku(enabled bool) RecordStartOption {
 	return func(o *RecordStartOptions) {
 		o.recordDanmaku = enabled
+	}
+}
+
+// WithDeleteOldestOnLowDisk enables deleting this room's oldest recording by filename
+// when free space is below MIN_DISK_SPACE_BYTES before starting.
+func WithDeleteOldestOnLowDisk(enabled bool) RecordStartOption {
+	return func(o *RecordStartOptions) {
+		o.deleteOldestOnLowDisk = enabled
 	}
 }
 

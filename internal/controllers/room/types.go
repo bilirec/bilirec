@@ -33,6 +33,7 @@ type RoomConfigResponse struct {
 	OnlyAudio             bool     `json:"only_audio"`
 	RecordDanmaku         bool     `json:"record_danmaku"`
 	StreamProfiles        []string `json:"stream_profiles"`
+	DeleteOldestOnLowDisk bool     `json:"delete_oldest_on_low_disk"`
 }
 
 type UpdateRoomConfigRequest struct {
@@ -43,4 +44,5 @@ type UpdateRoomConfigRequest struct {
 	OnlyAudio             bool     `json:"only_audio"`
 	RecordDanmaku         bool     `json:"record_danmaku"`
 	StreamProfiles        []string `json:"stream_profiles"`
+	DeleteOldestOnLowDisk bool     `json:"delete_oldest_on_low_disk"`
 }

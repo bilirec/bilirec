@@ -42,6 +42,7 @@ func NewController(app *fiber.App, service *recorder.Service) *Controller {
 // @Param qn query int false "Stream quality code: 80,150,250,400,10000,20000,30000"
 // @Param only_audio query bool false "Whether to request only audio stream"
 // @Param record_danmaku query bool false "Whether to record live chat sidecar alongside video"
+// @Param delete_oldest_on_low_disk query bool false "When free space is below MIN_DISK_SPACE_BYTES, delete this room's oldest recordings by filename and retry"
 // @Success 200 "Recording started successfully"
 // @Failure 400 {string} string "Invalid room ID"
 // @Failure 403 {string} string "Forbidden"
@@ -99,6 +100,11 @@ func (r *Controller) startRecording(ctx fiber.Ctx) error {
 	recordDanmakuRaw := strings.TrimSpace(strings.ToLower(fiber.Query(ctx, "record_danmaku", "false")))
 	if recordDanmaku, _ := strconv.ParseBool(recordDanmakuRaw); recordDanmaku {
 		startArgs = append(startArgs, recorder.WithRecordDanmaku(true))
+	}
+
+	deleteOldestRaw := strings.TrimSpace(strings.ToLower(fiber.Query(ctx, "delete_oldest_on_low_disk", "false")))
+	if deleteOldest, _ := strconv.ParseBool(deleteOldestRaw); deleteOldest {
+		startArgs = append(startArgs, recorder.WithDeleteOldestOnLowDisk(true))
 	}
 
 	err = r.service.Start(roomId, startArgs...)

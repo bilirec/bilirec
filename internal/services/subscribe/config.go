@@ -15,6 +15,7 @@ type RoomConfig struct {
 	OnlyAudio             bool     // request audio-only stream when starting recording
 	RecordDanmaku         bool     // record live chat sidecar alongside video when starting recording
 	StreamProfiles        []string // empty/nil = auto (all formats); allow-list of http-flv|hls-ts|hls-fmp4
+	DeleteOldestOnLowDisk bool     // when starting record, purge this room's oldest file by filename if below MIN_DISK_SPACE_BYTES
 }
 
 var roomConfigSerializer = pool.NewSerializer()

@@ -295,6 +295,9 @@ func (s *Service) tryStartShardAutoRecordRooms(shardIndex, shardCount int) {
 				if cfg.RecordDanmaku {
 					autoRecordArgs = append(autoRecordArgs, recorder.WithRecordDanmaku(true))
 				}
+				if cfg.DeleteOldestOnLowDisk {
+					autoRecordArgs = append(autoRecordArgs, recorder.WithDeleteOldestOnLowDisk(true))
+				}
 
 				err := s.recSvc.Start(roomID, autoRecordArgs...)
 				switch err {

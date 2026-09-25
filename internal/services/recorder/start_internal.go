@@ -50,13 +50,8 @@ func (r *Service) internalStart(p internalStartParams) error {
 		return err
 	}
 
-	if r.cfg.MinDiskSpaceBytes > 0 {
-		diskSpace, err := utils.GetDiskSpace(r.cfg.OutputDir)
-		if err != nil {
-			l.Warnf("cannot check disk space: %v", err)
-		} else if isInsufficientDiskSpace(diskSpace.Free, r.cfg.MinDiskSpaceBytes) {
-			return ErrInsufficientDiskSpace
-		}
+	if err := r.ensureDiskSpace(l, p); err != nil {
+		return err
 	}
 
 	startTimeRoomInfo := time.Now()

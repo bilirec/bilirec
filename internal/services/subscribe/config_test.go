@@ -58,4 +58,7 @@ func TestParseRoomConfigDefaultsNewFields(t *testing.T) {
 	if len(parsed.StreamProfiles) != 0 {
 		t.Fatalf("expected default stream_profiles empty, got %v", parsed.StreamProfiles)
 	}
+	if parsed.DeleteOldestOnLowDisk {
+		t.Fatal("expected default DeleteOldestOnLowDisk false")
+	}
 }

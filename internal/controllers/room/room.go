@@ -337,6 +337,7 @@ func (r *Controller) getRoomConfig(ctx fiber.Ctx) error {
 		OnlyAudio:             cfg.OnlyAudio,
 		RecordDanmaku:         cfg.RecordDanmaku,
 		StreamProfiles:        cfg.StreamProfiles,
+		DeleteOldestOnLowDisk: cfg.DeleteOldestOnLowDisk,
 	})
 }
 
@@ -381,6 +382,7 @@ func (r *Controller) updateRoomConfig(ctx fiber.Ctx) error {
 		OnlyAudio:             req.OnlyAudio,
 		RecordDanmaku:         req.RecordDanmaku,
 		StreamProfiles:        streamProfiles,
+		DeleteOldestOnLowDisk: req.DeleteOldestOnLowDisk,
 	}); err != nil {
 		log.Errorf("更新房间 %d 配置失败：%v", roomId, err)
 		if err == subscribe.ErrRoomNotSubscribed {
@@ -398,5 +400,6 @@ func (r *Controller) updateRoomConfig(ctx fiber.Ctx) error {
 		OnlyAudio:             req.OnlyAudio,
 		RecordDanmaku:         req.RecordDanmaku,
 		StreamProfiles:        streamProfiles,
+		DeleteOldestOnLowDisk: req.DeleteOldestOnLowDisk,
 	})
 }
