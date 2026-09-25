@@ -184,13 +184,6 @@ func provider(lc fx.Lifecycle) (*Config, error) {
 		logger.SetDebug(true)
 	}
 
-	// Prefer the new max-active-recordings variable name. Fallback to legacy
-	// "...BELOW_ACTIVE_RECORDINGS" for backward compatibility.
-	ffmpegAllowDuringRecordingMaxActives := utils.EmptyOrElse(
-		os.Getenv("FFMPEG_ALLOW_DURING_RECORDING_MAX_ACTIVE_RECORDINGS"),
-		utils.EmptyOrElse(os.Getenv("FFMPEG_ALLOW_DURING_RECORDING_BELOW_ACTIVE_RECORDINGS"), "1"),
-	)
-
 	frpServer := utils.EmptyOrElse(os.Getenv("FRP_SERVER"), officialFRPServer)
 	frpBaseDomain := utils.EmptyOrElse(os.Getenv("FRP_BASE_DOMAIN"), officialFRPDomain)
 	frpToken := resolveFRPToken(frpServer, frpBaseDomain)
@@ -239,13 +232,13 @@ func provider(lc fx.Lifecycle) (*Config, error) {
 		DatabaseDir:                        utils.EmptyOrElse(os.Getenv("DATABASE_DIR"), "database"),
 		CloudConvertThreshold:              utils.MustAtoi64(utils.EmptyOrElse(os.Getenv("CLOUDCONVERT_THRESHOLD"), "1073741824")), // 1 GB
 		CloudConvertApiKey:                 os.Getenv("CLOUDCONVERT_API_KEY"),                                                      // empty to disable
-		ConvertToMp4:                       os.Getenv("CONVERT_TO_MP4") == "true" || os.Getenv("CONVERT_FLV_TO_MP4") == "true",
+		ConvertToMp4:                       os.Getenv("CONVERT_TO_MP4") == "true",
 		NoConvertIfInvalid:                 os.Getenv("NO_CONVERT_IF_INVALID") == "true",
-		DeleteSourceAfterConvert:           os.Getenv("DELETE_SOURCE_AFTER_CONVERT") == "true" || os.Getenv("DELETE_FLV_AFTER_CONVERT") == "true",
+		DeleteSourceAfterConvert:           os.Getenv("DELETE_SOURCE_AFTER_CONVERT") == "true",
 		DanmakuOutputFormat:                strings.ToLower(strings.TrimSpace(utils.EmptyOrElse(os.Getenv("DANMAKU_OUTPUT_FORMAT"), "jsonl"))),
 		DanmakuOverflowPolicy:              strings.ToLower(strings.TrimSpace(utils.EmptyOrElse(os.Getenv("DANMAKU_OVERFLOW_POLICY"), "drop"))),
 		FrontendURL:                        url,
-		PublicBaseUrl:                      utils.EmptyOrElse(os.Getenv("PUBLIC_BASE_URL"), utils.EmptyOrElse(os.Getenv("BACKEND_HOST"), "")),
+		PublicBaseUrl:                      strings.TrimSpace(os.Getenv("PUBLIC_BASE_URL")),
 		WebPushSubscriber:                  utils.EmptyOrElse(os.Getenv("WEBPUSH_SUBSCRIBER"), "mailto:webpush@example.com"),
 		NotifySSEToken:                     strings.TrimSpace(os.Getenv("NOTIFY_SSE_TOKEN")),
 		WebhookURLs:                        os.Getenv("WEBHOOK_URLS"),
@@ -267,7 +260,7 @@ func provider(lc fx.Lifecycle) (*Config, error) {
 		FFmpegCheckIntervalSecs:                             utils.MustAtoi(utils.EmptyOrElse(os.Getenv("FFMPEG_CHECK_INTERVAL_SECS"), "60")),
 		FFmpegMaxConcurrentTasks:                            utils.MustAtoi(utils.EmptyOrElse(os.Getenv("FFMPEG_MAX_CONCURRENT_TASKS"), "1")),
 		FFmpegAllowDuringRecording:                          os.Getenv("FFMPEG_ALLOW_DURING_RECORDING") == "true",
-		FFmpegAllowDuringRecordingMaxActiveRecordings:       utils.MustAtoi(ffmpegAllowDuringRecordingMaxActives), // <1 = no limit; when >=1, ffmpeg during recording runs only if active recordings <= this value
+		FFmpegAllowDuringRecordingMaxActiveRecordings:       utils.MustAtoi(utils.EmptyOrElse(os.Getenv("FFMPEG_ALLOW_DURING_RECORDING_MAX_ACTIVE_RECORDINGS"), "1")), // <1 = no limit; when >=1, ffmpeg during recording runs only if active recordings <= this value
 		SubcheckRoomsPerShard:                               utils.MustAtoi(utils.EmptyOrElse(os.Getenv("SUBCHECK_ROOMS_PER_SHARD"), "50")),
 		SubcheckTickSecs:                                    utils.MustAtoi(utils.EmptyOrElse(os.Getenv("SUBCHECK_TICK_SECS"), "10")),
 		SubcheckMinIntervalSecs:                             utils.MustAtoi(utils.EmptyOrElse(os.Getenv("SUBCHECK_MIN_INTERVAL_SECS"), "60")),
