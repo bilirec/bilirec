@@ -2,8 +2,6 @@ package record
 
 import (
 	"strconv"
-	"strings"
-	"time"
 
 	"github.com/bilirec/bilirec/internal/modules/bilibili"
 	"github.com/bilirec/bilirec/internal/modules/rest"
@@ -32,9 +30,10 @@ func NewController(app *fiber.App, service *recorder.Service) *Controller {
 }
 
 // @Summary Start recording a live stream
-// @Description Start recording a Bilibili live stream for the specified room
+// @Description Start recording a Bilibili live stream for the specified room. Pass options either as query parameters (no request body) or as a JSON body (not both). When the request declares a body (HasBody), only JSON is read.
 // @Tags record
 // @Security BearerAuth
+// @Accept json
 // @Produce json
 // @Param roomID path int true "Room ID"
 // @Param duration_minutes query int false "Recording duration in minutes. 0 = system default, -1 = unlimited, >0 = stop after N minutes, omit = system default (MAX_RECORDING_HOURS)"
@@ -43,6 +42,7 @@ func NewController(app *fiber.App, service *recorder.Service) *Controller {
 // @Param only_audio query bool false "Whether to request only audio stream"
 // @Param record_danmaku query bool false "Whether to record live chat sidecar alongside video"
 // @Param delete_oldest_on_low_disk query bool false "When free space is below MIN_DISK_SPACE_BYTES, delete this room's oldest recordings by filename and retry"
+// @Param payload body StartRecordingRequest false "JSON start options (query ignored when request has a body)"
 // @Success 200 "Recording started successfully"
 // @Failure 400 {string} string "Invalid room ID"
 // @Failure 403 {string} string "Forbidden"
@@ -55,56 +55,14 @@ func (r *Controller) startRecording(ctx fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusBadRequest, "无效的房间 ID")
 	}
 
-	// duration_minutes query param: 0 (sentinel) = not provided → use system default
-	const notProvided = 0
-	durationMinutes := fiber.Query(ctx, "duration_minutes", notProvided)
-
-	var startArgs []recorder.RecordStartOption
-	switch {
-	case durationMinutes == -1:
-		startArgs = []recorder.RecordStartOption{recorder.WithDuration(0)} // unlimited
-	case durationMinutes > 0:
-		startArgs = []recorder.RecordStartOption{recorder.WithDuration(time.Duration(durationMinutes) * time.Minute)}
-	}
-	// durationMinutes == 0 (not provided): pass no args → system default
-
-	streamOptions := []bilibili.GetStreamURLsOption{}
-	streamProfileRaw := strings.TrimSpace(fiber.Query(ctx, "stream_profile", ""))
-	if streamProfileRaw != "" {
-		profiles, parseErr := bilibili.ParseStreamProfiles(streamProfileRaw)
-		if parseErr != nil {
-			return fiber.NewError(fiber.StatusBadRequest, "无效的 stream_profile 参数")
-		}
-		if len(profiles) > 0 {
-			streamOptions = append(streamOptions, bilibili.WithProfiles(profiles...))
-		}
+	resolved, err := parseStartRecordingParams(ctx)
+	if err != nil {
+		return err
 	}
 
-	qnRaw := strings.TrimSpace(fiber.Query(ctx, "qn", ""))
-	if qnRaw != "" {
-		qn, err := strconv.Atoi(qnRaw)
-		if err != nil {
-			log.Warnf("无法将 qn 解析为整数：%v", err)
-			return fiber.NewError(fiber.StatusBadRequest, "无效的 qn 参数")
-		}
-		streamOptions = append(streamOptions, bilibili.WithQn(bilibili.Quality(qn)))
-	}
-
-	onlyAudioRaw := strings.TrimSpace(strings.ToLower(fiber.Query(ctx, "only_audio", "false")))
-	if onlyAudio, _ := strconv.ParseBool(onlyAudioRaw); onlyAudio {
-		streamOptions = append(streamOptions, bilibili.WithOnlyAudio(true))
-	}
-
-	startArgs = append(startArgs, recorder.WithStreamOptions(streamOptions...))
-
-	recordDanmakuRaw := strings.TrimSpace(strings.ToLower(fiber.Query(ctx, "record_danmaku", "false")))
-	if recordDanmaku, _ := strconv.ParseBool(recordDanmakuRaw); recordDanmaku {
-		startArgs = append(startArgs, recorder.WithRecordDanmaku(true))
-	}
-
-	deleteOldestRaw := strings.TrimSpace(strings.ToLower(fiber.Query(ctx, "delete_oldest_on_low_disk", "false")))
-	if deleteOldest, _ := strconv.ParseBool(deleteOldestRaw); deleteOldest {
-		startArgs = append(startArgs, recorder.WithDeleteOldestOnLowDisk(true))
+	startArgs, err := recordStartOptionsFromResolved(resolved)
+	if err != nil {
+		return err
 	}
 
 	err = r.service.Start(roomId, startArgs...)
