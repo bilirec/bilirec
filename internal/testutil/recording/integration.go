@@ -655,6 +655,12 @@ func MemSysDiffMB(after, before MemorySnapshot) float64 {
 
 // MemoryBudget caps heap and runtime Sys growth retained after a full
 // record/stop/cleanup cycle relative to the pre-record baseline.
+//
+// Alloc is the leak signal: live objects after GC. Sys is the Go heap's
+// virtual high-water mark and still counts pages FreeOSMemory already
+// returned to the OS, so the same 3-way soak has measured +61 MB and
+// +121 MB with alloc still inside its cap. The Sys allowance sits above
+// that observed ceiling (3 sessions: 200 MB).
 type MemoryBudget struct {
 	label              string
 	maxRetainedAllocMB float64
@@ -665,8 +671,8 @@ func MemoryBudgetForSessions(concurrentSessions int, label string) MemoryBudget 
 	const (
 		baseAllocMB     = 18.0
 		perSessionAlloc = 12.0
-		baseSysMB       = 50.0
-		perSessionSys   = 20.0
+		baseSysMB       = 80.0
+		perSessionSys   = 40.0
 	)
 
 	budget := MemoryBudget{
