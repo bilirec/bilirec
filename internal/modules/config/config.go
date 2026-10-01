@@ -173,7 +173,7 @@ func provider(lc fx.Lifecycle) (*Config, error) {
 	}
 
 	// parse frontend url
-	url, err := url.Parse(utils.EmptyOrElse(os.Getenv("FRONTEND_URL"), "http://localhost:8080"))
+	url, err := url.Parse(utils.EmptyOrElse(os.Getenv("FRONTEND_URL"), "https://app.bilirec.org"))
 
 	if err != nil {
 		return nil, err
