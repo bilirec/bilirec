@@ -115,3 +115,16 @@ func (s *Service) ListSubscribedRooms() ([]int, error) {
 	slices.Sort(roomIDs)
 	return roomIDs, nil
 }
+
+func (s *Service) ListAutoRecordRoomIDs() ([]int, error) {
+	s.roomsMu.RLock()
+	defer s.roomsMu.RUnlock()
+	roomIDs := make([]int, 0, len(s.rooms))
+	for roomID, cfg := range s.rooms {
+		if cfg != nil && cfg.AutoRecord {
+			roomIDs = append(roomIDs, roomID)
+		}
+	}
+	slices.Sort(roomIDs)
+	return roomIDs, nil
+}

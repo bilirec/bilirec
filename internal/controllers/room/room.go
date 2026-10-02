@@ -31,6 +31,7 @@ func NewController(app *fiber.App, roomSvc *room.Service, subSvc *subscribe.Serv
 	room.Get("/:roomID/live", rc.getLiveStatus)
 	room.Post("/lives", rc.getLiveStatuses)
 	room.Get("/subscribe", rc.listSubscribeRooms)
+	room.Get("/subscribe/auto-record", rc.listAutoRecordRooms)
 	room.Get("/subscribe/:roomID", rc.isSubscribeRoom)
 	room.Get("/:roomID/config", rc.getRoomConfig)
 
@@ -293,6 +294,26 @@ func (r *Controller) listSubscribeRooms(ctx fiber.Ctx) error {
 	roomIds, err := r.subSvc.ListSubscribedRooms()
 	if err != nil {
 		log.Errorf("列出已订阅房间失败：%v", err)
+		return fiber.ErrInternalServerError
+	}
+	return ctx.JSON(SubscribeList{
+		RoomIds: roomIds,
+	})
+}
+
+// @Summary List auto-record subscribed rooms
+// @Description List subscribed room IDs with auto-recording enabled
+// @Tags room
+// @Security BearerAuth
+// @Accept json
+// @Produce json
+// @Success 200 {object} SubscribeList "List of room IDs with auto_record enabled"
+// @Failure 500 {string} string "Internal server error"
+// @Router /room/subscribe/auto-record [get]
+func (r *Controller) listAutoRecordRooms(ctx fiber.Ctx) error {
+	roomIds, err := r.subSvc.ListAutoRecordRoomIDs()
+	if err != nil {
+		log.Errorf("列出自动录制房间失败：%v", err)
 		return fiber.ErrInternalServerError
 	}
 	return ctx.JSON(SubscribeList{
