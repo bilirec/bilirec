@@ -222,7 +222,6 @@ ENV BILIBILI_LOGIN_MODE=controller \
 #   -e LOCAL_LOGS_PATH=/app/logs/bilirec.log \
 #   -v /path/to/logs:/app/logs
 
-ENV GOMEMLIMIT=768MiB
 ENV GOGC=100
 
 ENTRYPOINT ["./bilirec"]
