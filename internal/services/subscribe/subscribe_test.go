@@ -191,6 +191,57 @@ func TestPubsub_ListSubscribedRooms(t *testing.T) {
 	}
 }
 
+func TestPubsub_ListAutoRecordRoomIDs(t *testing.T) {
+	svc := newSubscribeService(t)
+
+	existingRooms, err := svc.ListSubscribedRooms()
+	if err != nil {
+		t.Fatalf("ListSubscribedRooms failed: %v", err)
+	}
+	for _, rid := range existingRooms {
+		_ = svc.Unsubscribe(rid)
+	}
+
+	testRooms := live.LiveRoomIDs(t, 3)
+	for _, roomID := range testRooms {
+		if err := svc.Subscribe(roomID); err != nil {
+			t.Fatalf("subscribe %d failed: %v", roomID, err)
+		}
+	}
+
+	autoRecordIDs, err := svc.ListAutoRecordRoomIDs()
+	if err != nil {
+		t.Fatalf("ListAutoRecordRoomIDs failed: %v", err)
+	}
+	if len(autoRecordIDs) != 0 {
+		t.Fatalf("expected no auto-record rooms by default, got %v", autoRecordIDs)
+	}
+
+	roomID := testRooms[0]
+	cfg, err := svc.GetConfig(roomID)
+	if err != nil {
+		t.Fatalf("GetConfig failed: %v", err)
+	}
+	cfg.AutoRecord = true
+	if err := svc.UpdateConfig(roomID, cfg); err != nil {
+		t.Fatalf("UpdateConfig failed: %v", err)
+	}
+
+	autoRecordIDs, err = svc.ListAutoRecordRoomIDs()
+	if err != nil {
+		t.Fatalf("ListAutoRecordRoomIDs failed: %v", err)
+	}
+	if len(autoRecordIDs) != 1 || autoRecordIDs[0] != roomID {
+		t.Fatalf("expected [%d], got %v", roomID, autoRecordIDs)
+	}
+
+	for _, rid := range testRooms {
+		if err := svc.Unsubscribe(rid); err != nil {
+			t.Fatalf("unsubscribe failed: %v", err)
+		}
+	}
+}
+
 func TestMemoryLeak_SubscribeUnsubscribeCycle(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping memory test in short mode")
