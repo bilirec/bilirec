@@ -89,12 +89,21 @@ func (rf *RealtimeFixer) shrinkOutputBuffer() {
 	}
 }
 
+// ReleaseOutput drops an oversized output buffer after callers have copied the last result.
+func (rf *RealtimeFixer) ReleaseOutput() {
+	rf.mu.Lock()
+	rf.shrinkOutputBuffer()
+	rf.mu.Unlock()
+}
+
 // Fix processes incoming bytes and returns fixed FLV data.
 // Return semantics:
 //   - (nil, nil) means "no complete output tag is ready yet" (normal for streaming).
 //   - non-nil []byte contains serialized FLV tags ready for downstream processing.
+//     The slice aliases internal storage and is valid only until ReleaseOutput or the next Fix.
 func (rf *RealtimeFixer) Fix(input []byte) ([]byte, error) {
 	rf.mu.Lock()
+	rf.shrinkOutputBuffer()
 	rf.pendingJumps = rf.pendingJumps[:0]
 	// Defers run LIFO: Unlock first, then emit jump callbacks outside the lock.
 	defer rf.emitPendingJumps()
@@ -231,11 +240,7 @@ func (rf *RealtimeFixer) Fix(input []byte) ([]byte, error) {
 		return nil, nil
 	}
 
-	result := make([]byte, output.Len())
-	copy(result, output.Bytes())
-	rf.shrinkOutputBuffer()
-
-	return result, nil
+	return output.Bytes(), nil
 }
 
 // ResetTimestampStore resets the timestamp offset for a new segment.

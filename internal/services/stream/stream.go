@@ -24,7 +24,7 @@ func NewService(cfg *config.Config) *Service {
 	bounded := config.ReadStreamBytesPoolBoundedCapacity(cfg.ReadStreamChanBufferSize)
 	return &Service{
 		chunkPools: pool.NewLazyDualPool(
-			15*time.Minute,
+			pool.DefaultLazyDualPoolIdleTTL,
 			func() *pool.BucketedBytesPool {
 				return newChunkBytesPool(cfg.ReadStreamBytesPoolSize, bounded)
 			},
@@ -48,6 +48,7 @@ func newChunkBytesPool(baseSize, boundedCap int) *pool.BucketedBytesPool {
 	return pool.NewBucketedBytesPool(baseSize,
 		pool.WithPoolBoundedMode(true),
 		pool.WithPoolBoundedCapacity(boundedCap),
+		pool.WithPoolMaxRetainedBytes(boundedCap*baseSize),
 	)
 }
 

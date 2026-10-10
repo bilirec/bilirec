@@ -67,11 +67,11 @@ var (
 
 func newWriterPool(size int) *pool.BucketedBytesPool {
 	chanBuf := config.ReadOnly.LiveStreamWriterChanBufferSize()
+	perBucket := config.LiveStreamWriterBytesPoolBoundedCapacityPerBucket(chanBuf)
 	return pool.NewBucketedBytesPool(size,
 		pool.WithPoolBoundedMode(true),
-		pool.WithPoolBoundedCapacity(
-			config.LiveStreamWriterBytesPoolBoundedCapacityPerBucket(chanBuf),
-		),
+		pool.WithPoolBoundedCapacity(perBucket),
+		pool.WithPoolMaxRetainedBytes(perBucket*size),
 	)
 }
 
@@ -87,7 +87,7 @@ func newParseBufferPool(size int) *pool.BufferPool {
 func getWriterPools() *pool.LazyDualPool[*pool.BucketedBytesPool] {
 	writerPoolOnce.Do(func() {
 		writerPools = pool.NewLazyDualPool(
-			15*time.Minute,
+			pool.DefaultLazyDualPoolIdleTTL,
 			func() *pool.BucketedBytesPool { return newWriterPool(config.ReadOnly.LiveStreamWriterBytesPoolSize()) },
 			func() *pool.BucketedBytesPool { return newWriterPool(config.ReadOnly.LiveStreamWriterBytesPoolSizeHigh()) },
 		)
@@ -98,7 +98,7 @@ func getWriterPools() *pool.LazyDualPool[*pool.BucketedBytesPool] {
 func getParseBufferPools() *pool.LazyDualPool[*pool.BufferPool] {
 	parsePoolOnce.Do(func() {
 		parsePools = pool.NewLazyDualPool(
-			15*time.Minute,
+			pool.DefaultLazyDualPoolIdleTTL,
 			func() *pool.BufferPool { return newParseBufferPool(config.ReadOnly.ReadStreamBytesPoolSize()) },
 			func() *pool.BufferPool { return newParseBufferPool(config.ReadOnly.ReadStreamBytesPoolSizeHigh()) },
 		)

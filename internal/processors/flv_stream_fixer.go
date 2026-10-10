@@ -68,6 +68,7 @@ func (p *FlvStreamFixerProcessor) Process(ctx context.Context, log logger.Logger
 }
 
 func (p *FlvStreamFixerProcessor) Close() error {
+	p.fixer.ReleaseOutput()
 	dups, size, capacity := p.fixer.GetDedupStats()
 	p.log.Infof("🗂️ 去重统计：检测到 %d 个重复片段，缓存大小：%d/%d", dups, size, capacity)
 	if p.own {

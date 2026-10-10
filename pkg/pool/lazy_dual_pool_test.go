@@ -51,6 +51,29 @@ func TestTryCleanupHighPool_ReleasesWhenIdleAndNoRef(t *testing.T) {
 	}
 }
 
+func TestTryCleanupDefaultPool_ReleasesWhenIdleAndNoRef(t *testing.T) {
+	defaultPool := pool.NewBytesPool(512 * 1024)
+	lp := pool.NewLazyDualPool(
+		1*time.Minute,
+		func() *pool.BytesPool { return defaultPool },
+		func() *pool.BytesPool { return pool.NewBytesPool(1024 * 1024) },
+	)
+
+	_, releaseDefault := lp.Acquire(false)
+	releaseDefault()
+
+	lp.TryCleanup(time.Now().Add(2 * time.Minute))
+	if lp.MaybeDefault() != nil {
+		t.Fatal("expected default tier to be nil after idle timeout cleanup")
+	}
+
+	got, release := lp.Acquire(false)
+	if got != defaultPool {
+		t.Fatal("expected re-acquire to use newDefault factory")
+	}
+	release()
+}
+
 func TestReleaseSchedulesCleanupTimer(t *testing.T) {
 	lp := pool.NewLazyDualPool(
 		20*time.Millisecond,

@@ -10,8 +10,9 @@ const (
 )
 
 type PoolBoundedConfig struct {
-	Mode     BufferPoolMode
-	Capacity int
+	Mode              BufferPoolMode
+	Capacity          int
+	MaxRetainedBytes  int
 }
 
 type PoolOption func(*PoolBoundedConfig)
@@ -33,6 +34,16 @@ func WithPoolBoundedCapacity(capacity int) PoolOption {
 		} else {
 			c.Capacity = capacity
 		}
+	}
+}
+
+// WithPoolMaxRetainedBytes caps total bytes kept across all bucket slots (0 = unlimited).
+func WithPoolMaxRetainedBytes(n int) PoolOption {
+	return func(c *PoolBoundedConfig) {
+		if n < 0 {
+			n = 0
+		}
+		c.MaxRetainedBytes = n
 	}
 }
 
