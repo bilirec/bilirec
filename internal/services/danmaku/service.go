@@ -16,8 +16,10 @@ import (
 
 var log = logger.Named("danmaku")
 
-// Service records live danmaku (chat) into per-segment sidecar files paired
-// with the recorder's video output. It is deliberately decoupled from the
+// Service records live danmaku (chat) into sidecar files paired with video
+// segments. The recorder defers rotation until a new video segment is large
+// enough to be kept (same threshold as finalize). WebSocket reconnects do not
+// rotate files. It is deliberately decoupled from the
 // video pipeline: no shared locks, no blocking calls, message loss is acceptable.
 //
 // Constructing the service allocates nothing beyond an empty map; connection

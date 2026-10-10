@@ -44,6 +44,9 @@ var (
 	recoveringPtr = new(Recovering)
 )
 
+// minKeptRecordingSegmentBytes matches finalize(): smaller segments are deleted and never converted.
+const minKeptRecordingSegmentBytes = 1024
+
 var (
 	ErrMaxConcurrentRecordingsReached = errors.New("已达到最大并发录制数")
 	ErrRecordingStarted               = errors.New("录制已开始")
@@ -215,7 +218,6 @@ func (r *Service) rotate(roomId int, ch <-chan []byte, strategy rs.StreamRecordS
 
 	segment := 0
 	state := &rs.RotationState{Data: map[string][]byte{}}
-	hooks := r.pipelineHooks(roomId, info)
 
 	for {
 		outputPath, err := r.rotateFilePath(info, segment, strategy.FileExtension())
@@ -225,11 +227,33 @@ func (r *Service) rotate(roomId int, ch <-chan []byte, strategy rs.StreamRecordS
 		}
 		info.SetOutputPath(outputPath)
 
+		var segmentOpen time.Time
+		segmentHooks := r.pipelineHooks(roomId, info)
+		if info.startOptions.recordDanmaku && segment > 0 {
+			segPath := outputPath
+			var segBytes int
+			var danmakuRotated bool
+			baseOnBytes := segmentHooks.OnBytesWritten
+			segmentHooks.OnBytesWritten = func(n int) {
+				if baseOnBytes != nil {
+					baseOnBytes(n)
+				}
+				if danmakuRotated {
+					return
+				}
+				segBytes += n
+				if segBytes >= minKeptRecordingSegmentBytes {
+					danmakuRotated = true
+					r.dm.Rotate(roomId, segPath, segmentOpen)
+				}
+			}
+		}
+
 		// 弹幕录制与视频管道完全解耦：仅在此非阻塞地启动/轮换，
 		// 失败或缺失不影响录播。userStart 仅在使用者发起的首次分段为 true，
 		// recovery 的首个分段走 Rotate（原弹幕 session 随 info.ctx 存活）。
-		// segmentStart 尽量贴近 pipe.Open 之后、首包写入之前，减少开录缓冲造成的偏移。
-		pipe, err := strategy.BuildPipeline(ctx, outputPath, state, hooks)
+		// segment > 0 时等视频分段写入达到 finalize 保留阈值后再 Rotate，避免幽灵分段产生孤立的 -N.jsonl。
+		pipe, err := strategy.BuildPipeline(ctx, outputPath, state, segmentHooks)
 		if err != nil {
 			r.m.RecordingPipelineError(roomId, metrics.ReasonOpen)
 			return fmt.Errorf("无法构建管道：%v", err)
@@ -247,7 +271,7 @@ func (r *Service) rotate(roomId int, ch <-chan []byte, strategy rs.StreamRecordS
 			r.m.RecordingRotation(roomId)
 		}
 
-		segmentOpen := time.Now()
+		segmentOpen = time.Now()
 		info.segmentOpenTime = segmentOpen
 		r.emitFileOpening(roomId, info, outputPath)
 
@@ -255,7 +279,7 @@ func (r *Service) rotate(roomId int, ch <-chan []byte, strategy rs.StreamRecordS
 			segStart := segmentOpen
 			if segment == 0 && userStart {
 				r.dm.StartSession(roomId, info.ctx, outputPath, danmakuRoomMeta(info.room), segStart)
-			} else {
+			} else if segment == 0 && !userStart {
 				r.dm.Rotate(roomId, outputPath, segStart)
 			}
 		}
@@ -499,7 +523,7 @@ func (r *Service) finalize(roomId int, info *Info, outputPath string, audioOnly 
 		log.Errorf("获取房间 %d 录制文件状态失败：%v", roomId, err)
 		r.m.RecordingSegmentDiscarded(roomId, metrics.ReasonStatError)
 		return
-	} else if fileInfo.Size() < 1024 { // less than 1KB
+	} else if fileInfo.Size() < minKeptRecordingSegmentBytes {
 		log.Warnf("房间 %d 的录制文件过小（%d 字节），跳过收尾并删除文件", roomId, fileInfo.Size())
 		r.m.RecordingSegmentDiscarded(roomId, metrics.ReasonTiny)
 		if err := os.Remove(outputPath); err != nil {
