@@ -107,18 +107,7 @@ func provider(ls fx.Lifecycle, cfg *config.Config) *fiber.App {
 		log.Warn("swagger 文件未找到，禁用 swagger 路由")
 	}
 
-	app.Use(cors.New(cors.Config{
-		AllowOrigins: utils.Ternary(
-			cfg.ProductionMode,
-			[]string{cfg.FrontendURL.String()},
-			[]string{
-				cfg.FrontendURL.String(),
-				"http://localhost:3000",
-				"http://127.0.0.1:3000",
-			},
-		),
-		AllowCredentials: true,
-	}))
+	app.Use(cors.New(restCORSConfig(cfg)))
 
 	app.Use(func(c fiber.Ctx) error {
 		err := c.Next()
@@ -240,6 +229,22 @@ func startHttpServer(app *fiber.App, wg *sync.WaitGroup, addr string, cfg *confi
 	})
 	log.Info("HTTP 服务器已启动")
 	return nil
+}
+
+func restCORSConfig(cfg *config.Config) cors.Config {
+	return cors.Config{
+		AllowOrigins: utils.Ternary(
+			cfg.ProductionMode,
+			[]string{cfg.FrontendURL.String()},
+			[]string{
+				cfg.FrontendURL.String(),
+				"http://localhost:3000",
+				"http://127.0.0.1:3000",
+			},
+		),
+		AllowCredentials:    true,
+		AllowPrivateNetwork: true,
+	}
 }
 
 func isCacheableFileContentType(contentType string) bool {
