@@ -41,26 +41,12 @@ func TestBucketedBytesPool_MaxRetainedBytesBudget(t *testing.T) {
 	p.Put(b1)
 	p.Put(b2)
 
-	if stats := p.Stats(); stats.RetainedBytes != uint64(bucket) {
+	stats := p.Stats()
+	if stats.RetainedBytes != uint64(bucket) {
 		t.Fatalf("expected retained=%d, got %d", bucket, stats.RetainedBytes)
 	}
-}
-
-func TestBucketedBytesPool_DrainClearsRetained(t *testing.T) {
-	const bucket = 512 * 1024
-	p := NewBucketedBytesPool(bucket,
-		WithPoolBoundedMode(true),
-		WithPoolBoundedCapacity(4),
-		WithPoolMaxRetainedBytes(4*bucket),
-	)
-	buf := p.GetSized(bucket)
-	p.Put(buf)
-	if p.Stats().RetainedBytes == 0 {
-		t.Fatal("expected retained bytes before drain")
-	}
-	p.Drain()
-	if p.Stats().RetainedBytes != 0 {
-		t.Fatalf("expected retained=0 after drain, got %d", p.Stats().RetainedBytes)
+	if stats.Misses != 1 {
+		t.Fatalf("expected budget-exceeding put to be rejected (misses=1), got %d", stats.Misses)
 	}
 }
 

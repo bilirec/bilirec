@@ -44,52 +44,25 @@ func (p *boundablePool[T]) get() T {
 }
 
 func (p *boundablePool[T]) put(item T) {
-	p.tryPut(item)
-}
-
-// tryGet returns a pooled item when one is available without allocating.
-func (p *boundablePool[T]) tryGet() (T, bool) {
-	if p.mode == BufferPoolModeBounded {
-		select {
-		case item := <-p.bounded:
-			return p.ready(item), true
-		default:
-			var zero T
-			return zero, false
-		}
-	}
-	var zero T
-	return zero, false
-}
-
-// tryPut stores item in the pool when there is capacity. Returns false if the item is rejected or the queue is full.
-func (p *boundablePool[T]) tryPut(item T) bool {
 	item, ok := p.reclaim(item)
 	if !ok {
-		return false
+		return
 	}
 	if p.mode == BufferPoolModeBounded {
 		select {
 		case p.bounded <- item:
-			return true
 		default:
-			return false
+			// Queue is full; let item be garbage collected.
 		}
-	}
-	p.soft.Put(item)
-	return true
-}
-
-// drainBounded removes all items waiting in the bounded queue.
-func (p *boundablePool[T]) drainBounded() {
-	if p.mode != BufferPoolModeBounded {
 		return
 	}
-	for {
-		select {
-		case <-p.bounded:
-		default:
-			return
-		}
+	p.soft.Put(item)
+}
+
+// queued reports how many items are currently parked in the bounded queue.
+func (p *boundablePool[T]) queued() int {
+	if p.mode != BufferPoolModeBounded {
+		return 0
 	}
+	return len(p.bounded)
 }

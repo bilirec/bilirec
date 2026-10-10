@@ -25,7 +25,6 @@ type BucketedBytesPool struct {
 	slots       []*boundablePool[[]byte]
 
 	maxRetainedBytes int
-	retainedBytes    atomic.Int64
 
 	hits      atomic.Uint64
 	misses    atomic.Uint64
@@ -33,10 +32,10 @@ type BucketedBytesPool struct {
 }
 
 type BucketedBytesPoolStats struct {
-	Hits           uint64
-	Misses         uint64
-	Oversized      uint64
-	RetainedBytes  uint64
+	Hits          uint64
+	Misses        uint64
+	Oversized     uint64
+	RetainedBytes uint64
 }
 
 func NewBucketedBytesPool(baseSize int, opts ...BucketedBytesPoolOption) *BucketedBytesPool {
@@ -76,13 +75,16 @@ func (p *BucketedBytesPool) GetSized(size int) []byte {
 		return make([]byte, size)
 	}
 	p.hits.Add(1)
-	if item, ok := p.slots[idx].tryGet(); ok {
-		if p.maxRetainedBytes > 0 {
-			p.retainedBytes.Add(-int64(p.bucketSizes[idx]))
-		}
-		return item[:size]
-	}
 	return p.slots[idx].get()[:size]
+}
+
+// retainedBytes derives the total bytes currently parked in bounded slots.
+func (p *BucketedBytesPool) retainedBytes() uint64 {
+	var total uint64
+	for i, slot := range p.slots {
+		total += uint64(slot.queued()) * uint64(p.bucketSizes[i])
+	}
+	return total
 }
 
 func (p *BucketedBytesPool) Put(buf []byte) {
@@ -92,32 +94,15 @@ func (p *BucketedBytesPool) Put(buf []byte) {
 	c := cap(buf)
 	for i, size := range p.bucketSizes {
 		if c == size {
-			if p.maxRetainedBytes > 0 {
-				next := p.retainedBytes.Load() + int64(size)
-				if next > int64(p.maxRetainedBytes) {
-					p.misses.Add(1)
-					return
-				}
-			}
-			if p.slots[i].tryPut(buf[:size]) {
-				if p.maxRetainedBytes > 0 {
-					p.retainedBytes.Add(int64(size))
-				}
+			if p.maxRetainedBytes > 0 && int(p.retainedBytes())+size > p.maxRetainedBytes {
+				p.misses.Add(1)
 				return
 			}
-			p.misses.Add(1)
+			p.slots[i].put(buf[:size])
 			return
 		}
 	}
 	p.misses.Add(1)
-}
-
-// Drain drops all buffers held in bounded slots and resets the retained-byte counter.
-func (p *BucketedBytesPool) Drain() {
-	for _, slot := range p.slots {
-		slot.drainBounded()
-	}
-	p.retainedBytes.Store(0)
 }
 
 func (p *BucketedBytesPool) Stats() BucketedBytesPoolStats {
@@ -125,7 +110,7 @@ func (p *BucketedBytesPool) Stats() BucketedBytesPoolStats {
 		Hits:          p.hits.Load(),
 		Misses:        p.misses.Load(),
 		Oversized:     p.oversized.Load(),
-		RetainedBytes: uint64(p.retainedBytes.Load()),
+		RetainedBytes: p.retainedBytes(),
 	}
 }
 
