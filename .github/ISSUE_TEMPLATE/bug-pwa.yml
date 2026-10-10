@@ -9,7 +9,8 @@ body:
     attributes:
       value: |
         提交前请先阅读 [常见问题](https://www.bilirec.org/zh-cn/guides/faq/)。  
-        录制后端、文件内容、转码等请改用「核心 BUG / 問題回報」模板。
+        录制后端、文件内容、转码等请改用「核心 BUG / 問題回報」模板。  
+        若后端运行在 bilirec-mobile 内嵌服务，请改用「手机版 BUG / 問題回報」模板。
 
   - type: checkboxes
     id: faq_ack

@@ -64,8 +64,20 @@ body:
     validations:
       required: true
 
+  - type: markdown
+    attributes:
+      value: |
+        **附启动日志（内嵌后端问题强烈建议）**  
+        1. 打开 App **开发者选项 → 环境变量**，添加 `DEBUG=true`（保存后需**重新启动**前台服务才生效）。  
+        2. 按你的复现步骤再操作一次。  
+        3. **开发者选项 → 启动日志** 导出合并后的 `bootstrap_*.log`，粘贴到下方或作为附件上传。  
+        4. 问题解决后可删除 `DEBUG=true`，避免日志过多。  
+        Android 内嵌后端日志走上述启动日志即可，**无需**设置 `LOCAL_LOGS_ENABLED`。
+
   - type: textarea
     id: logs
     attributes:
-      label: bootstrap 日志或其它补充（可选）
-      description: 设置中导出的 `bootstrap_*.log` 片段
+      label: bootstrap 日志或其它补充
+      description: 建议按上方步骤开启 DEBUG 后复现并导出；可粘贴关键片段或说明已附附件
+      placeholder: |
+        （粘贴 bootstrap 日志片段，或写「见附件 bootstrap_xxx.log」）
