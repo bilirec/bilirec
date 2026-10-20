@@ -95,7 +95,8 @@ func (c *Controller) sseHandle(ctx fiber.Ctx) error {
 				defer leave()
 
 				_ = stream.Comment("connected")
-				c.sendCatchup(stream, roomID)
+				origin := c.svc.LiveJoinClock(roomID)
+				c.sendCatchup(stream, roomID, origin)
 
 				for {
 					select {
@@ -107,6 +108,7 @@ func (c *Controller) sseHandle(ctx fiber.Ctx) error {
 						if len(line) == 0 {
 							continue
 						}
+						line = pvs.RebasePreviewTs(line, origin)
 						if err := stream.Event(sse.Event{Data: line}); err != nil {
 							return err
 						}
@@ -120,7 +122,7 @@ func (c *Controller) sseHandle(ctx fiber.Ctx) error {
 	return c.sseOnce(ctx)
 }
 
-func (c *Controller) sendCatchup(stream *sse.Stream, roomID int) {
+func (c *Controller) sendCatchup(stream *sse.Stream, roomID int, originSec float64) {
 	stats, ok := c.rec.GetStats(roomID)
 	if !ok || stats.OutputPath == "" {
 		return
@@ -135,7 +137,7 @@ func (c *Controller) sendCatchup(stream *sse.Stream, roomID int) {
 		return
 	}
 	for _, line := range lines {
-		if err := stream.Event(sse.Event{Data: line}); err != nil {
+		if err := stream.Event(sse.Event{Data: pvs.RebasePreviewTs(line, originSec)}); err != nil {
 			return
 		}
 	}

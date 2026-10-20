@@ -72,8 +72,18 @@ func (s *Service) openHTTPRange(ctx context.Context, roomID int, v roomView, hea
 		pr, pw := io.Pipe()
 		gen := v.gen
 		path := v.path
+		off := start
+		var prefix []byte
+		var baseTS uint32
+		// Late join: skip the on-disk backlog so the player starts at the
+		// live edge. Finite Range probes still read the real file bytes.
+		if v.ext == ".flv" && start == 0 {
+			if join, ok := flvLiveJoin(path); ok {
+				prefix, off, baseTS = join.prefix, join.offset, join.baseTS
+			}
+		}
 		go func() {
-			_ = pw.CloseWithError(followFile(ctx, pw, path, start, gen, func() uint64 {
+			_ = pw.CloseWithError(followFile(ctx, pw, path, off, prefix, baseTS, gen, func() uint64 {
 				return s.generation(roomID)
 			}))
 		}()
@@ -117,7 +127,12 @@ func copyRange(w io.Writer, path string, offset, length int64) error {
 	return err
 }
 
-func followFile(ctx context.Context, w io.Writer, path string, offset int64, gen uint64, generation func() uint64) error {
+func followFile(ctx context.Context, w io.Writer, path string, offset int64, prefix []byte, baseTS uint32, gen uint64, generation func() uint64) error {
+	if len(prefix) > 0 {
+		if _, err := w.Write(prefix); err != nil {
+			return err
+		}
+	}
 	f, err := os.Open(path)
 	if err != nil {
 		return err
@@ -125,6 +140,10 @@ func followFile(ctx context.Context, w io.Writer, path string, offset int64, gen
 	defer f.Close()
 	if _, err := f.Seek(offset, io.SeekStart); err != nil {
 		return err
+	}
+	dst := io.Writer(w)
+	if baseTS > 0 {
+		dst = &tsRebaser{dst: w, base: baseTS}
 	}
 	buf := make([]byte, copyBufSize)
 	pos := offset
@@ -140,7 +159,7 @@ func followFile(ctx context.Context, w io.Writer, path string, offset int64, gen
 			return err
 		}
 		if st.Size() > pos {
-			n, copyErr := io.CopyBuffer(w, io.LimitReader(f, st.Size()-pos), buf)
+			n, copyErr := io.CopyBuffer(dst, io.LimitReader(f, st.Size()-pos), buf)
 			pos += n
 			if copyErr != nil {
 				return copyErr

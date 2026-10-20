@@ -246,6 +246,22 @@ func (s *Service) roomView(roomID int) (roomView, bool) {
 	}, true
 }
 
+// LiveJoinClock is the recording-timeline second that becomes t=0 for a
+// late FLV preview. SSE catchup and live events subtract this so overlays
+// stay aligned with the rebased media clock. Non-FLV (or a failed join)
+// returns 0 and leaves timestamps unchanged.
+func (s *Service) LiveJoinClock(roomID int) float64 {
+	v, ok := s.roomView(roomID)
+	if !ok || v.ext != ".flv" || v.path == "" {
+		return 0
+	}
+	join, ok := flvLiveJoin(v.path)
+	if !ok {
+		return 0
+	}
+	return float64(join.baseTS) / 1000
+}
+
 func (s *Service) generation(roomID int) uint64 {
 	s.mu.Lock()
 	defer s.mu.Unlock()

@@ -3,14 +3,23 @@ package preview
 import (
 	"bufio"
 	"bytes"
+	"encoding/json"
 	"os"
 )
+
+// How far back from the latest jsonl timestamp to replay on preview join.
+// Long enough for a hanging Super Chat; short enough not to dump hours of gifts.
+const catchupWindowSec = 60
 
 func (s *Service) Catchup(sidecarPath string) ([][]byte, error) {
 	if s == nil {
 		return nil, nil
 	}
-	return readJSONLLines(sidecarPath)
+	lines, err := readJSONLLines(sidecarPath)
+	if err != nil {
+		return lines, err
+	}
+	return filterCatchup(lines), nil
 }
 
 func readJSONLLines(path string) ([][]byte, error) {
@@ -47,4 +56,59 @@ func readJSONLLines(path string) ([][]byte, error) {
 		}
 	}
 	return lines, nil
+}
+
+type catchupLine struct {
+	Type string  `json:"type"`
+	Ts   float64 `json:"ts"`
+}
+
+func filterCatchup(lines [][]byte) [][]byte {
+	if len(lines) == 0 {
+		return lines
+	}
+	parsed := make([]catchupLine, len(lines))
+	maxTs := 0.0
+	for i, line := range lines {
+		_ = json.Unmarshal(line, &parsed[i])
+		if parsed[i].Ts > maxTs {
+			maxTs = parsed[i].Ts
+		}
+	}
+	cutoff := maxTs - catchupWindowSec
+	kept := make([][]byte, 0, len(lines))
+	for i, line := range lines {
+		if parsed[i].Type == "meta" || parsed[i].Ts >= cutoff {
+			kept = append(kept, line)
+		}
+	}
+	return kept
+}
+
+func RebasePreviewTs(line []byte, originSec float64) []byte {
+	if originSec <= 0 || len(line) == 0 {
+		return line
+	}
+	var obj map[string]json.RawMessage
+	if err := json.Unmarshal(line, &obj); err != nil {
+		return line
+	}
+	raw, ok := obj["ts"]
+	if !ok {
+		return line
+	}
+	var ts float64
+	if err := json.Unmarshal(raw, &ts); err != nil {
+		return line
+	}
+	shifted, err := json.Marshal(ts - originSec)
+	if err != nil {
+		return line
+	}
+	obj["ts"] = shifted
+	out, err := json.Marshal(obj)
+	if err != nil {
+		return line
+	}
+	return out
 }
