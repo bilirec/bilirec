@@ -17,6 +17,7 @@ import (
 	"github.com/bilirec/bilirec/internal/services/danmaku"
 	"github.com/bilirec/bilirec/internal/services/notify"
 	"github.com/bilirec/bilirec/internal/services/path"
+	"github.com/bilirec/bilirec/internal/services/preview"
 	"github.com/bilirec/bilirec/internal/services/recorder"
 	"github.com/bilirec/bilirec/internal/services/room"
 	"github.com/bilirec/bilirec/internal/services/stream"
@@ -110,6 +111,7 @@ func newSubcheckIntegrationSession(t *testing.T) *subcheckIntegrationSession {
 		fx.Provide(subscribe.NewService),
 		fx.Provide(notify.NewService),
 		fx.Provide(webhook.NewService),
+		fx.Provide(preview.NewService),
 		fx.Provide(danmaku.NewService),
 		fx.Provide(recorder.NewService),
 		fx.Provide(NewService),

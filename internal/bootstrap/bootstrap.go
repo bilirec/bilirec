@@ -9,6 +9,7 @@ import (
 	"github.com/bilirec/bilirec/internal/controllers/convert"
 	"github.com/bilirec/bilirec/internal/controllers/file"
 	nc "github.com/bilirec/bilirec/internal/controllers/notify"
+	pc "github.com/bilirec/bilirec/internal/controllers/preview"
 	"github.com/bilirec/bilirec/internal/controllers/record"
 	"github.com/bilirec/bilirec/internal/controllers/room"
 	"github.com/bilirec/bilirec/internal/modules/bilibili"
@@ -24,6 +25,7 @@ import (
 	me "github.com/bilirec/bilirec/internal/services/media"
 	no "github.com/bilirec/bilirec/internal/services/notify"
 	pa "github.com/bilirec/bilirec/internal/services/path"
+	pv "github.com/bilirec/bilirec/internal/services/preview"
 	re "github.com/bilirec/bilirec/internal/services/recorder"
 	ro "github.com/bilirec/bilirec/internal/services/room"
 	st "github.com/bilirec/bilirec/internal/services/stream"
@@ -49,6 +51,7 @@ func MainModule() fx.Option {
 		fx.Provide(pa.NewService),
 		fx.Provide(co.NewService),
 		fx.Provide(me.NewService),
+		fx.Provide(pv.NewService),
 		fx.Provide(dm.NewService),
 		fx.Provide(st.NewService),
 		fx.Provide(re.NewService),
@@ -68,6 +71,7 @@ func MainModule() fx.Option {
 		fx.Invoke(nc.NewController),
 		fx.Invoke(record.NewController),
 		fx.Invoke(file.NewController),
+		fx.Invoke(pc.NewController),
 		fx.Invoke(auth.NewController),
 		fx.Invoke(convert.NewController),
 	)

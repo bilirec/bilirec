@@ -17,6 +17,7 @@ import (
 	"github.com/bilirec/bilirec/internal/services/convert"
 	"github.com/bilirec/bilirec/internal/services/danmaku"
 	"github.com/bilirec/bilirec/internal/services/notify"
+	"github.com/bilirec/bilirec/internal/services/preview"
 	"github.com/bilirec/bilirec/internal/services/stream"
 	"github.com/bilirec/bilirec/internal/services/webhook"
 	"github.com/bilirec/bilirec/pkg/ds"
@@ -64,6 +65,7 @@ type Service struct {
 	nt           *notify.Service
 	wh           *webhook.Service
 	dm           *danmaku.Service
+	preview      *preview.Service
 	bilic        *bilibili.Client
 	m            *metrics.Exporter
 	recording    *xsync.Map[int, *Info]
@@ -82,6 +84,7 @@ func NewService(
 	cv *convert.Service,
 	nt *notify.Service,
 	dm *danmaku.Service,
+	previewSvc *preview.Service,
 	bilic *bilibili.Client,
 	cfg *config.Config,
 	m *metrics.Exporter,
@@ -95,6 +98,7 @@ func NewService(
 		cv:           cv,
 		nt:           nt,
 		dm:           dm,
+		preview:      previewSvc,
 		bilic:        bilic,
 		m:            m,
 		recording:    xsync.NewMap[int, *Info](),
@@ -234,6 +238,9 @@ func (r *Service) rotate(roomId int, ch <-chan []byte, strategy rs.StreamRecordS
 		if err != nil {
 			r.m.RecordingPipelineError(roomId, metrics.ReasonOpen)
 			return fmt.Errorf("无法构建管道：%v", err)
+		}
+		if r.preview != nil {
+			pipe.AddProcessors(r.preview.Tap(roomId, outputPath, strategy.FileExtension()))
 		}
 
 		startCtx, startCancel := context.WithTimeout(ctx, 10*time.Second)

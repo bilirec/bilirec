@@ -27,6 +27,7 @@ import (
 	"github.com/bilirec/bilirec/internal/services/danmaku"
 	"github.com/bilirec/bilirec/internal/services/notify"
 	"github.com/bilirec/bilirec/internal/services/path"
+	"github.com/bilirec/bilirec/internal/services/preview"
 	"github.com/bilirec/bilirec/internal/services/recorder"
 	"github.com/bilirec/bilirec/internal/services/room"
 	"github.com/bilirec/bilirec/internal/services/stream"
@@ -41,7 +42,7 @@ const (
 	recorderTestProfileDirEnv              = "RECORDER_TEST_PROFILE_DIR"
 	recorderCPUSteadySampleEnv             = "RECORDER_CPU_STEADY_SAMPLE_SECS"
 	recorderCPUSteadySampleMin             = 1 * time.Second
-	SettleAfterStop            = 5 * time.Second
+	SettleAfterStop                        = 5 * time.Second
 	pprofLogTopN                           = 10
 	recorderRecordProfileIntervalEnv       = "RECORDER_RECORD_PROFILE_INTERVAL_SECS"
 	recorderProfileLogTopEnv               = "RECORDER_PROFILE_LOG_TOP" // default false: save only during test
@@ -86,6 +87,7 @@ func NewSession(t *testing.T) *Session {
 		fx.Provide(webhook.NewService),
 		fx.Provide(convert.NewService),
 		fx.Provide(notify.NewService),
+		fx.Provide(preview.NewService),
 		fx.Provide(danmaku.NewService),
 		fx.Provide(recorder.NewService),
 		fx.Populate(&biliClient, &recorderService, &roomService, &danmakuService, &metricsExporter),

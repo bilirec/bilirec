@@ -237,6 +237,9 @@ func (s *session) enqueue(build fragmentBuilder, eventType string) {
 		s.svc.pool.PutBytes(buf)
 		return
 	}
+	if s.svc.preview != nil && s.encoder.Ext() == ".jsonl" {
+		s.svc.preview.PublishEvent(s.roomID, frag)
+	}
 	if config.ReadOnly.DanmakuOverflowPolicy() == "block" {
 		select {
 		case s.msgCh <- frag:
