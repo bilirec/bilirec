@@ -1,0 +1,48 @@
+---
+description: pkg is generic libraries only; bootstrap wires Services; Service is the implementation, not a wrapper
+alwaysApply: true
+---
+
+# pkg vs Service vs bootstrap
+
+## `pkg/` is generic only
+
+`pkg/` holds reusable libraries with a clear domain. Product features that only this app needs live under `internal/services/<name>`.
+
+Do not create a pkg named after a product feature. Do not fold a feature into an existing pkg because they share a file format or protocol. Shared protocol code belongs in pkg; the session, HTTP, and lifecycle around it belong in a service.
+
+If a helper is domain-generic and already has an owning library, extend that library. One-off I/O or parsing used by a single feature stays unexported next to that service.
+
+Example of a valid pkg addition: ISO BMFF box walking in `pkg/mp4`. Example of an invalid pkg: `pkg/preview` for live-recording playback.
+
+## bootstrap never Provides pkg as a service
+
+Application nodes in the fx graph are `internal/services/*/NewService` (or `internal/modules`). Controllers depend on `*Service`.
+
+```go
+// ❌ pkg type in the fx graph
+fx.Provide(pkgfoo.NewHub)
+
+// ❌ empty Service that only forwards to a pkg Hub
+func NewService() *Service { return &Service{hub: pkgfoo.NewHub()} }
+
+// ✅ Service owns the state; bootstrap Provides it
+fx.Provide(foo.NewService)
+```
+
+Services may import pkg. pkg is not a graph node.
+
+## A Service is the implementation
+
+If the type has `NewService` and bootstrap Provides it, **that type is the service**. Put state and methods on it. Do not invent a parallel Hub/Engine and wrap it.
+
+- Generic standalone type → `pkg/`, used **inside** a service. Still not Provided from bootstrap.
+- App-specific session or index → `internal/services`, type `Service`, constructor `NewService`.
+
+## Exported methods are for other packages
+
+Export only what recorder, HTTP, or other services actually call. Bind/observe/copy/snapshot-style steps stay unexported in the same package.
+
+Do not return a long tuple; use a small struct. Do not export a generic util just because one controller needs it — give the service a method that matches the session, not a bag of file helpers.
+
+Same-package `_test.go` may call unexported helpers. Other production packages must not.
