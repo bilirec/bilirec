@@ -101,14 +101,19 @@ func TestSlowViewerIsKicked(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer media.Body.Close()
-	mustProcess(t, pipe, []byte("one"))
-	mustProcess(t, pipe, []byte("two"))
+	half := bytes.Repeat([]byte("a"), mediaMaxQueuedBytes/2)
+	mustProcess(t, pipe, half)
+	mustProcess(t, pipe, half)
+	mustProcess(t, pipe, []byte("x"))
 	got, err := io.ReadAll(media.Body)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !bytes.Equal(got, []byte("one")) {
-		t.Fatalf("got %q", got)
+	if len(got) != mediaMaxQueuedBytes {
+		t.Fatalf("queued %d, want %d", len(got), mediaMaxQueuedBytes)
+	}
+	if bytes.Contains(got, []byte("x")) {
+		t.Fatal("overflow chunk must not be delivered")
 	}
 }
 

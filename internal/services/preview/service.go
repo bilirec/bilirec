@@ -78,7 +78,7 @@ func (s *Service) OpenMedia(roomID int) (Media, error) {
 	}
 	id := r.nextSub + 1
 	r.nextSub = id
-	sub := &mediaSub{id: id, ch: make(chan []byte, 1), done: make(chan struct{}), ext: r.ext}
+	sub := &mediaSub{id: id, q: newMediaQ(), ext: r.ext}
 	if r.media == nil {
 		r.media = make(map[uint64]*mediaSub)
 	}
@@ -89,7 +89,7 @@ func (s *Service) OpenMedia(roomID int) (Media, error) {
 	return Media{
 		MIME:   mediaMIME(ext),
 		Status: http.StatusOK,
-		Body:   &chunkReader{ch: sub.ch, done: sub.done, leave: func() { s.unsubscribeMedia(roomID, id) }},
+		Body:   &chunkReader{q: sub.q, leave: func() { s.unsubscribeMedia(roomID, id) }},
 	}, nil
 }
 
@@ -127,8 +127,7 @@ type roomState struct {
 
 type mediaSub struct {
 	id     uint64
-	ch     chan []byte
-	done   chan struct{}
+	q      *mediaQ
 	closed atomic.Bool
 	ext    string
 	join   joinFilter
@@ -248,11 +247,7 @@ func (s *Service) fanout(roomID int, data []byte) {
 		if len(out) == 0 {
 			continue
 		}
-		select {
-		case <-sub.done:
-			drops = append(drops, sub.id)
-		case sub.ch <- out:
-		default:
+		if !sub.q.tryPush(out) {
 			sub.kick()
 			drops = append(drops, sub.id)
 		}
@@ -329,6 +324,6 @@ func isFtyp(data []byte) bool {
 
 func (sub *mediaSub) kick() {
 	if sub.closed.CompareAndSwap(false, true) {
-		close(sub.done)
+		sub.q.close()
 	}
 }
