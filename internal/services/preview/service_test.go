@@ -4,79 +4,11 @@ import (
 	"bytes"
 	"context"
 	"io"
-	"os"
-	"path/filepath"
-	"strings"
 	"testing"
 
+	"github.com/bilirec/bilirec/pkg/flv"
 	"github.com/bilirec/bilirec/pkg/pipeline"
 )
-
-func TestObserveNoViewersDoesNotIndex(t *testing.T) {
-	h := NewService()
-	pipe := mustTap(t, h, 1, "a.fmp4", ".fmp4")
-	mustProcess(t, pipe, bytes.Repeat([]byte("x"), 1024))
-	v, ok := h.roomView(1)
-	if !ok {
-		t.Fatal("missing room")
-	}
-	if v.offset != 1024 {
-		t.Fatalf("offset=%d", v.offset)
-	}
-	if len(v.segs) != 0 {
-		t.Fatalf("indexed %d segments with 0 viewers", len(v.segs))
-	}
-}
-
-func TestObserveIndexesAfterJoin(t *testing.T) {
-	h := NewService()
-	pipe := mustTap(t, h, 7, "a.ts", ".ts")
-	mustProcess(t, pipe, bytes.Repeat([]byte("a"), 100))
-	_, leave, err := h.Subscribe(7)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer leave()
-	mustProcess(t, pipe, bytes.Repeat([]byte("b"), 50))
-	v, _ := h.roomView(7)
-	if v.offset != 150 {
-		t.Fatalf("offset=%d", v.offset)
-	}
-	if v.previewStart != 100 {
-		t.Fatalf("previewStart=%d want 100", v.previewStart)
-	}
-	if len(v.segs) != 1 || v.segs[0].offset != 100 || v.segs[0].size != 50 {
-		t.Fatalf("segs=%+v", v.segs)
-	}
-}
-
-func TestRejoinStartsAtCurrentOffset(t *testing.T) {
-	h := NewService()
-	pipe := mustTap(t, h, 5, "a.ts", ".ts")
-	_, leave, err := h.Subscribe(5)
-	if err != nil {
-		t.Fatal(err)
-	}
-	mustProcess(t, pipe, bytes.Repeat([]byte("a"), 40))
-	leave()
-	mustProcess(t, pipe, bytes.Repeat([]byte("b"), 60))
-	_, leave2, err := h.Subscribe(5)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer leave2()
-	mustProcess(t, pipe, bytes.Repeat([]byte("c"), 10))
-	v, _ := h.roomView(5)
-	if v.offset != 110 {
-		t.Fatalf("offset=%d", v.offset)
-	}
-	if v.previewStart != 100 {
-		t.Fatalf("previewStart=%d want 100", v.previewStart)
-	}
-	if len(v.segs) != 1 || v.segs[0].offset != 100 {
-		t.Fatalf("segs=%+v", v.segs)
-	}
-}
 
 func TestJoinRequiresBoundPath(t *testing.T) {
 	h := NewService()
@@ -88,86 +20,15 @@ func TestJoinRequiresBoundPath(t *testing.T) {
 	if _, _, err := h.Subscribe(8); err != ErrNotRecording {
 		t.Fatalf("err=%v", err)
 	}
-}
-
-func TestLastViewerClearsSegments(t *testing.T) {
-	h := NewService()
-	pipe := mustTap(t, h, 3, "a.ts", ".ts")
-	_, leave, err := h.Subscribe(3)
-	if err != nil {
-		t.Fatal(err)
-	}
-	mustProcess(t, pipe, bytes.Repeat([]byte("a"), 20))
-	leave()
-	v, ok := h.roomView(3)
-	if !ok {
-		t.Fatal("room should remain while bound")
-	}
-	if len(v.segs) != 0 {
-		t.Fatalf("segs leftover: %d", len(v.segs))
-	}
-	if v.previewStart != 0 {
-		t.Fatalf("previewStart leftover: %d", v.previewStart)
+	if _, err := h.OpenMedia(8); err != ErrNotRecording {
+		t.Fatalf("err=%v", err)
 	}
 }
 
-func TestPlaylistSkipsUnflushedAndOmitsEndlist(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "seg.ts")
-	if err := os.WriteFile(path, bytes.Repeat([]byte{1}, 80), 0o644); err != nil {
-		t.Fatal(err)
-	}
+func TestJoinWithoutBind(t *testing.T) {
 	h := NewService()
-	pipe := mustTap(t, h, 9, path, ".ts")
-	_, leave, err := h.Subscribe(9)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer leave()
-	mustProcess(t, pipe, bytes.Repeat([]byte{1}, 40))
-	mustProcess(t, pipe, bytes.Repeat([]byte{1}, 40))
-	mustProcess(t, pipe, bytes.Repeat([]byte{1}, 40)) // not on disk yet
-	body, err := h.Playlist(9)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(body, "#EXT-X-ENDLIST") {
-		t.Fatal(body)
-	}
-	if !strings.Contains(body, "#EXT-X-PLAYLIST-TYPE:EVENT") {
-		t.Fatal(body)
-	}
-	if strings.Count(body, "#EXTINF") != 2 {
-		t.Fatalf("want 2 flushed segments, got\n%s", body)
-	}
-}
-
-func TestFmp4PlaylistMap(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "a.fmp4")
-	initSeg := ftypMoov(32)
-	media := moofBox(48)
-	if err := os.WriteFile(path, append(append([]byte{}, initSeg...), media...), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	h := NewService()
-	pipe := mustTap(t, h, 2, path, ".fmp4")
-	_, leave, err := h.Subscribe(2)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer leave()
-	mustProcess(t, pipe, initSeg)
-	mustProcess(t, pipe, media)
-	body, err := h.Playlist(2)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(body, "media?offset=0&length="+itoa(len(initSeg))) {
-		t.Fatal(body)
-	}
-	if strings.Count(body, "#EXTINF") != 1 {
-		t.Fatal(body)
+	if _, _, err := h.Subscribe(1); err != ErrNotRecording {
+		t.Fatalf("err=%v", err)
 	}
 }
 
@@ -188,77 +49,107 @@ func TestTapOpenProcessClose(t *testing.T) {
 	}
 	leave()
 	pipe.Close()
-	v, ok := h.roomView(4)
-	if ok && v.path != "" {
+	if _, _, err := h.Subscribe(4); err != ErrNotRecording {
 		t.Fatal("unbind should clear path")
 	}
 }
 
-func TestCopyRangeDoesNotBufferWholeFile(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "blob.bin")
-	src := bytes.Repeat([]byte{7}, 1000)
-	if err := os.WriteFile(path, src, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	var out bytes.Buffer
-	if err := copyRange(&out, path, 10, 20); err != nil {
-		t.Fatal(err)
-	}
-	if !bytes.Equal(out.Bytes(), src[10:30]) {
-		t.Fatal(out.Bytes())
-	}
-}
-
-func TestFLVRangeReadsFileStartAfterLateJoin(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "a.bin")
-	src := bytes.Repeat([]byte{0x11}, 49)
-	if err := os.WriteFile(path, src, 0o644); err != nil {
-		t.Fatal(err)
-	}
+func TestZeroSubscribersStillCapturesFmp4Init(t *testing.T) {
 	h := NewService()
-	pipe := mustTap(t, h, 1, path, ".flv")
-	mustProcess(t, pipe, src)
-	_, leave, err := h.Subscribe(1)
+	pipe := mustTap(t, h, 2, "a.fmp4", ".fmp4")
+	initSeg := ftypMoov(32)
+	media := moofBox(48)
+	mustProcess(t, pipe, initSeg)
+	mustProcess(t, pipe, media)
+	body, err := h.OpenMedia(2)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer leave()
+	defer body.Body.Close()
+	mustProcess(t, pipe, media)
+	got := readSome(t, body.Body, len(initSeg)+len(media))
+	if !bytes.HasPrefix(got, initSeg) {
+		t.Fatalf("missing init: %d bytes", len(got))
+	}
+	if !bytes.Contains(got, media) {
+		t.Fatal("missing moof")
+	}
+}
 
-	media, err := h.OpenMedia(context.Background(), 1, 0, 0, "bytes=0-8")
+func TestTSViewerGetsPipelineBytes(t *testing.T) {
+	h := NewService()
+	pipe := mustTap(t, h, 7, "a.ts", ".ts")
+	mustProcess(t, pipe, bytes.Repeat([]byte("a"), 40))
+	media, err := h.OpenMedia(7)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer media.Body.Close()
+	chunk := bytes.Repeat([]byte("b"), 50)
+	mustProcess(t, pipe, chunk)
+	got := readSome(t, media.Body, 50)
+	if !bytes.Equal(got, chunk) {
+		t.Fatalf("got %q want %q", got, chunk)
+	}
+}
+
+func TestSlowViewerIsKicked(t *testing.T) {
+	h := NewService()
+	pipe := mustTap(t, h, 3, "a.ts", ".ts")
+	media, err := h.OpenMedia(3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer media.Body.Close()
+	mustProcess(t, pipe, []byte("one"))
+	mustProcess(t, pipe, []byte("two"))
 	got, err := io.ReadAll(media.Body)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !bytes.Equal(got, src[:9]) {
-		t.Fatalf("got %x want %x", got, src[:9])
+	if !bytes.Equal(got, []byte("one")) {
+		t.Fatalf("got %q", got)
 	}
 }
 
-func TestCatchupDropsIncompleteLastLine(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "a.jsonl")
-	if err := os.WriteFile(path, []byte("{\"type\":\"danmaku\"}\n{\"type\":\"gif"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	lines, err := NewService().Catchup(path)
+func TestFLVLateJoinStartsAtKeyframe(t *testing.T) {
+	h := NewService()
+	pipe := mustTap(t, h, 1, "a.flv", ".flv")
+	seq := flv.NewTagBytes(flv.TagTypeVideo, []byte{0x17, 0x00, 0x00, 0x00, 0x00, 0x01})
+	audio := flv.NewTagBytes(flv.TagTypeAudio, []byte{0xaf, 0x00, 0x12, 0x10})
+	inter := flv.NewTagBytes(flv.TagTypeVideo, []byte{0x27, 0x01, 0x00, 0x00, 0x00, 'E'})
+	key := flv.NewTagBytes(flv.TagTypeVideo, []byte{0x17, 0x01, 0x00, 0x00, 0x00, 'K'})
+	flv.SetTagTimestamp(inter, 1_000)
+	flv.SetTagTimestamp(key, 60_000)
+
+	var head bytes.Buffer
+	head.Write(flv.NewFileHeaderBytes())
+	head.Write(seq)
+	head.Write(audio)
+	mustProcess(t, pipe, head.Bytes())
+
+	media, err := h.OpenMedia(1)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(lines) != 1 {
-		t.Fatalf("got %d lines", len(lines))
+	defer media.Body.Close()
+	mustProcess(t, pipe, inter)
+	mustProcess(t, pipe, key)
+	got := readSome(t, media.Body, 4096)
+	if !bytes.HasPrefix(got, flv.NewFileHeaderBytes()) {
+		t.Fatal("missing FLV file header")
 	}
-}
-
-func TestJoinWithoutBind(t *testing.T) {
-	h := NewService()
-	if _, _, err := h.Subscribe(1); err != ErrNotRecording {
-		t.Fatalf("err=%v", err)
+	if !bytes.Contains(got, seq) {
+		t.Fatal("missing video sequence header")
+	}
+	if bytes.Contains(got, []byte{'E'}) {
+		t.Fatal("inter frame must not appear before keyframe join")
+	}
+	if !bytes.Contains(got, []byte{'K'}) {
+		t.Fatal("missing keyframe")
+	}
+	if ts := firstVideoMediaTS(got); ts != 0 {
+		t.Fatalf("keyframe ts=%d want 0", ts)
 	}
 }
 
@@ -287,6 +178,14 @@ func TestPublishEventDroppedWhenFull(t *testing.T) {
 	}
 }
 
+func TestLiveJoinClockTracksSegmentStart(t *testing.T) {
+	h := NewService()
+	mustTap(t, h, 9, "a.ts", ".ts")
+	if h.LiveJoinClock(9) < 0 {
+		t.Fatal("clock")
+	}
+}
+
 func mustTap(t *testing.T, h *Service, roomID int, path, ext string) *pipeline.Pipe[[]byte] {
 	t.Helper()
 	pipe := pipeline.New(h.Tap(roomID, path, ext))
@@ -302,6 +201,16 @@ func mustProcess(t *testing.T, pipe *pipeline.Pipe[[]byte], data []byte) {
 	if _, err := pipe.Process(context.Background(), data); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func readSome(t *testing.T, r io.Reader, n int) []byte {
+	t.Helper()
+	buf := make([]byte, n)
+	got, err := io.ReadAtLeast(r, buf, 1)
+	if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
+		t.Fatal(err)
+	}
+	return buf[:got]
 }
 
 func ftypMoov(moovSize int) []byte {
@@ -326,16 +235,26 @@ func box(typ string, payload []byte) []byte {
 	return b
 }
 
-func itoa(n int) string {
-	if n == 0 {
-		return "0"
+func firstVideoMediaTS(buf []byte) uint32 {
+	off := 0
+	if len(buf) >= flv.FlvHeaderSize && string(buf[:3]) == "FLV" {
+		off = flv.FlvHeaderSize + flv.PrevTagSizeBytes
 	}
-	var d [16]byte
-	i := len(d)
-	for n > 0 {
-		i--
-		d[i] = byte('0' + n%10)
-		n /= 10
+	for {
+		tag, rest, ok, skip := flv.NextTag(buf[off:])
+		if skip {
+			off++
+			continue
+		}
+		if !ok {
+			return 0
+		}
+		if tag[0] == flv.TagTypeVideo {
+			_, isHeader, isKey := flv.ClassifyVideoTag(flv.TagData(tag))
+			if isKey && !isHeader {
+				return flv.TagTimestamp(tag)
+			}
+		}
+		off += len(buf[off:]) - len(rest)
 	}
-	return string(d[i:])
 }

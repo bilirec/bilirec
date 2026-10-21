@@ -1,7 +1,6 @@
 package preview
 
 import (
-	"context"
 	"errors"
 	"strconv"
 	"strings"
@@ -28,23 +27,9 @@ type Controller struct {
 func NewController(app *fiber.App, svc *pvs.Service, rec *recorder.Service, dm *danmaku.Service) *Controller {
 	c := &Controller{svc: svc, rec: rec, dm: dm}
 	g := app.Group("/preview/rooms/:roomID")
-	g.Get("/index.m3u8", c.playlist)
 	g.Get("/media", c.media)
 	g.Get("/events", c.events)
 	return c
-}
-
-func (c *Controller) playlist(ctx fiber.Ctx) error {
-	roomID, err := parseRoomID(ctx)
-	if err != nil {
-		return err
-	}
-	body, err := c.svc.Playlist(roomID)
-	if err != nil {
-		return mapPreviewError(err)
-	}
-	ctx.Set(fiber.HeaderContentType, "application/vnd.apple.mpegurl")
-	return ctx.SendString(body)
 }
 
 func (c *Controller) media(ctx fiber.Ctx) error {
@@ -52,20 +37,14 @@ func (c *Controller) media(ctx fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	off, length, _ := queryRange(ctx)
-	media, err := c.svc.OpenMedia(requestContext(ctx), roomID, off, length, ctx.Get(fiber.HeaderRange))
+	media, err := c.svc.OpenMedia(roomID)
 	if err != nil {
 		return mapPreviewError(err)
 	}
-	ctx.Set(fiber.HeaderAcceptRanges, "bytes")
 	ctx.Set(fiber.HeaderContentType, media.MIME)
-	if media.ContentRange != "" {
-		ctx.Set(fiber.HeaderContentRange, media.ContentRange)
-	}
 	if media.Status != 0 {
 		ctx.Status(media.Status)
 	}
-	// fasthttp reads and closes the stream after the handler returns.
 	return ctx.SendStream(media.Body)
 }
 
@@ -152,32 +131,10 @@ func parseRoomID(ctx fiber.Ctx) (int, error) {
 }
 
 func mapPreviewError(err error) error {
-	switch {
-	case errors.Is(err, pvs.ErrNotRecording):
+	if errors.Is(err, pvs.ErrNotRecording) {
 		return fiber.NewError(fiber.StatusConflict, err.Error())
-	case errors.Is(err, pvs.ErrUnsupportedExt):
-		return fiber.NewError(fiber.StatusUnsupportedMediaType, err.Error())
-	case errors.Is(err, pvs.ErrSegmentMissing):
-		return fiber.NewError(fiber.StatusNotFound, err.Error())
-	case errors.Is(err, pvs.ErrRangeNotSatisfiable):
-		return fiber.ErrRequestedRangeNotSatisfiable
-	default:
-		return fiber.NewError(fiber.StatusInternalServerError, err.Error())
 	}
-}
-
-func queryRange(ctx fiber.Ctx) (offset, length int64, ok bool) {
-	offStr := ctx.Query("offset")
-	lenStr := ctx.Query("length")
-	if offStr == "" || lenStr == "" {
-		return 0, 0, false
-	}
-	off, err1 := strconv.ParseInt(offStr, 10, 64)
-	n, err2 := strconv.ParseInt(lenStr, 10, 64)
-	if err1 != nil || err2 != nil || off < 0 || n <= 0 {
-		return 0, 0, false
-	}
-	return off, n, true
+	return fiber.NewError(fiber.StatusInternalServerError, err.Error())
 }
 
 func bytesTrimNewline(b []byte) []byte {
@@ -185,11 +142,4 @@ func bytesTrimNewline(b []byte) []byte {
 		b = b[:len(b)-1]
 	}
 	return b
-}
-
-func requestContext(ctx fiber.Ctx) context.Context {
-	if c, ok := any(ctx).(interface{ Context() context.Context }); ok {
-		return c.Context()
-	}
-	return context.Background()
 }

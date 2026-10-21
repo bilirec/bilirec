@@ -2,17 +2,21 @@ package preview
 
 import (
 	"errors"
+	"io"
+	"net/http"
+	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
+
+	"github.com/bilirec/bilirec/pkg/flv"
+	"github.com/bilirec/bilirec/pkg/pipeline"
 )
 
 const eventChanSize = 256
 
 var (
-	ErrNotRecording        = errors.New("该房间当前没有可预览的录制")
-	ErrUnsupportedExt      = errors.New("当前流格式不支持该预览请求")
-	ErrSegmentMissing      = errors.New("分片尚未写入磁盘")
-	ErrRangeNotSatisfiable = errors.New("请求的范围无法满足")
+	ErrNotRecording = errors.New("该房间当前没有可预览的录制")
 )
 
 type Service struct {
@@ -22,6 +26,13 @@ type Service struct {
 
 func NewService() *Service {
 	return &Service{rooms: make(map[int]*roomState)}
+}
+
+func (s *Service) Tap(roomID int, path, ext string) *pipeline.ProcessorInfo[[]byte] {
+	return pipeline.NewProcessorInfo(
+		"preview-fanout",
+		&fanoutProcessor{svc: s, roomID: roomID, path: path, ext: ext},
+	)
 }
 
 func (s *Service) PublishEvent(roomID int, line []byte) {
@@ -45,79 +56,105 @@ func (s *Service) Subscribe(roomID int) (<-chan []byte, func(), error) {
 	if r == nil || r.path == "" {
 		return nil, nil, ErrNotRecording
 	}
-	r.viewers++
-	if !r.started {
-		r.previewStart = r.offset
-		r.started = true
-	}
 	id := r.nextSub + 1
 	r.nextSub = id
 	ch := make(chan []byte, eventChanSize)
 	r.eventSubs[id] = ch
-	return ch, func() {
-		s.leave(roomID)
-		s.unsubscribe(roomID, id)
+	return ch, func() { s.unsubscribeEvents(roomID, id) }, nil
+}
+
+type Media struct {
+	MIME   string
+	Status int
+	Body   io.ReadCloser
+}
+
+func (s *Service) OpenMedia(roomID int) (Media, error) {
+	s.mu.Lock()
+	r := s.rooms[roomID]
+	if r == nil || r.path == "" {
+		s.mu.Unlock()
+		return Media{}, ErrNotRecording
+	}
+	id := r.nextSub + 1
+	r.nextSub = id
+	sub := &mediaSub{id: id, ch: make(chan []byte, 1), done: make(chan struct{}), ext: r.ext}
+	if r.media == nil {
+		r.media = make(map[uint64]*mediaSub)
+	}
+	r.media[id] = sub
+	r.mediaN.Add(1)
+	ext := r.ext
+	s.mu.Unlock()
+	return Media{
+		MIME:   mediaMIME(ext),
+		Status: http.StatusOK,
+		Body:   &chunkReader{ch: sub.ch, done: sub.done, leave: func() { s.unsubscribeMedia(roomID, id) }},
 	}, nil
 }
 
-type roomState struct {
-	path   string
-	ext    string
-	offset int64
-	gen    uint64
+// LiveJoinClock is seconds since this recording file opened. SSE catchup
+// subtracts it so overlays line up with a player that starts at the live edge.
+func (s *Service) LiveJoinClock(roomID int) float64 {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	r := s.rooms[roomID]
+	if r == nil || r.path == "" || r.segmentStart.IsZero() {
+		return 0
+	}
+	secs := time.Since(r.segmentStart).Seconds()
+	if secs < 0 {
+		return 0
+	}
+	return secs
+}
 
-	viewers      int
-	previewStart int64
-	started      bool
-	lastNote     time.Time
-	initOffset   int64
-	initSize     int64
-	hasInit      bool
-	segs         []segment
+type roomState struct {
+	path         string
+	ext          string
+	segmentStart time.Time
+
+	bootstrapReady atomic.Bool
+	bootstrap      []byte
+	det            *flv.HeaderChangeDetector
+
+	mediaN atomic.Int32
+	media  map[uint64]*mediaSub
 
 	eventSubs map[uint64]chan []byte
 	nextSub   uint64
 }
 
-type segment struct {
-	offset int64
-	size   int
-	durSec float64
+type mediaSub struct {
+	id     uint64
+	ch     chan []byte
+	done   chan struct{}
+	closed atomic.Bool
+	ext    string
+	join   joinFilter
 }
 
-type roomView struct {
-	path, ext            string
-	offset, previewStart int64
-	gen                  uint64
-	segs                 []segment
-	initOffset, initSize int64
-	hasInit              bool
-}
-
-func (s *Service) bind(roomID int, path, ext string) {
+func (s *Service) bind(roomID int, path, ext string) *roomState {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	r := s.rooms[roomID]
 	if r == nil {
-		r = &roomState{eventSubs: make(map[uint64]chan []byte)}
+		r = &roomState{eventSubs: make(map[uint64]chan []byte), media: make(map[uint64]*mediaSub)}
 		s.rooms[roomID] = r
+	}
+	if r.det != nil {
+		r.det.Close()
+		r.det = nil
 	}
 	r.path = path
 	r.ext = ext
-	r.offset = 0
-	r.gen++
-	r.segs = r.segs[:0]
-	r.hasInit = false
-	r.initOffset = 0
-	r.initSize = 0
-	r.lastNote = time.Time{}
-	if r.viewers > 0 {
-		r.previewStart = 0
-		r.started = true
-	} else {
-		r.started = false
-		r.previewStart = 0
+	r.segmentStart = time.Now()
+	r.bootstrap = nil
+	r.bootstrapReady.Store(false)
+	if ext == ".flv" {
+		r.det = flv.NewHeaderChangeDetector()
 	}
+	return r
 }
 
 func (s *Service) unbind(roomID int, path string) {
@@ -128,85 +165,24 @@ func (s *Service) unbind(roomID int, path string) {
 		return
 	}
 	s.broadcastLocked(r, []byte(`{"type":"segment"}`))
+	for id, sub := range r.media {
+		sub.kick()
+		delete(r.media, id)
+	}
+	r.mediaN.Store(0)
 	r.path = ""
-	r.segs = r.segs[:0]
-	r.hasInit = false
-	r.started = false
-	r.gen++
-	if r.viewers == 0 && len(r.eventSubs) == 0 {
+	r.bootstrap = nil
+	r.bootstrapReady.Store(false)
+	if r.det != nil {
+		r.det.Close()
+		r.det = nil
+	}
+	if len(r.eventSubs) == 0 {
 		delete(s.rooms, roomID)
 	}
 }
 
-// observe records that n bytes were accepted by the writer. When nobody is
-// previewing this is one integer add. HLS segment boundaries are stored only
-// while viewers > 0; payload is never copied.
-func (s *Service) observe(roomID int, n int, indexHLS, isInit bool) {
-	if n <= 0 {
-		return
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	r := s.rooms[roomID]
-	if r == nil {
-		return
-	}
-	r.offset += int64(n)
-	if r.viewers == 0 || !indexHLS {
-		return
-	}
-	end := r.offset
-	if !r.started {
-		r.previewStart = end - int64(n)
-		if r.previewStart < 0 {
-			r.previewStart = 0
-		}
-		r.started = true
-	}
-	now := time.Now()
-	if isInit {
-		r.initOffset = end - int64(n)
-		r.initSize = int64(n)
-		r.hasInit = true
-		r.lastNote = now
-		return
-	}
-	dur := 2.0
-	if !r.lastNote.IsZero() {
-		dur = now.Sub(r.lastNote).Seconds()
-		if dur < 0.2 {
-			dur = 0.2
-		}
-		if dur > 10 {
-			dur = 10
-		}
-	}
-	r.lastNote = now
-	r.segs = append(r.segs, segment{offset: end - int64(n), size: n, durSec: dur})
-}
-
-func (s *Service) leave(roomID int) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	r := s.rooms[roomID]
-	if r == nil {
-		return
-	}
-	if r.viewers > 0 {
-		r.viewers--
-	}
-	if r.viewers == 0 {
-		r.segs = r.segs[:0]
-		r.started = false
-		r.hasInit = false
-		r.previewStart = 0
-		if r.path == "" && len(r.eventSubs) == 0 {
-			delete(s.rooms, roomID)
-		}
-	}
-}
-
-func (s *Service) unsubscribe(roomID int, id uint64) {
+func (s *Service) unsubscribeEvents(roomID int, id uint64) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	r := s.rooms[roomID]
@@ -219,57 +195,110 @@ func (s *Service) unsubscribe(roomID int, id uint64) {
 	}
 	delete(r.eventSubs, id)
 	close(ch)
-	if r.viewers == 0 && r.path == "" && len(r.eventSubs) == 0 {
+	s.maybeDeleteLocked(roomID, r)
+}
+
+func (s *Service) unsubscribeMedia(roomID int, id uint64) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	r := s.rooms[roomID]
+	if r == nil {
+		return
+	}
+	sub, ok := r.media[id]
+	if !ok {
+		return
+	}
+	delete(r.media, id)
+	sub.kick()
+	if n := r.mediaN.Load(); n > 0 {
+		r.mediaN.Store(n - 1)
+	}
+	s.maybeDeleteLocked(roomID, r)
+}
+
+func (s *Service) fanout(roomID int, data []byte) {
+	s.mu.Lock()
+	r := s.rooms[roomID]
+	if r == nil {
+		s.mu.Unlock()
+		return
+	}
+	if !r.bootstrapReady.Load() {
+		s.captureBootstrapLocked(r, data)
+	}
+	if r.mediaN.Load() == 0 {
+		s.mu.Unlock()
+		return
+	}
+	subs := make([]*mediaSub, 0, len(r.media))
+	for _, sub := range r.media {
+		subs = append(subs, sub)
+	}
+	boot := r.bootstrap
+	s.mu.Unlock()
+
+	var drops []uint64
+	for _, sub := range subs {
+		if sub.closed.Load() {
+			continue
+		}
+		cp := append([]byte(nil), data...)
+		out := sub.join.feed(sub.ext, cp, boot)
+		if len(out) == 0 {
+			continue
+		}
+		select {
+		case <-sub.done:
+			drops = append(drops, sub.id)
+		case sub.ch <- out:
+		default:
+			sub.kick()
+			drops = append(drops, sub.id)
+		}
+	}
+	for _, id := range drops {
+		s.unsubscribeMedia(roomID, id)
+	}
+}
+
+func (s *Service) captureBootstrapLocked(r *roomState, data []byte) {
+	if r.bootstrapReady.Load() {
+		return
+	}
+	switch r.ext {
+	case ".flv":
+		if r.det == nil {
+			r.det = flv.NewHeaderChangeDetector()
+		}
+		_ = r.det.DetectChange(data)
+		vTag := flv.ZeroTagTimestamp(r.det.LastVideoTag())
+		if len(vTag) == 0 {
+			return
+		}
+		prefix := flv.NewFileHeaderBytes()
+		prefix = append(prefix, vTag...)
+		if aTag := flv.ZeroTagTimestamp(r.det.LastAudioTag()); len(aTag) > 0 {
+			prefix = append(prefix, aTag...)
+		}
+		r.bootstrap = prefix
+		r.bootstrapReady.Store(true)
+		r.det.Close()
+		r.det = nil
+	case ".fmp4":
+		if isFtyp(data) {
+			r.bootstrap = append([]byte(nil), data...)
+			r.bootstrapReady.Store(true)
+		}
+	default:
+		r.bootstrapReady.Store(true)
+	}
+}
+
+func (s *Service) maybeDeleteLocked(roomID int, r *roomState) {
+	if r.path == "" && len(r.eventSubs) == 0 && r.mediaN.Load() == 0 {
 		delete(s.rooms, roomID)
 	}
-}
-
-func (s *Service) roomView(roomID int) (roomView, bool) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	r := s.rooms[roomID]
-	if r == nil {
-		return roomView{}, false
-	}
-	out := make([]segment, len(r.segs))
-	copy(out, r.segs)
-	return roomView{
-		path:         r.path,
-		ext:          r.ext,
-		offset:       r.offset,
-		previewStart: r.previewStart,
-		gen:          r.gen,
-		segs:         out,
-		initOffset:   r.initOffset,
-		initSize:     r.initSize,
-		hasInit:      r.hasInit,
-	}, true
-}
-
-// LiveJoinClock is the recording-timeline second that becomes t=0 for a
-// late FLV preview. SSE catchup and live events subtract this so overlays
-// stay aligned with the rebased media clock. Non-FLV (or a failed join)
-// returns 0 and leaves timestamps unchanged.
-func (s *Service) LiveJoinClock(roomID int) float64 {
-	v, ok := s.roomView(roomID)
-	if !ok || v.ext != ".flv" || v.path == "" {
-		return 0
-	}
-	join, ok := flvLiveJoin(v.path)
-	if !ok {
-		return 0
-	}
-	return float64(join.baseTS) / 1000
-}
-
-func (s *Service) generation(roomID int) uint64 {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	r := s.rooms[roomID]
-	if r == nil {
-		return 0
-	}
-	return r.gen
 }
 
 func (s *Service) broadcastLocked(r *roomState, line []byte) {
@@ -278,5 +307,28 @@ func (s *Service) broadcastLocked(r *roomState, line []byte) {
 		case ch <- line:
 		default:
 		}
+	}
+}
+
+func mediaMIME(ext string) string {
+	switch strings.ToLower(ext) {
+	case ".flv":
+		return "video/x-flv"
+	case ".ts":
+		return "video/mp2t"
+	case ".fmp4":
+		return "video/mp4"
+	default:
+		return "application/octet-stream"
+	}
+}
+
+func isFtyp(data []byte) bool {
+	return len(data) >= 8 && string(data[4:8]) == "ftyp"
+}
+
+func (sub *mediaSub) kick() {
+	if sub.closed.CompareAndSwap(false, true) {
+		close(sub.done)
 	}
 }
