@@ -46,6 +46,12 @@ func TestMediaStreamsFanout(t *testing.T) {
 	if ct := resp.Header.Get(fiber.HeaderContentType); ct != "video/mp2t" {
 		t.Fatalf("content-type=%s", ct)
 	}
+	if cc := resp.Header.Get(fiber.HeaderCacheControl); cc != "no-store, no-cache, must-revalidate" {
+		t.Fatalf("cache-control=%s", cc)
+	}
+	if resp.Header.Get("X-Accel-Buffering") != "no" {
+		t.Fatal("expected X-Accel-Buffering: no")
+	}
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		t.Fatal(err)

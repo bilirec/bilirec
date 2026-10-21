@@ -119,7 +119,7 @@ func provider(ls fx.Lifecycle, cfg *config.Config) *fiber.App {
 		err := c.Next()
 
 		contentType := strings.ToLower(c.GetRespHeader(fiber.HeaderContentType))
-		if isCacheableFileContentType(contentType) {
+		if !strings.HasPrefix(c.Path(), "/preview/") && isCacheableFileContentType(contentType) {
 			c.Set(fiber.HeaderCacheControl, fileStreamCacheControl)
 			return err
 		}

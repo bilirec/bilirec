@@ -41,6 +41,7 @@ func (c *Controller) media(ctx fiber.Ctx) error {
 	if err != nil {
 		return mapPreviewError(err)
 	}
+	disablePreviewHTTPCache(ctx)
 	ctx.Set(fiber.HeaderContentType, media.MIME)
 	if media.Status != 0 {
 		ctx.Status(media.Status)
@@ -57,6 +58,7 @@ func (c *Controller) events(ctx fiber.Ctx) error {
 	if err != nil {
 		return mapPreviewError(err)
 	}
+	disablePreviewHTTPCache(ctx)
 	ctx.Locals("previewLeave", leave)
 	ctx.Locals("previewCh", ch)
 	ctx.Locals("previewRoom", roomID)
@@ -120,6 +122,13 @@ func (c *Controller) sendCatchup(stream *sse.Stream, roomID int, originSec float
 			return
 		}
 	}
+}
+
+func disablePreviewHTTPCache(ctx fiber.Ctx) {
+	ctx.Set(fiber.HeaderCacheControl, "no-store, no-cache, must-revalidate")
+	ctx.Set(fiber.HeaderPragma, "no-cache")
+	ctx.Set(fiber.HeaderExpires, "0")
+	ctx.Set("X-Accel-Buffering", "no")
 }
 
 func parseRoomID(ctx fiber.Ctx) (int, error) {
