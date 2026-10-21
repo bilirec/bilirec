@@ -121,6 +121,15 @@ jobs:
           - id: danmaku-perf
             pkg: ./internal/services/danmaku
             run: ^TestDanmaku(JsonlRecord_Perf|XmlRecord_Perf|JsonlConcurrent3Way_Perf|Record_CPUSpike|Record_MemoryLeak_MultipleStartStop|Record_GoroutineLeak|Record_DeltaVsVideoOnly)$
+          - id: preview-flv
+            pkg: ./internal/services/preview
+            run: ^(TestPreviewMediaDuringRecord_FLV|TestPreviewMediaAudioOnlyFLV)$
+          - id: preview-ts
+            pkg: ./internal/services/preview
+            run: ^TestPreviewMediaDuringRecord_TS$
+          - id: preview-fmp4
+            pkg: ./internal/services/preview
+            run: ^TestPreviewMediaDuringRecord_FMP4$
     steps:
       - uses: actions/checkout@v4
 

@@ -63,6 +63,7 @@ type Session struct {
 	Recorder *recorder.Service
 	Room     *room.Service
 	Danmaku  *danmaku.Service
+	Preview  *preview.Service
 	Metrics  *metrics.Exporter
 	Monitor  *Monitor
 }
@@ -75,6 +76,7 @@ func NewSession(t *testing.T) *Session {
 	var recorderService *recorder.Service
 	var roomService *room.Service
 	var danmakuService *danmaku.Service
+	var previewService *preview.Service
 	var metricsExporter *metrics.Exporter
 
 	app := fxtest.New(t,
@@ -90,7 +92,7 @@ func NewSession(t *testing.T) *Session {
 		fx.Provide(preview.NewService),
 		fx.Provide(danmaku.NewService),
 		fx.Provide(recorder.NewService),
-		fx.Populate(&biliClient, &recorderService, &roomService, &danmakuService, &metricsExporter),
+		fx.Populate(&biliClient, &recorderService, &roomService, &danmakuService, &previewService, &metricsExporter),
 	)
 	app.RequireStart()
 
@@ -100,6 +102,7 @@ func NewSession(t *testing.T) *Session {
 		Recorder: recorderService,
 		Room:     roomService,
 		Danmaku:  danmakuService,
+		Preview:  previewService,
 		Metrics:  metricsExporter,
 		Monitor:  monitor,
 	}
