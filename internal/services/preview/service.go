@@ -8,7 +8,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/bilirec/bilirec/pkg/flv"
 	"github.com/bilirec/bilirec/pkg/pipeline"
 )
 
@@ -41,7 +40,6 @@ type roomState struct {
 
 	bootstrapReady atomic.Bool
 	bootstrap      []byte
-	det            *flv.HeaderChangeDetector
 
 	mediaN atomic.Int32
 	media  map[uint64]*mediaSub
@@ -133,18 +131,11 @@ func (s *Service) bind(roomID int, path, ext string) *roomState {
 		r = &roomState{eventSubs: make(map[uint64]chan []byte), media: make(map[uint64]*mediaSub)}
 		s.rooms[roomID] = r
 	}
-	if r.det != nil {
-		r.det.Close()
-		r.det = nil
-	}
 	r.path = path
 	r.ext = ext
 	r.segmentStart = time.Now()
 	r.bootstrap = nil
 	r.bootstrapReady.Store(false)
-	if ext == ".flv" {
-		r.det = flv.NewHeaderChangeDetector()
-	}
 	return r
 }
 
@@ -164,10 +155,6 @@ func (s *Service) unbind(roomID int, path string) {
 	r.path = ""
 	r.bootstrap = nil
 	r.bootstrapReady.Store(false)
-	if r.det != nil {
-		r.det.Close()
-		r.det = nil
-	}
 	if len(r.eventSubs) == 0 {
 		delete(s.rooms, roomID)
 	}
@@ -211,14 +198,7 @@ func (s *Service) unsubscribeMedia(roomID int, id uint64) {
 func (s *Service) fanout(roomID int, data []byte) {
 	s.mu.Lock()
 	r := s.rooms[roomID]
-	if r == nil {
-		s.mu.Unlock()
-		return
-	}
-	if !r.bootstrapReady.Load() {
-		s.captureBootstrapLocked(r, data)
-	}
-	if r.mediaN.Load() == 0 {
+	if r == nil || r.mediaN.Load() == 0 {
 		s.mu.Unlock()
 		return
 	}
@@ -246,36 +226,6 @@ func (s *Service) fanout(roomID int, data []byte) {
 	}
 	for _, id := range drops {
 		s.unsubscribeMedia(roomID, id)
-	}
-}
-
-func (s *Service) captureBootstrapLocked(r *roomState, data []byte) {
-	if r.bootstrapReady.Load() {
-		return
-	}
-	switch r.ext {
-	case ".flv":
-		_ = r.det.DetectChange(data)
-		vTag := flv.ZeroTagTimestamp(r.det.LastVideoTag())
-		if len(vTag) == 0 {
-			return
-		}
-		prefix := flv.NewFileHeaderBytes()
-		prefix = append(prefix, vTag...)
-		if aTag := flv.ZeroTagTimestamp(r.det.LastAudioTag()); len(aTag) > 0 {
-			prefix = append(prefix, aTag...)
-		}
-		r.bootstrap = prefix
-		r.bootstrapReady.Store(true)
-		r.det.Close()
-		r.det = nil
-	case ".fmp4":
-		if isFtyp(data) {
-			r.bootstrap = append([]byte(nil), data...)
-			r.bootstrapReady.Store(true)
-		}
-	default:
-		r.bootstrapReady.Store(true)
 	}
 }
 

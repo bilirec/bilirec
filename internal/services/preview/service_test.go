@@ -76,6 +76,27 @@ func TestZeroSubscribersStillCapturesFmp4Init(t *testing.T) {
 	}
 }
 
+func TestFmp4InitAfterMediaSubscribe(t *testing.T) {
+	h := NewService()
+	pipe := mustTap(t, h, 2, "a.fmp4", ".fmp4")
+	initSeg := ftypMoov(32)
+	media := moofBox(48)
+	body, err := h.OpenMedia(2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer body.Body.Close()
+	mustProcess(t, pipe, initSeg)
+	mustProcess(t, pipe, media)
+	got := readSome(t, body.Body, len(initSeg)+len(media))
+	if !bytes.HasPrefix(got, initSeg) {
+		t.Fatalf("missing init: %d bytes", len(got))
+	}
+	if !bytes.Contains(got, media) {
+		t.Fatal("missing moof")
+	}
+}
+
 func TestTSViewerGetsPipelineBytes(t *testing.T) {
 	h := NewService()
 	pipe := mustTap(t, h, 7, "a.ts", ".ts")
