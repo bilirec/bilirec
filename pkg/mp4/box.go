@@ -13,14 +13,6 @@ const (
 	boxSizeUse64    = 1
 	boxSizeUntilEOF = 0
 	boxTypeMoov     = 0x6d6f6f76 // "moov"
-	boxTypeFtyp     = 0x66747970 // "ftyp"
-	boxTypePdin     = 0x7064696e // "pdin"
-	boxTypeFree     = 0x66726565 // "free"
-	boxTypeSkip     = 0x736b6970 // "skip"
-	boxTypeWide     = 0x77696465 // "wide"
-	boxTypeMoof     = 0x6d6f6f66 // "moof"
-	boxTypeStyp     = 0x73747970 // "styp"
-	boxTypeMdat     = 0x6d646174 // "mdat"
 )
 
 // IsISOBMFF reports whether format is an ISO BMFF family that stores a moov box.
@@ -79,66 +71,6 @@ func HasTopLevelBox(r io.ReaderAt, size int64, boxType uint32) (bool, error) {
 		offset = next
 	}
 	return false, nil
-}
-
-// InitSize returns the byte length of the ISO BMFF initialization segment:
-// from the start of the file through the top-level moov box, including
-// intervening ftyp/pdin/free/skip/wide boxes. Truncated files or files with
-// no init return 0 and a nil error.
-func InitSize(path string) (int64, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return 0, err
-	}
-	defer f.Close()
-
-	info, err := f.Stat()
-	if err != nil {
-		return 0, err
-	}
-	return initSize(f, info.Size())
-}
-
-func initSize(r io.ReaderAt, size int64) (int64, error) {
-	if size < boxHeaderLen {
-		return 0, nil
-	}
-
-	var offset int64
-	for offset < size {
-		boxSize, typ, err := readBoxHeader(r, offset, size)
-		if err != nil {
-			if err == io.EOF || err == io.ErrUnexpectedEOF {
-				return 0, nil
-			}
-			return 0, err
-		}
-		if boxSize == 0 {
-			return 0, nil
-		}
-		switch typ {
-		case boxTypeMoov:
-			return offset + boxSize, nil
-		case boxTypeFtyp, boxTypePdin, boxTypeFree, boxTypeSkip, boxTypeWide:
-			next := offset + boxSize
-			if next <= offset {
-				return 0, nil
-			}
-			offset = next
-		case boxTypeMoof, boxTypeStyp, boxTypeMdat:
-			if offset > 0 {
-				return offset, nil
-			}
-			return 0, nil
-		default:
-			next := offset + boxSize
-			if next <= offset {
-				return 0, nil
-			}
-			offset = next
-		}
-	}
-	return 0, nil
 }
 
 func readBoxHeader(r io.ReaderAt, offset, fileSize int64) (boxSize int64, typ uint32, err error) {

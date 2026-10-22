@@ -19,7 +19,9 @@ func TestCatchupKeepsOnlyRecentLines(t *testing.T) {
 	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	lines, err := NewService().Catchup(path)
+	svc := NewService()
+	mustTap(t, svc, 1, filepath.Join(dir, "a.flv"), ".flv")
+	lines, err := svc.Catchup(1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -41,7 +43,9 @@ func TestCatchupDropsIncompleteLastLine(t *testing.T) {
 	if err := os.WriteFile(path, []byte("{\"type\":\"danmaku\"}\n{\"type\":\"gif"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	lines, err := NewService().Catchup(path)
+	svc := NewService()
+	mustTap(t, svc, 1, filepath.Join(dir, "a.flv"), ".flv")
+	lines, err := svc.Catchup(1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -50,13 +54,14 @@ func TestCatchupDropsIncompleteLastLine(t *testing.T) {
 	}
 }
 
-func TestRebasePreviewTsShiftsToJoinClock(t *testing.T) {
-	got := RebasePreviewTs([]byte(`{"type":"gift","ts":120.5}`), 120)
+func TestEventSubRebaseShiftsToJoinClock(t *testing.T) {
+	sub := EventSub{origin: 120}
+	got := sub.Rebase([]byte(`{"type":"gift","ts":120.5}`))
 	if !bytes.Contains(got, []byte(`"ts":0.5`)) {
 		t.Fatalf("ts not rebased: %s", got)
 	}
 	meta := []byte(`{"type":"meta","name":"x"}`)
-	if !bytes.Equal(RebasePreviewTs(meta, 120), meta) {
+	if !bytes.Equal(sub.Rebase(meta), meta) {
 		t.Fatal("meta must stay untouched")
 	}
 }

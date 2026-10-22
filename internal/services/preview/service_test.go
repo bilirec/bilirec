@@ -17,7 +17,7 @@ func TestJoinRequiresBoundPath(t *testing.T) {
 		t.Fatal(err)
 	}
 	pipe.Close()
-	if _, _, err := h.Subscribe(8); err != ErrNotRecording {
+	if _, err := h.Subscribe(8); err != ErrNotRecording {
 		t.Fatalf("err=%v", err)
 	}
 	if _, err := h.OpenMedia(8); err != ErrNotRecording {
@@ -27,7 +27,7 @@ func TestJoinRequiresBoundPath(t *testing.T) {
 
 func TestJoinWithoutBind(t *testing.T) {
 	h := NewService()
-	if _, _, err := h.Subscribe(1); err != ErrNotRecording {
+	if _, err := h.Subscribe(1); err != ErrNotRecording {
 		t.Fatalf("err=%v", err)
 	}
 }
@@ -39,7 +39,7 @@ func TestTapOpenProcessClose(t *testing.T) {
 	if err := pipe.Open(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	_, leave, err := h.Subscribe(4)
+	sub, err := h.Subscribe(4)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -47,9 +47,9 @@ func TestTapOpenProcessClose(t *testing.T) {
 	if _, err := pipe.Process(context.Background(), chunk); err != nil {
 		t.Fatal(err)
 	}
-	leave()
+	sub.Leave()
 	pipe.Close()
-	if _, _, err := h.Subscribe(4); err != ErrNotRecording {
+	if _, err := h.Subscribe(4); err != ErrNotRecording {
 		t.Fatal("unbind should clear path")
 	}
 }
@@ -161,11 +161,12 @@ func TestFLVLateJoinStartsAtKeyframe(t *testing.T) {
 func TestPublishEventDroppedWhenFull(t *testing.T) {
 	h := NewService()
 	mustTap(t, h, 1, "a.ts", ".ts")
-	ch, unsub, err := h.Subscribe(1)
+	sub, err := h.Subscribe(1)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer unsub()
+	defer sub.Leave()
+	ch := sub.C
 	for i := 0; i < eventChanSize+5; i++ {
 		h.PublishEvent(1, []byte(`{"type":"danmaku"}`))
 	}
@@ -183,10 +184,15 @@ func TestPublishEventDroppedWhenFull(t *testing.T) {
 	}
 }
 
-func TestLiveJoinClockTracksSegmentStart(t *testing.T) {
+func TestSubscribeOriginTracksSegmentStart(t *testing.T) {
 	h := NewService()
 	mustTap(t, h, 9, "a.ts", ".ts")
-	if h.LiveJoinClock(9) < 0 {
+	sub, err := h.Subscribe(9)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sub.Leave()
+	if sub.origin < 0 {
 		t.Fatal("clock")
 	}
 }

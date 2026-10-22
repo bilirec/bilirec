@@ -26,7 +26,7 @@ func TestMediaStreamsFanout(t *testing.T) {
 
 	chunk := bytes.Repeat([]byte{0x47}, 188)
 	app := fiber.New()
-	NewController(app, svc, nil, nil)
+	NewController(app, svc)
 
 	go func() {
 		time.Sleep(20 * time.Millisecond)
@@ -64,7 +64,7 @@ func TestMediaStreamsFanout(t *testing.T) {
 func TestMediaRequiresRecording(t *testing.T) {
 	t.Parallel()
 	app := fiber.New()
-	NewController(app, pvs.NewService(), nil, nil)
+	NewController(app, pvs.NewService())
 	req := httptest.NewRequest(http.MethodGet, "/preview/rooms/1/media", nil)
 	resp, err := app.Test(req)
 	if err != nil {
@@ -95,7 +95,7 @@ func TestFLVBootstrapUsedInHTTP(t *testing.T) {
 	}
 
 	app := fiber.New()
-	NewController(app, svc, nil, nil)
+	NewController(app, svc)
 	go func() {
 		time.Sleep(20 * time.Millisecond)
 		_, _ = pipe.Process(context.Background(), key)

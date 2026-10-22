@@ -5,17 +5,31 @@ import (
 	"bytes"
 	"encoding/json"
 	"os"
+	"path/filepath"
+	"strings"
 )
 
 // How far back from the latest jsonl timestamp to replay on preview join.
 // Long enough for a hanging Super Chat; short enough not to dump hours of gifts.
 const catchupWindowSec = 60
 
-func (s *Service) Catchup(sidecarPath string) ([][]byte, error) {
-	if s == nil {
+type catchupLine struct {
+	Type string  `json:"type"`
+	Ts   float64 `json:"ts"`
+}
+
+func (s *Service) Catchup(roomID int) ([][]byte, error) {
+	s.mu.Lock()
+	r := s.rooms[roomID]
+	if r == nil || r.path == "" {
+		s.mu.Unlock()
 		return nil, nil
 	}
-	lines, err := readJSONLLines(sidecarPath)
+	videoPath := r.path
+	s.mu.Unlock()
+
+	sidecar := strings.TrimSuffix(videoPath, filepath.Ext(videoPath)) + ".jsonl"
+	lines, err := readJSONLLines(sidecar)
 	if err != nil {
 		return lines, err
 	}
@@ -58,11 +72,6 @@ func readJSONLLines(path string) ([][]byte, error) {
 	return lines, nil
 }
 
-type catchupLine struct {
-	Type string  `json:"type"`
-	Ts   float64 `json:"ts"`
-}
-
 func filterCatchup(lines [][]byte) [][]byte {
 	if len(lines) == 0 {
 		return lines
@@ -85,7 +94,7 @@ func filterCatchup(lines [][]byte) [][]byte {
 	return kept
 }
 
-func RebasePreviewTs(line []byte, originSec float64) []byte {
+func rebasePreviewTs(line []byte, originSec float64) []byte {
 	if originSec <= 0 || len(line) == 0 {
 		return line
 	}

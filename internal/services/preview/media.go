@@ -17,10 +17,10 @@ type mediaQ struct {
 	closed bool
 }
 
-func newMediaQ() *mediaQ {
-	q := &mediaQ{}
-	q.cond = sync.NewCond(&q.mu)
-	return q
+type chunkReader struct {
+	q     *mediaQ
+	cur   []byte
+	leave func()
 }
 
 func (q *mediaQ) tryPush(b []byte) bool {
@@ -61,12 +61,6 @@ func (q *mediaQ) close() {
 	q.cond.Broadcast()
 }
 
-type chunkReader struct {
-	q     *mediaQ
-	cur   []byte
-	leave func()
-}
-
 func (r *chunkReader) Read(p []byte) (int, error) {
 	if len(r.cur) == 0 {
 		next, err := r.nextChunk()
@@ -94,4 +88,10 @@ func (r *chunkReader) nextChunk() ([]byte, error) {
 		return nil, io.EOF
 	}
 	return next, nil
+}
+
+func newMediaQ() *mediaQ {
+	q := &mediaQ{}
+	q.cond = sync.NewCond(&q.mu)
+	return q
 }

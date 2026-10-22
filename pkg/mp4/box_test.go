@@ -166,45 +166,6 @@ func TestHasMoov_File(t *testing.T) {
 	}
 }
 
-func TestInitSize_FtypMoov(t *testing.T) {
-	t.Parallel()
-	dir := t.TempDir()
-	path := filepath.Join(dir, "a.fmp4")
-	ftyp := box("ftyp", make([]byte, 8))
-	moov := box("moov", make([]byte, 16))
-	media := box("moof", make([]byte, 8))
-	if err := os.WriteFile(path, concat(ftyp, moov, media), 0644); err != nil {
-		t.Fatal(err)
-	}
-	size, err := InitSize(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := int64(len(ftyp) + len(moov))
-	if size != want {
-		t.Fatalf("InitSize=%d want %d", size, want)
-	}
-}
-
-func TestInitSize_Truncated(t *testing.T) {
-	t.Parallel()
-	dir := t.TempDir()
-	path := filepath.Join(dir, "bad.fmp4")
-	hdr := make([]byte, 8)
-	binary.BigEndian.PutUint32(hdr[:4], 1000)
-	copy(hdr[4:8], []byte("ftyp"))
-	if err := os.WriteFile(path, hdr, 0644); err != nil {
-		t.Fatal(err)
-	}
-	size, err := InitSize(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if size != 0 {
-		t.Fatalf("truncated InitSize=%d want 0", size)
-	}
-}
-
 func concat(parts ...[]byte) []byte {
 	var n int
 	for _, p := range parts {

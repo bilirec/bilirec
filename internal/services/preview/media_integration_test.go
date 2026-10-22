@@ -81,7 +81,7 @@ func runPreviewMediaDuringRecord(t *testing.T, profile bilibili.StreamProfile, f
 func startPreviewHTTP(t *testing.T, sess *recording.Session) string {
 	t.Helper()
 	app := fiber.New()
-	pc.NewController(app, sess.Preview, sess.Recorder, sess.Danmaku)
+	pc.NewController(app, sess.Preview)
 
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {

@@ -15,14 +15,12 @@ type fanoutProcessor struct {
 }
 
 func (t *fanoutProcessor) Open(_ context.Context, _ logger.Logger) error {
-	if t.svc != nil {
-		t.room = t.svc.bind(t.roomID, t.path, t.ext)
-	}
+	t.room = t.svc.bind(t.roomID, t.path, t.ext)
 	return nil
 }
 
 func (t *fanoutProcessor) Process(_ context.Context, _ logger.Logger, data []byte) ([]byte, error) {
-	if len(data) == 0 || t.svc == nil || t.room == nil {
+	if len(data) == 0 || t.room == nil {
 		return data, nil
 	}
 	if t.room.mediaN.Load() == 0 && t.room.bootstrapReady.Load() {
@@ -33,9 +31,7 @@ func (t *fanoutProcessor) Process(_ context.Context, _ logger.Logger, data []byt
 }
 
 func (t *fanoutProcessor) Close() error {
-	if t.svc != nil {
-		t.svc.unbind(t.roomID, t.path)
-	}
+	t.svc.unbind(t.roomID, t.path)
 	t.room = nil
 	return nil
 }

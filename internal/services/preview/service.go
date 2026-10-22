@@ -3,7 +3,6 @@ package preview
 import (
 	"errors"
 	"io"
-	"net/http"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -22,6 +21,41 @@ var (
 type Service struct {
 	mu    sync.Mutex
 	rooms map[int]*roomState
+}
+
+type EventSub struct {
+	C      <-chan []byte
+	Leave  func()
+	origin float64
+}
+
+type Media struct {
+	MIME string
+	Body io.ReadCloser
+}
+
+type roomState struct {
+	path         string
+	ext          string
+	segmentStart time.Time
+
+	bootstrapReady atomic.Bool
+	bootstrap      []byte
+	det            *flv.HeaderChangeDetector
+
+	mediaN atomic.Int32
+	media  map[uint64]*mediaSub
+
+	eventSubs map[uint64]chan []byte
+	nextSub   uint64
+}
+
+type mediaSub struct {
+	id     uint64
+	q      *mediaQ
+	closed atomic.Bool
+	ext    string
+	join   joinFilter
 }
 
 func NewService() *Service {
@@ -49,24 +83,26 @@ func (s *Service) PublishEvent(roomID int, line []byte) {
 	s.broadcastLocked(r, cp)
 }
 
-func (s *Service) Subscribe(roomID int) (<-chan []byte, func(), error) {
+func (s *Service) Subscribe(roomID int) (EventSub, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	r := s.rooms[roomID]
 	if r == nil || r.path == "" {
-		return nil, nil, ErrNotRecording
+		return EventSub{}, ErrNotRecording
 	}
 	id := r.nextSub + 1
 	r.nextSub = id
 	ch := make(chan []byte, eventChanSize)
 	r.eventSubs[id] = ch
-	return ch, func() { s.unsubscribeEvents(roomID, id) }, nil
+	return EventSub{
+		C:      ch,
+		Leave:  func() { s.unsubscribeEvents(roomID, id) },
+		origin: joinClock(r),
+	}, nil
 }
 
-type Media struct {
-	MIME   string
-	Status int
-	Body   io.ReadCloser
+func (e EventSub) Rebase(line []byte) []byte {
+	return rebasePreviewTs(line, e.origin)
 }
 
 func (s *Service) OpenMedia(roomID int) (Media, error) {
@@ -79,58 +115,14 @@ func (s *Service) OpenMedia(roomID int) (Media, error) {
 	id := r.nextSub + 1
 	r.nextSub = id
 	sub := &mediaSub{id: id, q: newMediaQ(), ext: r.ext}
-	if r.media == nil {
-		r.media = make(map[uint64]*mediaSub)
-	}
 	r.media[id] = sub
 	r.mediaN.Add(1)
 	ext := r.ext
 	s.mu.Unlock()
 	return Media{
-		MIME:   mediaMIME(ext),
-		Status: http.StatusOK,
-		Body:   &chunkReader{q: sub.q, leave: func() { s.unsubscribeMedia(roomID, id) }},
+		MIME: mediaMIME(ext),
+		Body: &chunkReader{q: sub.q, leave: func() { s.unsubscribeMedia(roomID, id) }},
 	}, nil
-}
-
-// LiveJoinClock is seconds since this recording file opened. SSE catchup
-// subtracts it so overlays line up with a player that starts at the live edge.
-func (s *Service) LiveJoinClock(roomID int) float64 {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	r := s.rooms[roomID]
-	if r == nil || r.path == "" || r.segmentStart.IsZero() {
-		return 0
-	}
-	secs := time.Since(r.segmentStart).Seconds()
-	if secs < 0 {
-		return 0
-	}
-	return secs
-}
-
-type roomState struct {
-	path         string
-	ext          string
-	segmentStart time.Time
-
-	bootstrapReady atomic.Bool
-	bootstrap      []byte
-	det            *flv.HeaderChangeDetector
-
-	mediaN atomic.Int32
-	media  map[uint64]*mediaSub
-
-	eventSubs map[uint64]chan []byte
-	nextSub   uint64
-}
-
-type mediaSub struct {
-	id     uint64
-	q      *mediaQ
-	closed atomic.Bool
-	ext    string
-	join   joinFilter
 }
 
 func (s *Service) bind(roomID int, path, ext string) *roomState {
@@ -263,9 +255,6 @@ func (s *Service) captureBootstrapLocked(r *roomState, data []byte) {
 	}
 	switch r.ext {
 	case ".flv":
-		if r.det == nil {
-			r.det = flv.NewHeaderChangeDetector()
-		}
 		_ = r.det.DetectChange(data)
 		vTag := flv.ZeroTagTimestamp(r.det.LastVideoTag())
 		if len(vTag) == 0 {
@@ -305,6 +294,12 @@ func (s *Service) broadcastLocked(r *roomState, line []byte) {
 	}
 }
 
+func (sub *mediaSub) kick() {
+	if sub.closed.CompareAndSwap(false, true) {
+		sub.q.close()
+	}
+}
+
 func mediaMIME(ext string) string {
 	switch strings.ToLower(ext) {
 	case ".flv":
@@ -322,8 +317,13 @@ func isFtyp(data []byte) bool {
 	return len(data) >= 8 && string(data[4:8]) == "ftyp"
 }
 
-func (sub *mediaSub) kick() {
-	if sub.closed.CompareAndSwap(false, true) {
-		sub.q.close()
+func joinClock(r *roomState) float64 {
+	if r == nil || r.path == "" || r.segmentStart.IsZero() {
+		return 0
 	}
+	secs := time.Since(r.segmentStart).Seconds()
+	if secs < 0 {
+		return 0
+	}
+	return secs
 }
