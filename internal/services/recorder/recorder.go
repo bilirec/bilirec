@@ -239,7 +239,7 @@ func (r *Service) rotate(roomId int, ch <-chan []byte, strategy rs.StreamRecordS
 			r.m.RecordingPipelineError(roomId, metrics.ReasonOpen)
 			return fmt.Errorf("无法构建管道：%v", err)
 		}
-		pipe.AddProcessors(r.preview.Tap(roomId, outputPath, strategy.FileExtension()))
+		pipe.AddProcessors(r.preview.Tap(roomId, outputPath, strategy.FileExtension(), info.isAudioOnly.Load()))
 
 		startCtx, startCancel := context.WithTimeout(ctx, 10*time.Second)
 		if err := pipe.Open(startCtx); err != nil {

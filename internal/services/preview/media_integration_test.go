@@ -34,6 +34,89 @@ func TestPreviewMediaDuringRecord_FMP4(t *testing.T) {
 	runPreviewMediaDuringRecord(t, bilibili.ProfileHLSFMP4, "fmp4", "video/mp4")
 }
 
+func TestPreviewMediaAudioOnlyFLV(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping audio-only preview integration in short mode")
+	}
+
+	const readWindow = 45 * time.Second
+
+	sess := recording.NewSession(t)
+	roomID := recording.ResolveLiveTestRoomIDWithStream(t, sess,
+		bilibili.WithProfiles(bilibili.ProfileHTTPFLV),
+		bilibili.WithOnlyAudio(true),
+	)
+	baseURL := startPreviewHTTP(t, sess)
+
+	startErr := sess.Recorder.Start(roomID, recorder.WithStreamOptions(
+		bilibili.WithProfiles(bilibili.ProfileHTTPFLV),
+		bilibili.WithOnlyAudio(true),
+	))
+	recording.HandleRecordingStartErr(t, startErr)
+	recording.WaitForOutputPathAfterStart(t, sess.Recorder, roomID)
+
+	deadline := time.Now().Add(readWindow)
+	var soak flvSoak
+	buf := make([]byte, 32*1024)
+	gotBytes := 0
+
+	for time.Now().Before(deadline) {
+		if sess.Recorder.GetStatus(roomID) != recorder.Recording {
+			t.Fatal("recording ended before audio-only preview validated")
+		}
+		resp := getPreviewMedia(t, context.Background(), baseURL, roomID, time.Until(deadline))
+		if resp == nil {
+			time.Sleep(200 * time.Millisecond)
+			continue
+		}
+		if resp.StatusCode == http.StatusConflict {
+			resp.Body.Close()
+			time.Sleep(200 * time.Millisecond)
+			continue
+		}
+		if resp.StatusCode != http.StatusOK {
+			body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+			resp.Body.Close()
+			t.Fatalf("GET /media status=%d body=%s", resp.StatusCode, body)
+		}
+		soak.resetBuf()
+		for {
+			n, err := resp.Body.Read(buf)
+			if n > 0 {
+				gotBytes += n
+				soak.feed(buf[:n])
+			}
+			if err == io.EOF {
+				break
+			}
+			if err != nil {
+				t.Logf("preview media read: %v", err)
+				break
+			}
+		}
+		resp.Body.Close()
+		if err := soak.okAudioOnly(); err == nil {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	if err := soak.okAudioOnly(); err != nil {
+		t.Fatalf("audio-only FLV preview not valid after %s: %v (bytes=%d)", readWindow, err, gotBytes)
+	}
+
+	recording.StopRecording(t, sess.Recorder, roomID)
+	recording.WaitUntilNoActiveRecordings(t, sess.Recorder, 30*time.Second)
+	time.Sleep(recording.SettleAfterStop)
+
+	idle := getPreviewMedia(t, context.Background(), baseURL, roomID, 5*time.Second)
+	if idle != nil {
+		defer idle.Body.Close()
+		if idle.StatusCode != http.StatusConflict {
+			t.Fatalf("GET /media after stop: status=%d want %d", idle.StatusCode, http.StatusConflict)
+		}
+	}
+}
+
 func runPreviewMediaDuringRecord(t *testing.T, profile bilibili.StreamProfile, format, wantMIME string) {
 	t.Helper()
 	if testing.Short() {
@@ -243,13 +326,16 @@ func (c *cancelOnClose) Close() error {
 }
 
 type flvSoak struct {
-	buf       []byte
-	header    bool
-	sawHeader bool
-	tags      int
-	keyframes int
-	headers   int
-	skip      int
+	buf         []byte
+	header      bool
+	sawHeader   bool
+	headerFlags byte
+	tags        int
+	keyframes   int
+	headers     int
+	audioSeq    int
+	audioRaw    int
+	skip        int
 }
 
 func (s *flvSoak) resetBuf() {
@@ -274,6 +360,7 @@ func (s *flvSoak) feed(p []byte) {
 		if len(s.buf) < need {
 			return
 		}
+		s.headerFlags = s.buf[4]
 		s.buf = s.buf[need:]
 		s.header = true
 		s.sawHeader = true
@@ -290,17 +377,46 @@ func (s *flvSoak) feed(p []byte) {
 		}
 		s.buf = rest
 		s.tags++
-		if tag[0] != flv.TagTypeVideo {
-			continue
-		}
-		_, isHeader, isKey := flv.ClassifyVideoTag(flv.TagData(tag))
-		if isHeader {
-			s.headers++
-		}
-		if isKey && !isHeader {
-			s.keyframes++
+		switch tag[0] {
+		case flv.TagTypeVideo:
+			_, isHeader, isKey := flv.ClassifyVideoTag(flv.TagData(tag))
+			if isHeader {
+				s.headers++
+			}
+			if isKey && !isHeader {
+				s.keyframes++
+			}
+		case flv.TagTypeAudio:
+			isAAC, isSeq := flv.ClassifyAudioTag(flv.TagData(tag))
+			if isAAC && isSeq {
+				s.audioSeq++
+			} else if isAAC {
+				s.audioRaw++
+			}
 		}
 	}
+}
+
+func (s *flvSoak) okAudioOnly() error {
+	if !s.sawHeader {
+		return fmt.Errorf("FLV stream missing file header")
+	}
+	if s.skip > 0 {
+		return fmt.Errorf("FLV stream needed %d byte skips to resync", s.skip)
+	}
+	if s.headerFlags != flv.TypeFlagAudio {
+		return fmt.Errorf("TypeFlags=%#x want %#x", s.headerFlags, flv.TypeFlagAudio)
+	}
+	if s.audioSeq == 0 {
+		return fmt.Errorf("FLV stream missing AAC sequence header")
+	}
+	if s.audioRaw < 3 {
+		return fmt.Errorf("FLV stream too few AAC raw frames: %d", s.audioRaw)
+	}
+	if s.headers > 0 || s.keyframes > 0 {
+		return fmt.Errorf("unexpected video tags seq=%d key=%d", s.headers, s.keyframes)
+	}
+	return nil
 }
 
 type tsSoak struct {

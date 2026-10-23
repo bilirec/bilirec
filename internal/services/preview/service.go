@@ -60,10 +60,10 @@ func NewService() *Service {
 	return &Service{rooms: make(map[int]*roomState)}
 }
 
-func (s *Service) Tap(roomID int, path, ext string) *pipeline.ProcessorInfo[[]byte] {
+func (s *Service) Tap(roomID int, path, ext string, audioOnly bool) *pipeline.ProcessorInfo[[]byte] {
 	return pipeline.NewProcessorInfo(
 		"preview-fanout",
-		&fanoutProcessor{svc: s, roomID: roomID, path: path, ext: ext},
+		&fanoutProcessor{svc: s, roomID: roomID, path: path, ext: ext, audioOnly: audioOnly},
 	)
 }
 

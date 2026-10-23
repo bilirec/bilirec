@@ -60,11 +60,21 @@ func (f *joinFilter) feedFLV(chunk, bootstrap []byte) []byte {
 		}
 		f.buf = rest
 		if !f.started {
-			if !isFLVKeyframe(tag) {
-				continue
-			}
 			if len(bootstrap) == 0 {
 				continue
+			}
+			if flv.FileHeaderHasVideo(bootstrap) {
+				if !isFLVKeyframe(tag) {
+					continue
+				}
+			} else {
+				if tag[0] != flv.TagTypeAudio {
+					continue
+				}
+				isAAC, isSeq := flv.ClassifyAudioTag(flv.TagData(tag))
+				if !isAAC || isSeq {
+					continue
+				}
 			}
 			f.baseTS = flv.TagTimestamp(tag)
 			f.started = true

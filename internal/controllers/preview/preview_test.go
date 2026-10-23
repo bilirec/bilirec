@@ -19,7 +19,7 @@ func TestMediaStreamsFanout(t *testing.T) {
 	t.Parallel()
 
 	svc := pvs.NewService()
-	pipe := pipeline.New(svc.Tap(1, "a.ts", ".ts"))
+	pipe := pipeline.New(svc.Tap(1, "a.ts", ".ts", false))
 	if err := pipe.Open(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -79,7 +79,7 @@ func TestMediaRequiresRecording(t *testing.T) {
 func TestFLVBootstrapUsedInHTTP(t *testing.T) {
 	t.Parallel()
 	svc := pvs.NewService()
-	pipe := pipeline.New(svc.Tap(2, "a.flv", ".flv"))
+	pipe := pipeline.New(svc.Tap(2, "a.flv", ".flv", false))
 	if err := pipe.Open(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -117,5 +117,50 @@ func TestFLVBootstrapUsedInHTTP(t *testing.T) {
 	}
 	if !bytes.Contains(body, []byte{'K'}) {
 		t.Fatal("missing keyframe")
+	}
+}
+
+func TestFLVAudioOnlyBootstrapUsedInHTTP(t *testing.T) {
+	t.Parallel()
+
+	svc := pvs.NewService()
+	pipe := pipeline.New(svc.Tap(3, "a.flv", ".flv", true))
+	if err := pipe.Open(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	aSeq := flv.NewTagBytes(flv.TagTypeAudio, []byte{0xaf, 0x00, 0x12, 0x10})
+	aRaw := flv.NewTagBytes(flv.TagTypeAudio, []byte{0xaf, 0x01, 0x44})
+	var head bytes.Buffer
+	head.Write(flv.NewFileHeaderBytes())
+	head.Write(aSeq)
+	if _, err := pipe.Process(context.Background(), head.Bytes()); err != nil {
+		t.Fatal(err)
+	}
+
+	app := fiber.New()
+	NewController(app, svc)
+	go func() {
+		time.Sleep(20 * time.Millisecond)
+		_, _ = pipe.Process(context.Background(), aRaw)
+		pipe.Close()
+	}()
+
+	req := httptest.NewRequest(http.MethodGet, "/preview/rooms/3/media", nil)
+	resp, err := app.Test(req, fiber.TestConfig{Timeout: 2 * time.Second})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	audioHdr := flv.NewFileHeaderBytesWithFlags(flv.TypeFlagAudio)
+	if !bytes.HasPrefix(body, audioHdr) {
+		t.Fatal("missing audio-only header")
+	}
+	if !bytes.Contains(body, []byte{0x44}) {
+		t.Fatal("missing AAC raw")
 	}
 }

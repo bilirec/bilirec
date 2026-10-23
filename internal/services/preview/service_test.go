@@ -12,7 +12,7 @@ import (
 
 func TestJoinRequiresBoundPath(t *testing.T) {
 	h := NewService()
-	pipe := pipeline.New(h.Tap(8, "a.ts", ".ts"))
+	pipe := pipeline.New(h.Tap(8, "a.ts", ".ts", false))
 	if err := pipe.Open(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -34,7 +34,7 @@ func TestJoinWithoutBind(t *testing.T) {
 
 func TestTapOpenProcessClose(t *testing.T) {
 	h := NewService()
-	info := h.Tap(4, "x.ts", ".ts")
+	info := h.Tap(4, "x.ts", ".ts", false)
 	pipe := pipeline.New(info)
 	if err := pipe.Open(context.Background()); err != nil {
 		t.Fatal(err)
@@ -56,7 +56,7 @@ func TestTapOpenProcessClose(t *testing.T) {
 
 func TestZeroSubscribersStillCapturesFmp4Init(t *testing.T) {
 	h := NewService()
-	pipe := mustTap(t, h, 2, "a.fmp4", ".fmp4")
+	pipe := mustTap(t, h, 2, "a.fmp4", ".fmp4", false)
 	initSeg := ftypMoov(32)
 	media := moofBox(48)
 	mustProcess(t, pipe, initSeg)
@@ -78,7 +78,7 @@ func TestZeroSubscribersStillCapturesFmp4Init(t *testing.T) {
 
 func TestFmp4InitAfterMediaSubscribe(t *testing.T) {
 	h := NewService()
-	pipe := mustTap(t, h, 2, "a.fmp4", ".fmp4")
+	pipe := mustTap(t, h, 2, "a.fmp4", ".fmp4", false)
 	initSeg := ftypMoov(32)
 	media := moofBox(48)
 	body, err := h.OpenMedia(2)
@@ -99,7 +99,7 @@ func TestFmp4InitAfterMediaSubscribe(t *testing.T) {
 
 func TestTSViewerGetsPipelineBytes(t *testing.T) {
 	h := NewService()
-	pipe := mustTap(t, h, 7, "a.ts", ".ts")
+	pipe := mustTap(t, h, 7, "a.ts", ".ts", false)
 	mustProcess(t, pipe, bytes.Repeat([]byte("a"), 40))
 	media, err := h.OpenMedia(7)
 	if err != nil {
@@ -116,7 +116,7 @@ func TestTSViewerGetsPipelineBytes(t *testing.T) {
 
 func TestSlowViewerIsKicked(t *testing.T) {
 	h := NewService()
-	pipe := mustTap(t, h, 3, "a.ts", ".ts")
+	pipe := mustTap(t, h, 3, "a.ts", ".ts", false)
 	media, err := h.OpenMedia(3)
 	if err != nil {
 		t.Fatal(err)
@@ -140,7 +140,7 @@ func TestSlowViewerIsKicked(t *testing.T) {
 
 func TestFLVLateJoinStartsAtKeyframe(t *testing.T) {
 	h := NewService()
-	pipe := mustTap(t, h, 1, "a.flv", ".flv")
+	pipe := mustTap(t, h, 1, "a.flv", ".flv", false)
 	seq := flv.NewTagBytes(flv.TagTypeVideo, []byte{0x17, 0x00, 0x00, 0x00, 0x00, 0x01})
 	audio := flv.NewTagBytes(flv.TagTypeAudio, []byte{0xaf, 0x00, 0x12, 0x10})
 	inter := flv.NewTagBytes(flv.TagTypeVideo, []byte{0x27, 0x01, 0x00, 0x00, 0x00, 'E'})
@@ -181,7 +181,7 @@ func TestFLVLateJoinStartsAtKeyframe(t *testing.T) {
 
 func TestPublishEventDroppedWhenFull(t *testing.T) {
 	h := NewService()
-	mustTap(t, h, 1, "a.ts", ".ts")
+	mustTap(t, h, 1, "a.ts", ".ts", false)
 	sub, err := h.Subscribe(1)
 	if err != nil {
 		t.Fatal(err)
@@ -207,7 +207,7 @@ func TestPublishEventDroppedWhenFull(t *testing.T) {
 
 func TestSubscribeOriginTracksSegmentStart(t *testing.T) {
 	h := NewService()
-	mustTap(t, h, 9, "a.ts", ".ts")
+	mustTap(t, h, 9, "a.ts", ".ts", false)
 	sub, err := h.Subscribe(9)
 	if err != nil {
 		t.Fatal(err)
@@ -218,9 +218,68 @@ func TestSubscribeOriginTracksSegmentStart(t *testing.T) {
 	}
 }
 
-func mustTap(t *testing.T, h *Service, roomID int, path, ext string) *pipeline.Pipe[[]byte] {
+func TestFLVAudioOnlyLateJoin(t *testing.T) {
+	h := NewService()
+	pipe := mustTap(t, h, 5, "a.flv", ".flv", true)
+	aSeq := flv.NewTagBytes(flv.TagTypeAudio, []byte{0xaf, 0x00, 0x12, 0x10})
+	aRaw := flv.NewTagBytes(flv.TagTypeAudio, []byte{0xaf, 0x01, 0x11, 0x22})
+	flv.SetTagTimestamp(aRaw, 3_000)
+
+	var head bytes.Buffer
+	head.Write(flv.NewFileHeaderBytes())
+	head.Write(aSeq)
+	mustProcess(t, pipe, head.Bytes())
+
+	media, err := h.OpenMedia(5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer media.Body.Close()
+	mustProcess(t, pipe, aRaw)
+	got := readSome(t, media.Body, 4096)
+	audioHdr := flv.NewFileHeaderBytesWithFlags(flv.TypeFlagAudio)
+	if !bytes.HasPrefix(got, audioHdr) {
+		t.Fatal("missing audio-only FLV file header")
+	}
+	if !bytes.Contains(got, aSeq) {
+		t.Fatal("missing AAC sequence header")
+	}
+	if !bytes.Contains(got, []byte{0x11, 0x22}) {
+		t.Fatal("missing AAC raw frame")
+	}
+	if ts := firstAudioMediaTS(got); ts != 0 {
+		t.Fatalf("first audio ts=%d want 0", ts)
+	}
+}
+
+func TestAudioOnlyBootstrapCapturedWithoutViewer(t *testing.T) {
+	h := NewService()
+	pipe := mustTap(t, h, 6, "a.flv", ".flv", true)
+	aSeq := flv.NewTagBytes(flv.TagTypeAudio, []byte{0xaf, 0x00, 0x12, 0x10})
+	aRaw := flv.NewTagBytes(flv.TagTypeAudio, []byte{0xaf, 0x01, 0x33})
+
+	var head bytes.Buffer
+	head.Write(flv.NewFileHeaderBytes())
+	head.Write(aSeq)
+	mustProcess(t, pipe, head.Bytes())
+	mustProcess(t, pipe, aRaw)
+
+	body, err := h.OpenMedia(6)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer body.Body.Close()
+	mustProcess(t, pipe, aRaw)
+	got := readSome(t, body.Body, 2048)
+	audioHdr := flv.NewFileHeaderBytesWithFlags(flv.TypeFlagAudio)
+	if !bytes.HasPrefix(got, audioHdr) {
+		t.Fatal("missing audio-only bootstrap")
+	}
+}
+
+func mustTap(t *testing.T, h *Service, roomID int, path, ext string, audioOnly bool) *pipeline.Pipe[[]byte] {
 	t.Helper()
-	pipe := pipeline.New(h.Tap(roomID, path, ext))
+	pipe := pipeline.New(h.Tap(roomID, path, ext, audioOnly))
 	if err := pipe.Open(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -265,6 +324,30 @@ func box(typ string, payload []byte) []byte {
 	copy(b[4:8], typ)
 	copy(b[8:], payload)
 	return b
+}
+
+func firstAudioMediaTS(buf []byte) uint32 {
+	off := 0
+	if len(buf) >= flv.FlvHeaderSize && string(buf[:3]) == "FLV" {
+		off = flv.FlvHeaderSize + flv.PrevTagSizeBytes
+	}
+	for {
+		tag, rest, ok, skip := flv.NextTag(buf[off:])
+		if skip {
+			off++
+			continue
+		}
+		if !ok {
+			return 0
+		}
+		if tag[0] == flv.TagTypeAudio {
+			isAAC, isSeq := flv.ClassifyAudioTag(flv.TagData(tag))
+			if isAAC && !isSeq {
+				return flv.TagTimestamp(tag)
+			}
+		}
+		off += len(buf[off:]) - len(rest)
+	}
 }
 
 func firstVideoMediaTS(buf []byte) uint32 {

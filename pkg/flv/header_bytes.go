@@ -5,10 +5,28 @@ import "encoding/binary"
 // NewFileHeaderBytes builds a complete FLV file preamble:
 // 9-byte FLV header + 4-byte PreviousTagSize0.
 func NewFileHeaderBytes() []byte {
+	return NewFileHeaderBytesWithFlags(TypeFlagAudioVideo)
+}
+
+// NewFileHeaderBytesWithFlags builds an FLV preamble with the given TypeFlags byte.
+func NewFileHeaderBytesWithFlags(flags byte) []byte {
 	b := make([]byte, len(FlvHeader)+PrevTagSizeBytes)
 	copy(b, FlvHeader)
-	// PreviousTagSize0 is 0 by FLV spec. The last 4 bytes are already zeroed.
+	b[4] = flags
 	return b
+}
+
+// FileHeaderTypeFlags returns the TypeFlags byte from an FLV file header, or 0 if too short.
+func FileHeaderTypeFlags(hdr []byte) byte {
+	if len(hdr) < 5 {
+		return 0
+	}
+	return hdr[4]
+}
+
+// FileHeaderHasVideo reports whether hdr looks like an FLV preamble with the video flag set.
+func FileHeaderHasVideo(hdr []byte) bool {
+	return FileHeaderTypeFlags(hdr)&TypeFlagVideo != 0
 }
 
 func NewTagBytes(tagType byte, data []byte) []byte {

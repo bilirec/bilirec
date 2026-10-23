@@ -20,7 +20,7 @@ func TestCatchupKeepsOnlyRecentLines(t *testing.T) {
 		t.Fatal(err)
 	}
 	svc := NewService()
-	mustTap(t, svc, 1, filepath.Join(dir, "a.flv"), ".flv")
+	mustTap(t, svc, 1, filepath.Join(dir, "a.flv"), ".flv", false)
 	lines, err := svc.Catchup(1)
 	if err != nil {
 		t.Fatal(err)
@@ -44,7 +44,7 @@ func TestCatchupDropsIncompleteLastLine(t *testing.T) {
 		t.Fatal(err)
 	}
 	svc := NewService()
-	mustTap(t, svc, 1, filepath.Join(dir, "a.flv"), ".flv")
+	mustTap(t, svc, 1, filepath.Join(dir, "a.flv"), ".flv", false)
 	lines, err := svc.Catchup(1)
 	if err != nil {
 		t.Fatal(err)

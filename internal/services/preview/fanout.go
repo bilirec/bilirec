@@ -8,12 +8,13 @@ import (
 )
 
 type fanoutProcessor struct {
-	svc    *Service
-	roomID int
-	path   string
-	ext    string
-	room   *roomState
-	det    *flv.HeaderChangeDetector
+	svc       *Service
+	roomID    int
+	path      string
+	ext       string
+	audioOnly bool
+	room      *roomState
+	det       *flv.HeaderChangeDetector
 }
 
 func (t *fanoutProcessor) Open(_ context.Context, _ logger.Logger) error {
@@ -62,14 +63,26 @@ func (t *fanoutProcessor) captureBootstrap(data []byte) {
 		}
 		_ = t.det.DetectChange(data)
 		vTag := flv.ZeroTagTimestamp(t.det.LastVideoTag())
-		if len(vTag) == 0 {
+		if len(vTag) > 0 {
+			prefix := flv.NewFileHeaderBytes()
+			prefix = append(prefix, vTag...)
+			if aTag := flv.ZeroTagTimestamp(t.det.LastAudioTag()); len(aTag) > 0 {
+				prefix = append(prefix, aTag...)
+			}
+			t.det.Close()
+			t.det = nil
+			t.publishBootstrap(prefix)
 			return
 		}
-		prefix := flv.NewFileHeaderBytes()
-		prefix = append(prefix, vTag...)
-		if aTag := flv.ZeroTagTimestamp(t.det.LastAudioTag()); len(aTag) > 0 {
-			prefix = append(prefix, aTag...)
+		if !t.audioOnly {
+			return
 		}
+		aTag := flv.ZeroTagTimestamp(t.det.LastAudioTag())
+		if len(aTag) == 0 {
+			return
+		}
+		prefix := flv.NewFileHeaderBytesWithFlags(flv.TypeFlagAudio)
+		prefix = append(prefix, aTag...)
 		t.det.Close()
 		t.det = nil
 		t.publishBootstrap(prefix)
