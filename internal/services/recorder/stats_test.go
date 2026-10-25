@@ -23,6 +23,9 @@ func TestIsRecording_DanmakuSidecarStem(t *testing.T) {
 	if !svc.IsRecording("一起看盛典-20260808_202002.xml") {
 		t.Fatal("expected xml sidecar with matching stem to be recording")
 	}
+	if !svc.IsRecording("一起看盛典-20260808_202002.vtt") {
+		t.Fatal("expected vtt sidecar with matching stem to be recording")
+	}
 	if svc.IsRecording("一起看盛典-20260808_202002.mp4") {
 		t.Fatal("mp4 with same stem should not inherit recording status from flv segment")
 	}

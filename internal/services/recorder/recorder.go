@@ -16,6 +16,7 @@ import (
 	rs "github.com/bilirec/bilirec/internal/record_strategies"
 	"github.com/bilirec/bilirec/internal/services/convert"
 	"github.com/bilirec/bilirec/internal/services/danmaku"
+	"github.com/bilirec/bilirec/internal/services/subtitle"
 	"github.com/bilirec/bilirec/internal/services/notify"
 	"github.com/bilirec/bilirec/internal/services/preview"
 	"github.com/bilirec/bilirec/internal/services/stream"
@@ -65,6 +66,7 @@ type Service struct {
 	nt           *notify.Service
 	wh           *webhook.Service
 	dm           *danmaku.Service
+	subtitles    *subtitle.Service
 	preview      *preview.Service
 	bilic        *bilibili.Client
 	m            *metrics.Exporter
@@ -84,6 +86,7 @@ func NewService(
 	cv *convert.Service,
 	nt *notify.Service,
 	dm *danmaku.Service,
+	subtitles *subtitle.Service,
 	previewSvc *preview.Service,
 	bilic *bilibili.Client,
 	cfg *config.Config,
@@ -98,6 +101,7 @@ func NewService(
 		cv:           cv,
 		nt:           nt,
 		dm:           dm,
+		subtitles:    subtitles,
 		preview:      previewSvc,
 		bilic:        bilic,
 		m:            m,
@@ -134,6 +138,7 @@ func NewService(
 	lc.Append(fx.StopHook(func() {
 		cancel()
 		r.wg.Wait()
+		r.subtitles.WaitIdle()
 	}))
 	return r
 }
@@ -219,8 +224,6 @@ func (r *Service) rotate(roomId int, ch <-chan []byte, strategy rs.StreamRecordS
 
 	segment := 0
 	state := &rs.RotationState{Data: map[string][]byte{}}
-	hooks := r.pipelineHooks(roomId, info)
-
 	for {
 		outputPath, err := r.rotateFilePath(info, segment, strategy.FileExtension())
 		if err != nil {
@@ -231,6 +234,8 @@ func (r *Service) rotate(roomId int, ch <-chan []byte, strategy rs.StreamRecordS
 
 		segmentOpen := time.Now()
 
+		hooks := r.pipelineHooks(roomId, info)
+
 		// 弹幕录制与视频管道完全解耦：仅在此非阻塞地启动/轮换，
 		// 失败或缺失不影响录播。userStart 仅在使用者发起的首次分段为 true。
 		// 视频分段未保留时 finalize 会 Discard 对应 sidecar。
@@ -240,6 +245,10 @@ func (r *Service) rotate(roomId int, ch <-chan []byte, strategy rs.StreamRecordS
 			return fmt.Errorf("无法构建管道：%v", err)
 		}
 		pipe.AddProcessors(r.preview.Tap(roomId, outputPath, strategy.FileExtension(), info.isAudioOnly.Load()))
+		// 字幕在写盘和预览之后：解析失败或变慢不能挡住当前 chunk 的录像与预览。
+		if info.startOptions.recordSubtitle && !info.isAudioOnly.Load() && info.liveSubtitleEnabled.Load() {
+			pipe.AddProcessors(r.subtitles.NewPipelineProcessor(outputPath))
+		}
 
 		startCtx, startCancel := context.WithTimeout(ctx, 10*time.Second)
 		if err := pipe.Open(startCtx); err != nil {
@@ -492,6 +501,9 @@ func (r *Service) finalize(roomId int, info *Info, outputPath string, audioOnly 
 		return
 	}
 
+	if info.startOptions.recordSubtitle {
+		r.subtitles.Wait(outputPath)
+	}
 	defer r.writingFiles.Remove(filepath.Base(outputPath))
 
 	_, err := os.Stat(outputPath)
@@ -499,6 +511,9 @@ func (r *Service) finalize(roomId int, info *Info, outputPath string, audioOnly 
 		log.Debugf("文件因为过小被而没有写入，跳过收尾：%s", outputPath)
 		if info.startOptions.recordDanmaku {
 			r.dm.Discard(roomId, outputPath)
+		}
+		if info.startOptions.recordSubtitle {
+			_ = utils.RemoveIfExists(utils.SidecarPathForVideo(outputPath, ".vtt"))
 		}
 		r.m.RecordingSegmentDiscarded(roomId, metrics.ReasonSkippedSmall)
 		return

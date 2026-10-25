@@ -5,7 +5,6 @@ import (
 	"path/filepath"
 	"sort"
 
-	"github.com/bilirec/bilirec/internal/services/danmaku"
 	"github.com/bilirec/bilirec/pkg/ds"
 	"github.com/bilirec/bilirec/pkg/logger"
 	"github.com/bilirec/bilirec/utils"
@@ -107,8 +106,8 @@ func (r *Service) deleteUntil(l logger.Logger, roomID int, files []recordingFile
 			l.Warnf("删除最旧录像失败 room=%d path=%s err=%v", roomID, f.path, err)
 			continue
 		}
-		for _, ext := range []string{".jsonl", ".xml"} {
-			_ = utils.RemoveIfExists(danmaku.PathForVideo(f.path, ext))
+		for _, ext := range []string{".jsonl", ".xml", ".vtt"} {
+			_ = utils.RemoveIfExists(utils.SidecarPathForVideo(f.path, ext))
 		}
 		l.Infof("磁盘空间不足，已删除房间 %d 最旧录像：%s", roomID, f.path)
 		freed += f.size

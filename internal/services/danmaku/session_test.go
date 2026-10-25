@@ -17,6 +17,7 @@ import (
 	"github.com/bilirec/bilirec/internal/modules/metrics"
 	"github.com/bilirec/bilirec/internal/services/preview"
 	"github.com/bilirec/bilirec/pkg/pool"
+	"github.com/bilirec/bilirec/utils"
 	"github.com/puzpuzpuz/xsync/v4"
 )
 
@@ -108,7 +109,7 @@ func TestSessionWriteLoopLifecycleJSONL(t *testing.T) {
 	svc := newTestService()
 	sess, dir := newTestSession(svc, "jsonl")
 	videoPath := filepath.Join(dir, t.Name(), "rec-0.flv")
-	outPath := PathForVideo(videoPath, sess.encoder.Ext())
+	outPath := utils.SidecarPathForVideo(videoPath, sess.encoder.Ext())
 	defer os.RemoveAll(filepath.Join(dir, t.Name()))
 
 	go sess.writeLoop(videoPath, time.Now())
@@ -136,7 +137,7 @@ func TestSessionWriteLoopLifecycleXML(t *testing.T) {
 	svc := newTestService()
 	sess, dir := newTestSession(svc, "xml")
 	videoPath := filepath.Join(dir, t.Name(), "rec-0.flv")
-	outPath := PathForVideo(videoPath, sess.encoder.Ext())
+	outPath := utils.SidecarPathForVideo(videoPath, sess.encoder.Ext())
 	defer os.RemoveAll(filepath.Join(dir, t.Name()))
 
 	go sess.writeLoop(videoPath, time.Now())
@@ -192,7 +193,7 @@ func TestSessionRotate(t *testing.T) {
 		t.Fatal("writeLoop did not finish after channel close")
 	}
 
-	content0 := readFile(t, PathForVideo(videoPath0, ".jsonl"))
+	content0 := readFile(t, utils.SidecarPathForVideo(videoPath0, ".jsonl"))
 	assertWellFormedJSONL(t, content0)
 	if !strings.Contains(content0, "分段零弹幕") {
 		t.Errorf("segment 0 file wrong:\n%s", content0)
@@ -201,7 +202,7 @@ func TestSessionRotate(t *testing.T) {
 		t.Errorf("segment 0 file contains post-rotation message:\n%s", content0)
 	}
 
-	content1 := readFile(t, PathForVideo(videoPath1, ".jsonl"))
+	content1 := readFile(t, utils.SidecarPathForVideo(videoPath1, ".jsonl"))
 	assertWellFormedJSONL(t, content1)
 	if !strings.Contains(content1, "分段一弹幕") {
 		t.Errorf("segment 1 file wrong:\n%s", content1)
@@ -351,7 +352,7 @@ func TestSessionDiscardCurrent(t *testing.T) {
 
 	go sess.writeLoop(videoPath0, time.Now())
 	sess.msgCh <- makeFragment(t, svc, sess.encoder, "分段零弹幕")
-	sidecar0 := PathForVideo(videoPath0, ".jsonl")
+	sidecar0 := utils.SidecarPathForVideo(videoPath0, ".jsonl")
 	waitUntilFileExists(t, sidecar0, 5*time.Second)
 
 	svc.Discard(sess.roomID, videoPath0)
@@ -380,7 +381,7 @@ func TestSessionDiscardCurrent(t *testing.T) {
 		t.Fatal("writeLoop did not finish")
 	}
 
-	sidecar1 := PathForVideo(videoPath1, ".jsonl")
+	sidecar1 := utils.SidecarPathForVideo(videoPath1, ".jsonl")
 	content1 := readFile(t, sidecar1)
 	if !strings.Contains(content1, "分段一弹幕") {
 		t.Errorf("segment 1 file wrong:\n%s", content1)
@@ -398,7 +399,7 @@ func TestSessionDiscardPreviousAfterRotate(t *testing.T) {
 
 	go sess.writeLoop(videoPath0, time.Now())
 	sess.msgCh <- makeFragment(t, svc, sess.encoder, "分段零弹幕")
-	sidecar0 := PathForVideo(videoPath0, ".jsonl")
+	sidecar0 := utils.SidecarPathForVideo(videoPath0, ".jsonl")
 	waitUntilFileExists(t, sidecar0, 5*time.Second)
 
 	newStart := time.Now()
@@ -410,7 +411,7 @@ func TestSessionDiscardPreviousAfterRotate(t *testing.T) {
 		}
 		time.Sleep(5 * time.Millisecond)
 	}
-	sidecar1 := PathForVideo(videoPath1, ".jsonl")
+	sidecar1 := utils.SidecarPathForVideo(videoPath1, ".jsonl")
 	sess.msgCh <- makeFragment(t, svc, sess.encoder, "分段一弹幕")
 
 	svc.Discard(sess.roomID, videoPath0)
@@ -447,7 +448,7 @@ func TestSessionDiscardAfterExit(t *testing.T) {
 		t.Fatal("writeLoop did not finish")
 	}
 
-	sidecar := PathForVideo(videoPath, ".jsonl")
+	sidecar := utils.SidecarPathForVideo(videoPath, ".jsonl")
 	waitUntilFileExists(t, sidecar, 5*time.Second)
 	svc.Discard(sess.roomID, videoPath)
 	waitUntilNoFile(t, sidecar, 5*time.Second)
@@ -463,7 +464,7 @@ func TestSessionDiscardNonMatchingPath(t *testing.T) {
 
 	go sess.writeLoop(videoPath, time.Now())
 	sess.msgCh <- makeFragment(t, svc, sess.encoder, "保留")
-	sidecar := PathForVideo(videoPath, ".jsonl")
+	sidecar := utils.SidecarPathForVideo(videoPath, ".jsonl")
 	waitUntilFileExists(t, sidecar, 5*time.Second)
 
 	svc.Discard(sess.roomID, filepath.Join(base, "other.flv"))
@@ -490,7 +491,7 @@ func TestSessionDiscardBeforeRotateHandled(t *testing.T) {
 
 	videoPath0 := filepath.Join(base, "rec-0.flv")
 	go sess.writeLoop(videoPath0, time.Now())
-	waitUntilFileExists(t, PathForVideo(videoPath0, ".jsonl"), 5*time.Second)
+	waitUntilFileExists(t, utils.SidecarPathForVideo(videoPath0, ".jsonl"), 5*time.Second)
 
 	for i := 1; i <= 20; i++ {
 		videoPath := filepath.Join(base, "rec-"+strconv.Itoa(i)+".flv")
@@ -506,7 +507,7 @@ func TestSessionDiscardBeforeRotateHandled(t *testing.T) {
 	}
 
 	for i := 1; i <= 20; i++ {
-		sidecar := PathForVideo(filepath.Join(base, "rec-"+strconv.Itoa(i)+".flv"), ".jsonl")
+		sidecar := utils.SidecarPathForVideo(filepath.Join(base, "rec-"+strconv.Itoa(i)+".flv"), ".jsonl")
 		if _, err := os.Stat(sidecar); !os.IsNotExist(err) {
 			t.Errorf("sidecar %d should have been discarded, stat err=%v", i, err)
 		}
@@ -546,7 +547,7 @@ func TestSessionSupervisorPanicRecovery(t *testing.T) {
 		t.Fatal("session did not terminate after supervisor panic")
 	}
 
-	content := readFile(t, PathForVideo(videoPath, ".jsonl"))
+	content := readFile(t, utils.SidecarPathForVideo(videoPath, ".jsonl"))
 	assertWellFormedJSONL(t, content)
 	if !strings.Contains(content, `"type":"meta"`) {
 		t.Errorf("file not finalized after panic:\n%s", content)

@@ -131,7 +131,7 @@ func runDanmakuProfiledRecordTest(t *testing.T, format string, recordDuration ti
 
 	outputPath := recording.WaitForOutputPathAfterStart(t, sess.Recorder, roomID)
 	waitForDanmakuSession(t, sess.Danmaku, 15*time.Second)
-	sidecarPath := danmaku.PathForVideo(outputPath, "."+format)
+	sidecarPath := utils.SidecarPathForVideo(outputPath, "."+format)
 
 	t.Logf("danmaku perf record: format=%s room=%d duration=%s video=%s sidecar=%s",
 		format, roomID, recordDuration, outputPath, sidecarPath)
@@ -578,7 +578,7 @@ func runDanmakuConcurrentRecordTest(t *testing.T, concurrent int, recordDuration
 				rid, outputPaths[rid])
 			continue
 		}
-		sidecarPath := danmaku.PathForVideo(outputPaths[rid], ".jsonl")
+		sidecarPath := utils.SidecarPathForVideo(outputPaths[rid], ".jsonl")
 		if !waitForFinalizedDanmakuJSONL(t, sidecarPath, 20*time.Second) {
 			t.Errorf("danmaku jsonl not finalized: room=%d path=%s", rid, sidecarPath)
 			continue

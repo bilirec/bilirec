@@ -43,6 +43,14 @@ func ChangePathFormat(path string, newFormat string) string {
 	return path[0:len(path)-len(ext)] + "." + newFormat
 }
 
+// SidecarPathForVideo maps a video segment path to a paired sidecar path with the given extension (e.g. ".jsonl", ".vtt").
+func SidecarPathForVideo(videoPath, ext string) string {
+	if !strings.HasPrefix(ext, ".") {
+		ext = "." + ext
+	}
+	return strings.TrimSuffix(videoPath, filepath.Ext(videoPath)) + ext
+}
+
 func IsFileExists(path string) bool {
 	fi, err := os.Stat(path)
 	return err == nil && fi.Size() > 0

@@ -3,25 +3,16 @@ package danmaku
 import (
 	"fmt"
 	"os"
-	"path/filepath"
-	"strings"
+
+	"github.com/bilirec/bilirec/utils"
 )
 
-// PathForVideo maps a video segment path to its paired danmaku sidecar path
-// with the given extension (e.g. ".jsonl" or ".xml").
-func PathForVideo(videoPath, ext string) string {
-	if !strings.HasPrefix(ext, ".") {
-		ext = "." + ext
-	}
-	return strings.TrimSuffix(videoPath, filepath.Ext(videoPath)) + ext
-}
-
-// SidecarCandidates returns sidecar paths to try, preferring .jsonl over .xml
+// SidecarCandidates returns danmaku sidecar paths to try, preferring .jsonl over .xml
 // so newer recordings win when both exist.
 func SidecarCandidates(videoPath string) []string {
 	return []string{
-		PathForVideo(videoPath, ".jsonl"),
-		PathForVideo(videoPath, ".xml"),
+		utils.SidecarPathForVideo(videoPath, ".jsonl"),
+		utils.SidecarPathForVideo(videoPath, ".xml"),
 	}
 }
 

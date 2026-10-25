@@ -314,6 +314,9 @@ func (s *Service) processRooms(shardRooms map[int]*subscribe.RoomConfig, roomInf
 				if cfg.RecordDanmaku {
 					autoRecordArgs = append(autoRecordArgs, recorder.WithRecordDanmaku(true))
 				}
+				if cfg.RecordSubtitle {
+					autoRecordArgs = append(autoRecordArgs, recorder.WithRecordSubtitle(true))
+				}
 				if cfg.DeleteOldestOnLowDisk {
 					autoRecordArgs = append(autoRecordArgs, recorder.WithDeleteOldestOnLowDisk(true))
 				}

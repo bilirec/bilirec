@@ -226,7 +226,7 @@ func TestIntegration_LowDisk_RemovesDanmakuSidecarsWithMedia(t *testing.T) {
 
 	videoPath := writeRoomMediaFile(t, r.cfg.OutputDir, lowDiskTestUname, lowDiskTestRoomID,
 		"aaa-20200101_000000.flv", []byte("video"))
-	jsonlPath := danmaku.PathForVideo(videoPath, ".jsonl")
+	jsonlPath := utils.SidecarPathForVideo(videoPath, ".jsonl")
 	if err := os.WriteFile(jsonlPath, []byte("{}"), 0644); err != nil {
 		t.Fatalf("write sidecar: %v", err)
 	}

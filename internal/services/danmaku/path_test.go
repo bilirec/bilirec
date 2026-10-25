@@ -6,17 +6,6 @@ import (
 	"testing"
 )
 
-func TestPathForVideo(t *testing.T) {
-	got := PathForVideo(`/records/user-1/title-20260101.flv`, ".jsonl")
-	want := `/records/user-1/title-20260101.jsonl`
-	if filepath.FromSlash(got) != filepath.FromSlash(want) {
-		t.Errorf("got %q want %q", got, want)
-	}
-	if PathForVideo("a.flv", "xml") != "a.xml" {
-		t.Errorf("ext without dot: %q", PathForVideo("a.flv", "xml"))
-	}
-}
-
 func TestResolveSidecarPrefersJSONL(t *testing.T) {
 	dir := t.TempDir()
 	video := filepath.Join(dir, "seg.flv")

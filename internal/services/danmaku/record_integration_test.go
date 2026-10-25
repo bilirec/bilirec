@@ -16,6 +16,7 @@ import (
 
 	"github.com/bilirec/bilirec/internal/services/danmaku"
 	"github.com/bilirec/bilirec/internal/services/recorder"
+	"github.com/bilirec/bilirec/utils"
 )
 
 // danmakuXMLStats summarizes a parsed danmaku XML file for assertions.
@@ -212,7 +213,7 @@ func runDanmakuRecordTest(t *testing.T, format string) {
 	recording.HandleRecordingStartErr(t, startErr)
 
 	outputPath := recording.WaitForOutputPathAfterStart(t, sess.Recorder, roomID)
-	sidecarPath := danmaku.PathForVideo(outputPath, "."+format)
+	sidecarPath := utils.SidecarPathForVideo(outputPath, "."+format)
 
 	const recordDuration = 75 * time.Second
 	t.Logf("recording room=%d for %s with danmaku format=%s; video=%s", roomID, recordDuration, format, outputPath)

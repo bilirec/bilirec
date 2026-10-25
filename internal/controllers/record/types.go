@@ -12,6 +12,7 @@ type (
 		Qn                    *int      `json:"qn"`
 		OnlyAudio             *bool     `json:"only_audio"`
 		RecordDanmaku         *bool     `json:"record_danmaku"`
+		RecordSubtitle        *bool     `json:"record_subtitle"`
 		StreamProfiles        *[]string `json:"stream_profiles"`
 		StreamProfile         *string   `json:"stream_profile"`
 		DeleteOldestOnLowDisk *bool     `json:"delete_oldest_on_low_disk"`

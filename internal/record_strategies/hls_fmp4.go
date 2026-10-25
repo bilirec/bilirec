@@ -44,7 +44,7 @@ func (s *HlsFmp4Strategy) FileExtension() string { return ".fmp4" }
 
 func (s *HlsFmp4Strategy) BuildPipeline(ctx context.Context, outputPath string, state *RotationState, hooks PipelineHooks) (*pipeline.Pipe[[]byte], error) {
 	pendingInit := state.Data[fmp4StatePendingInit]
-	pipe := pipeline.New(
+	return pipeline.New(
 		processors.NewSegmentDedup(),
 		processors.NewFmp4BoxGuard(&s.bases, &s.lastInit),
 		processors.NewFmp4TimestampNormalizer(&s.bases),
@@ -65,8 +65,7 @@ func (s *HlsFmp4Strategy) BuildPipeline(ctx context.Context, outputPath string, 
 			processors.WithOnSync(hooks.OnSync),
 			processors.WithOnEnqueueWait(hooks.OnEnqueueWait),
 		),
-	)
-	return pipe, nil
+	), nil
 }
 
 func (s *HlsFmp4Strategy) HandleErr(err error) ErrHandleResult {

@@ -49,7 +49,16 @@ type (
 		TTL     int    `json:"ttl"`
 		Data    struct {
 			PlayurlInfo *PlayurlInfo `json:"playurl_info"`
+			SubtitleCfg *SubtitleCfg `json:"subtitle_cfg"`
 		} `json:"data"`
+	}
+
+	SubtitleCfg struct {
+		Status int `json:"status"`
+	}
+
+	RoomPlayExtra struct {
+		SubtitleEnabled bool
 	}
 
 	RoomPlayInfo struct {
@@ -152,6 +161,23 @@ func (c *Client) GetStreamURLs(roomID int) ([]string, error) {
 }
 
 func (c *Client) GetStreamURLsV2(roomID int, opts ...GetStreamURLsOption) ([]StreamURLInfo, error) {
+	urls, _, err := c.GetStreamURLsV2WithExtra(roomID, opts...)
+	return urls, err
+}
+
+// RoomSubtitleEnabled reports whether getRoomPlayInfo indicates AI subtitles for the room.
+func (c *Client) RoomSubtitleEnabled(roomID int) (bool, error) {
+	_, extra, err := c.GetStreamURLsV2WithExtra(roomID)
+	if err != nil {
+		return false, err
+	}
+	if extra == nil {
+		return false, nil
+	}
+	return extra.SubtitleEnabled, nil
+}
+
+func (c *Client) GetStreamURLsV2WithExtra(roomID int, opts ...GetStreamURLsOption) ([]StreamURLInfo, *RoomPlayExtra, error) {
 	client := c.liveClient.R()
 	options := defaultGetStreamURLsOptions()
 	for _, opt := range opts {
@@ -162,18 +188,18 @@ func (c *Client) GetStreamURLsV2(roomID int, opts ...GetStreamURLsOption) ([]Str
 
 	for _, profile := range options.profiles {
 		if !profile.IsValid() {
-			return nil, ErrInvalidStreamProfile
+			return nil, nil, ErrInvalidStreamProfile
 		}
 	}
 
 	for _, codec := range options.codecs {
 		if !codec.IsValid() {
-			return nil, ErrInvalidStreamCodec
+			return nil, nil, ErrInvalidStreamCodec
 		}
 	}
 
 	if !options.qn.IsValid() {
-		return nil, ErrInvalidStreamQuality
+		return nil, nil, ErrInvalidStreamQuality
 	}
 
 	protocolRaw, formatRaw := profileQueryParams(options.profiles)
@@ -200,26 +226,30 @@ func (c *Client) GetStreamURLsV2(roomID int, opts ...GetStreamURLsOption) ([]Str
 	client.SetQueryParams(params)
 	newQueryParam, err := c.wbi.SignQuery(client.QueryParam, time.Now())
 	if err != nil {
-		return nil, fmt.Errorf("无法签名 wbi：%v", err)
+		return nil, nil, fmt.Errorf("无法签名 wbi：%v", err)
 	}
 	client.QueryParam = newQueryParam
 
 	resp, err := client.Get(v2StreamAPI)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	} else if resp.StatusCode() != 200 {
-		return nil, fmt.Errorf("状态码：%d", resp.StatusCode())
+		return nil, nil, fmt.Errorf("状态码：%d", resp.StatusCode())
 	}
 
 	var sr StreamResponseV2
 	if err := json.Unmarshal(resp.Body(), &sr); err != nil {
-		return nil, err
+		return nil, nil, err
 	} else if sr.Code != 0 {
-		return nil, mapStreamAPIError(sr.Code, sr.Message)
+		return nil, nil, mapStreamAPIError(sr.Code, sr.Message)
+	}
+
+	extra := &RoomPlayExtra{
+		SubtitleEnabled: sr.Data.SubtitleCfg != nil && sr.Data.SubtitleCfg.Status == 1,
 	}
 
 	if sr.Data.PlayurlInfo == nil || sr.Data.PlayurlInfo.Playurl == nil {
-		return []StreamURLInfo{}, nil
+		return []StreamURLInfo{}, extra, nil
 	}
 
 	streamInfos := make([]StreamURLInfo, 0)
@@ -251,7 +281,7 @@ func (c *Client) GetStreamURLsV2(roomID int, opts ...GetStreamURLsOption) ([]Str
 	}
 
 	sortStreams(streamInfos, int(options.qn))
-	return streamInfos, nil
+	return streamInfos, extra, nil
 }
 
 func containFormat(profiles []StreamProfile, format string) bool {

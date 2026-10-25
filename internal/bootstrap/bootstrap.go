@@ -30,6 +30,7 @@ import (
 	ro "github.com/bilirec/bilirec/internal/services/room"
 	st "github.com/bilirec/bilirec/internal/services/stream"
 	sc "github.com/bilirec/bilirec/internal/services/subcheck"
+	sub "github.com/bilirec/bilirec/internal/services/subtitle"
 	su "github.com/bilirec/bilirec/internal/services/subscribe"
 	wh "github.com/bilirec/bilirec/internal/services/webhook"
 	"github.com/bilirec/bilirec/pkg/logger"
@@ -53,6 +54,7 @@ func MainModule() fx.Option {
 		fx.Provide(me.NewService),
 		fx.Provide(pv.NewService),
 		fx.Provide(dm.NewService),
+		fx.Provide(sub.NewService),
 		fx.Provide(st.NewService),
 		fx.Provide(re.NewService),
 		fx.Provide(ro.NewService),

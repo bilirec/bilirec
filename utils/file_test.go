@@ -6,6 +6,18 @@ import (
 	"testing"
 )
 
+func TestSidecarPathForVideo(t *testing.T) {
+	t.Parallel()
+	got := SidecarPathForVideo(`/records/user-1/title-20260101.flv`, ".jsonl")
+	want := `/records/user-1/title-20260101.jsonl`
+	if filepath.FromSlash(got) != filepath.FromSlash(want) {
+		t.Errorf("got %q want %q", got, want)
+	}
+	if SidecarPathForVideo("a.flv", "xml") != "a.xml" {
+		t.Errorf("ext without dot: %q", SidecarPathForVideo("a.flv", "xml"))
+	}
+}
+
 func TestStagingPath(t *testing.T) {
 	t.Parallel()
 	if got, want := StagingPath("/rec/a.mp4"), "/rec/a.mp4.tmp"; got != want {

@@ -51,7 +51,7 @@ func (s *FlvStrategy) BuildPipeline(ctx context.Context, outputPath string, stat
 		s.sharedFixer.SetTimestampJumpReporter(hooks.OnTimestampJump)
 	}
 
-	pipe := pipeline.New(
+	return pipeline.New(
 		processors.NewFlvStreamFixerWithFixer(s.sharedFixer),
 		processors.NewFlvHeaderSplitDetectorSeeded(videoHdr),
 		processors.NewFlvHeaderWriter(videoHdr, audioHdr),
@@ -71,8 +71,7 @@ func (s *FlvStrategy) BuildPipeline(ctx context.Context, outputPath string, stat
 			processors.WithOnSync(hooks.OnSync),
 			processors.WithOnEnqueueWait(hooks.OnEnqueueWait),
 		),
-	)
-	return pipe, nil
+	), nil
 }
 
 func (s *FlvStrategy) HandleErr(err error) ErrHandleResult {

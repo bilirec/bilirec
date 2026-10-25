@@ -52,6 +52,7 @@ func NewController(
 	files.Get("/browse/*", fc.listFiles)
 	files.Get("/playback/*", fc.playbackFile)
 	files.Get("/danmaku/*", fc.fetchDanmaku)
+	files.Get("/subtitle/*", fc.fetchSubtitle)
 	files.Get("/download/*", fc.downloadFile)
 	files.Get("/disk-space", fc.getDiskSpace)
 	files.Post("/presigned/*", fc.createPresignedURL)
@@ -150,6 +151,44 @@ func (c *Controller) fetchDanmaku(ctx fiber.Ctx) error {
 		contentType = "application/xml; charset=utf-8"
 	}
 	ctx.Set(fiber.HeaderContentType, contentType)
+	ctx.Set(
+		fiber.HeaderContentDisposition,
+		"inline; filename=\""+filepath.Base(fullPath)+"\"",
+	)
+	return c.sendFileWithIdleCacheRelease(ctx, fullPath, fiber.SendFile{ByteRange: true})
+}
+
+// @Summary Fetch subtitle sidecar for a video
+// @Description Stream the WebVTT sidecar paired with a video segment (.vtt)
+// @Tags files
+// @Security BearerAuth
+// @Produce text/vtt
+// @Param path path string true "Video file path"
+// @Success 200 {file} binary "WebVTT subtitle"
+// @Failure 400 {string} string "Bad request"
+// @Failure 404 {string} string "Not found"
+// @Router /files/subtitle/{path} [get]
+func (c *Controller) fetchSubtitle(ctx fiber.Ctx) error {
+	raw := ctx.Params("*", "/")
+	videoPath, err := url.PathUnescape(raw)
+	if err != nil {
+		return fiber.ErrBadRequest
+	}
+	if c.recorderSvc.IsRecording(videoPath) {
+		return fiber.NewError(fiber.StatusBadRequest, "无法获取正在录制分段的字幕")
+	}
+
+	cand := utils.SidecarPathForVideo(videoPath, ".vtt")
+	fullPath, err := c.pathSvc.ValidatePath(cand)
+	if err != nil {
+		return fiber.ErrNotFound
+	}
+	st, err := os.Stat(fullPath)
+	if err != nil || st.IsDir() {
+		return fiber.NewError(fiber.StatusNotFound, "字幕文件不存在")
+	}
+
+	ctx.Set(fiber.HeaderContentType, "text/vtt; charset=utf-8")
 	ctx.Set(
 		fiber.HeaderContentDisposition,
 		"inline; filename=\""+filepath.Base(fullPath)+"\"",

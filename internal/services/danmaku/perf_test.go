@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/bilirec/bilirec/pkg/logger"
+	"github.com/bilirec/bilirec/utils"
 )
 
 // Danmaku recording performance tests. These are the regression metrics for
@@ -252,7 +253,7 @@ func runHighRateWriteLeak(t *testing.T, format string, n int) {
 	sess, _ := newTestSession(svc, format)
 	dir := t.TempDir()
 	videoPath := filepath.Join(dir, "rec.flv")
-	outPath := PathForVideo(videoPath, sess.encoder.Ext())
+	outPath := utils.SidecarPathForVideo(videoPath, sess.encoder.Ext())
 
 	baselineAlloc, _, baselineG := snapshotHeap(true)
 	startWriteLoop(t, sess, videoPath)

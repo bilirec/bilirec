@@ -81,6 +81,7 @@ func (r *Service) segmentWebhookMeta(info *Info) *webhook.SegmentMeta {
 		AreaNameParent:   info.room.ParentAreaName,
 		AreaNameChild:    info.room.AreaName,
 		RecordDanmaku:    info.startOptions.recordDanmaku,
+		RecordSubtitle:   info.startOptions.recordSubtitle,
 		DanmakuConnected: dm,
 		Recording:        recording,
 		Streaming:        info.room.LiveStatus == 1,

@@ -30,6 +30,7 @@ import (
 	"github.com/bilirec/bilirec/internal/services/preview"
 	"github.com/bilirec/bilirec/internal/services/recorder"
 	"github.com/bilirec/bilirec/internal/services/room"
+	"github.com/bilirec/bilirec/internal/services/subtitle"
 	"github.com/bilirec/bilirec/internal/services/stream"
 	"github.com/bilirec/bilirec/internal/services/webhook"
 	"github.com/shirou/gopsutil/v4/cpu"
@@ -91,6 +92,7 @@ func NewSession(t *testing.T) *Session {
 		fx.Provide(notify.NewService),
 		fx.Provide(preview.NewService),
 		fx.Provide(danmaku.NewService),
+		fx.Provide(subtitle.NewService),
 		fx.Provide(recorder.NewService),
 		fx.Populate(&biliClient, &recorderService, &roomService, &danmakuService, &previewService, &metricsExporter),
 	)

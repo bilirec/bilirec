@@ -357,6 +357,7 @@ func (r *Controller) getRoomConfig(ctx fiber.Ctx) error {
 		Qn:                    cfg.Qn,
 		OnlyAudio:             cfg.OnlyAudio,
 		RecordDanmaku:         cfg.RecordDanmaku,
+		RecordSubtitle:        cfg.RecordSubtitle,
 		StreamProfiles:        cfg.StreamProfiles,
 		DeleteOldestOnLowDisk: cfg.DeleteOldestOnLowDisk,
 	})
@@ -402,6 +403,7 @@ func (r *Controller) updateRoomConfig(ctx fiber.Ctx) error {
 		Qn:                    req.Qn,
 		OnlyAudio:             req.OnlyAudio,
 		RecordDanmaku:         req.RecordDanmaku,
+		RecordSubtitle:        req.RecordSubtitle,
 		StreamProfiles:        streamProfiles,
 		DeleteOldestOnLowDisk: req.DeleteOldestOnLowDisk,
 	}); err != nil {
@@ -420,6 +422,7 @@ func (r *Controller) updateRoomConfig(ctx fiber.Ctx) error {
 		Qn:                    req.Qn,
 		OnlyAudio:             req.OnlyAudio,
 		RecordDanmaku:         req.RecordDanmaku,
+		RecordSubtitle:        req.RecordSubtitle,
 		StreamProfiles:        streamProfiles,
 		DeleteOldestOnLowDisk: req.DeleteOldestOnLowDisk,
 	})

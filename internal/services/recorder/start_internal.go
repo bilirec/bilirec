@@ -72,7 +72,7 @@ func (r *Service) internalStart(p internalStartParams) error {
 	}
 
 	startTimeStreamURLs := time.Now()
-	streams, err := r.bilic.GetStreamURLsV2(p.roomId, p.opts.streamOptions...)
+	streams, playExtra, err := r.bilic.GetStreamURLsV2WithExtra(p.roomId, p.opts.streamOptions...)
 	durationStreamURLs := time.Since(startTimeStreamURLs)
 	l.Debugf("duration: function=GetStreamURLsV2 spent=%v", durationStreamURLs)
 
@@ -131,6 +131,9 @@ func (r *Service) internalStart(p internalStartParams) error {
 		if err != nil {
 			discardStreamCh(ch, chunkPool)
 			return err
+		}
+		if playExtra != nil {
+			info.liveSubtitleEnabled.Store(playExtra.SubtitleEnabled)
 		}
 		info.chunkPool = chunkPool
 		info.SetStream(streamInfo.Qn, streamInfo.IsAudioOnly, streamInfo.Format)

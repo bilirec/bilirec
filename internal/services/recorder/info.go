@@ -18,6 +18,7 @@ type Info struct {
 	actualQn           atomic.Int32
 	actualStreamFormat ds.Atomic[string]
 	isAudioOnly        atomic.Bool
+	liveSubtitleEnabled atomic.Bool
 	startTime          time.Time // duration / stats (ElapsedSeconds, max recording)
 	fileTime           time.Time // rotateFilePath filename timestamp
 	outputPath         ds.Atomic[string]

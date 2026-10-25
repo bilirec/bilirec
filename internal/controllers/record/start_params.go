@@ -21,6 +21,7 @@ type resolvedStartParams struct {
 	qn                     int
 	onlyAudio              bool
 	recordDanmaku          bool
+	recordSubtitle         bool
 	deleteOldestOnLowDisk  bool
 }
 
@@ -58,6 +59,9 @@ func resolvedFromStartRecordingQuery(ctx fiber.Ctx) (resolvedStartParams, error)
 	recordDanmakuRaw := strings.TrimSpace(strings.ToLower(fiber.Query(ctx, "record_danmaku", "false")))
 	p.recordDanmaku, _ = strconv.ParseBool(recordDanmakuRaw)
 
+	recordSubtitleRaw := strings.TrimSpace(strings.ToLower(fiber.Query(ctx, "record_subtitle", "false")))
+	p.recordSubtitle, _ = strconv.ParseBool(recordSubtitleRaw)
+
 	deleteOldestRaw := strings.TrimSpace(strings.ToLower(fiber.Query(ctx, "delete_oldest_on_low_disk", "false")))
 	p.deleteOldestOnLowDisk, _ = strconv.ParseBool(deleteOldestRaw)
 
@@ -78,6 +82,9 @@ func resolvedFromStartRecordingRequest(req StartRecordingRequest) resolvedStartP
 	}
 	if req.RecordDanmaku != nil {
 		p.recordDanmaku = *req.RecordDanmaku
+	}
+	if req.RecordSubtitle != nil {
+		p.recordSubtitle = *req.RecordSubtitle
 	}
 	if req.DeleteOldestOnLowDisk != nil {
 		p.deleteOldestOnLowDisk = *req.DeleteOldestOnLowDisk
@@ -133,6 +140,9 @@ func recordStartOptionsFromResolved(p resolvedStartParams) ([]recorder.RecordSta
 
 	if p.recordDanmaku {
 		startArgs = append(startArgs, recorder.WithRecordDanmaku(true))
+	}
+	if p.recordSubtitle {
+		startArgs = append(startArgs, recorder.WithRecordSubtitle(true))
 	}
 	if p.deleteOldestOnLowDisk {
 		startArgs = append(startArgs, recorder.WithDeleteOldestOnLowDisk(true))
