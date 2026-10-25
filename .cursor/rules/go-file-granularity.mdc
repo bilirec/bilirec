@@ -1,0 +1,33 @@
+---
+description: Avoid one-type or one-function Go files—colocate with related code instead
+alwaysApply: true
+---
+
+# Go File Granularity
+
+Do not add or leave a `.go` file that contains **only one** exported or unexported type, or **only one** function (including a single method on a type defined elsewhere).
+
+## Do not
+
+- Create `types.go` / `models.go` with a lone struct when the type is only used by one sibling file.
+- Split a small helper into its own file if nothing else lives there.
+
+## Do instead
+
+- Place the type or function in the file that already owns the main behavior (parser, processor, service constructor, etc.).
+- Split files by **cohesive concern** (e.g. FLV parsing, SEI RBSP, VTT cues), not by “one symbol per file.”
+- When a file would grow too large or mix unrelated domains, split along those domain lines—each resulting file should still hold multiple related symbols.
+
+## Examples
+
+```go
+// ❌ access_unit.go — entire file is one struct
+type accessUnit struct { ... }
+
+// ✅ processor.go — struct sits with pipeline code that consumes it
+type accessUnit struct { ... }
+type segmentProcessor struct { ... }
+func (p *segmentProcessor) Process(...) { ... }
+```
+
+Exception: generated code, `*_test.go`, and build-tag variants follow normal Go layout; this rule targets hand-written production files.
