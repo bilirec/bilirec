@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/bilirec/bilirec/internal/modules/config"
+	"github.com/bilirec/bilirec/pkg/ds"
 	"github.com/bilirec/bilirec/pkg/logger"
 	"github.com/bilirec/bilirec/pkg/pipeline"
 )
@@ -55,7 +56,7 @@ type roomState struct {
 
 type mediaSub struct {
 	id     uint64
-	q      *mediaQ
+	q      *ds.ChunkQueue[[]byte]
 	closed atomic.Bool
 	ext    string
 	join   joinFilter
@@ -231,10 +232,10 @@ func (s *Service) fanout(roomID int, data []byte) {
 		if len(out) == 0 {
 			continue
 		}
-		if !sub.q.tryPush(out) {
+		if !sub.q.TryPush(out) {
 			log.Warnf(
 				"房间 %d 预览媒体订阅 %d 出站队列已满（overflow）：queued=%d max=%d chunk=%d",
-				roomID, sub.id, sub.q.queuedBytes(), s.mediaMaxQueuedBytes, len(out),
+				roomID, sub.id, sub.q.QueuedBytes(), s.mediaMaxQueuedBytes, len(out),
 			)
 			sub.kick()
 			drops = append(drops, sub.id)
@@ -262,7 +263,7 @@ func (s *Service) broadcastLocked(r *roomState, line []byte) {
 
 func (sub *mediaSub) kick() {
 	if sub.closed.CompareAndSwap(false, true) {
-		sub.q.close()
+		sub.q.Close()
 	}
 }
 

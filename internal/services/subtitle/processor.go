@@ -3,9 +3,9 @@ package subtitle
 import (
 	"context"
 	"path/filepath"
-	"sync"
 	"sync/atomic"
 
+	"github.com/bilirec/bilirec/pkg/ds"
 	"github.com/bilirec/bilirec/pkg/flv"
 	"github.com/bilirec/bilirec/pkg/logger"
 	"github.com/bilirec/bilirec/pkg/pipeline"
@@ -40,7 +40,7 @@ type segmentProcessor struct {
 	videoPath string
 	ext       string
 	seg       *segmentWriter
-	q         *byteQueue
+	q         *ds.ChunkQueue[queuedChunk]
 	done      chan struct{}
 
 	drops atomic.Uint64
@@ -64,76 +64,6 @@ type queuedChunk struct {
 	gap  bool
 }
 
-type byteQueue struct {
-	mu       sync.Mutex
-	cond     *sync.Cond
-	chunks   []queuedChunk
-	nbytes   int
-	maxBytes int
-	closed   bool
-}
-
-func newByteQueue(maxBytes int) *byteQueue {
-	q := &byteQueue{maxBytes: maxBytes}
-	q.cond = sync.NewCond(&q.mu)
-	return q
-}
-
-func (q *byteQueue) queuedBytes() int {
-	q.mu.Lock()
-	defer q.mu.Unlock()
-	return q.nbytes
-}
-
-func (q *byteQueue) canTake(n int) bool {
-	q.mu.Lock()
-	defer q.mu.Unlock()
-	if q.closed || n <= 0 {
-		return false
-	}
-	if q.nbytes == 0 {
-		return true
-	}
-	return q.nbytes+n <= q.maxBytes
-}
-
-func (q *byteQueue) push(item queuedChunk) {
-	q.mu.Lock()
-	defer q.mu.Unlock()
-	if q.closed {
-		return
-	}
-	q.chunks = append(q.chunks, item)
-	q.nbytes += len(item.data)
-	q.cond.Signal()
-}
-
-func (q *byteQueue) pop() (queuedChunk, bool) {
-	q.mu.Lock()
-	defer q.mu.Unlock()
-	for len(q.chunks) == 0 && !q.closed {
-		q.cond.Wait()
-	}
-	if len(q.chunks) == 0 {
-		return queuedChunk{}, false
-	}
-	item := q.chunks[0]
-	q.chunks[0] = queuedChunk{}
-	q.chunks = q.chunks[1:]
-	q.nbytes -= len(item.data)
-	return item, true
-}
-
-func (q *byteQueue) close() {
-	q.mu.Lock()
-	defer q.mu.Unlock()
-	if q.closed {
-		return
-	}
-	q.closed = true
-	q.cond.Broadcast()
-}
-
 func applyChunkGap(sc *tsScratch) {
 	sc.pesBuf = nil
 	sc.havePES = false
@@ -141,7 +71,10 @@ func applyChunkGap(sc *tsScratch) {
 
 func (p *segmentProcessor) Open(_ context.Context, _ logger.Logger) error {
 	p.seg = newSegmentWriter(p.svc, p.videoPath)
-	p.q = newByteQueue(subtitleQueueMaxBytes)
+	p.q = ds.NewChunkQueue(subtitleQueueMaxBytes,
+		func(c queuedChunk) int { return len(c.data) },
+		ds.AllowOversizeWhenEmpty(),
+	)
 	p.done = make(chan struct{})
 	p.svc.idle.Add(1)
 	p.svc.track(p.videoPath, p.done)
@@ -154,22 +87,22 @@ func (p *segmentProcessor) Process(_ context.Context, _ logger.Logger, data []by
 	if p.q == nil || len(data) == 0 {
 		return data, nil
 	}
-	if !p.q.canTake(len(data)) {
+	if !p.q.CanTake(len(data)) {
 		if p.drops.Add(1) == 1 {
 			log.Warnf("字幕扫描队列已满 path=%s chunk=%d queued=%d",
-				p.videoPath, len(data), p.q.queuedBytes())
+				p.videoPath, len(data), p.q.QueuedBytes())
 		}
 		p.gap.Store(true)
 		return data, nil
 	}
 	owned := append([]byte(nil), data...)
-	p.q.push(queuedChunk{data: owned, gap: p.gap.Swap(false)})
+	p.q.Push(queuedChunk{data: owned, gap: p.gap.Swap(false)})
 	return data, nil
 }
 
 func (p *segmentProcessor) Close() error {
 	if p.q != nil {
-		p.q.close()
+		p.q.Close()
 		p.q = nil
 	}
 	return nil
@@ -197,7 +130,7 @@ func (p *segmentProcessor) consume() {
 		p.svc.idle.Done()
 	}()
 	for {
-		item, ok := q.pop()
+		item, ok := q.Pop()
 		if !ok {
 			break
 		}

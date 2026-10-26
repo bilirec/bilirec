@@ -5,31 +5,9 @@ import (
 	"encoding/json"
 	"path/filepath"
 	"testing"
-	"time"
-
 	"github.com/bilirec/bilirec/pkg/flv"
+	"github.com/bilirec/bilirec/pkg/sei"
 )
-
-func TestAnnexBTrailingStartCodeDoesNotHang(t *testing.T) {
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		cases := [][]byte{
-			{0, 0, 0, 1, 0x65, 0, 0, 1},
-			{0, 0, 1, 0x65, 0, 0, 0, 1},
-			{0, 0, 1},
-			{0, 0, 0, 1},
-		}
-		for _, nals := range cases {
-			_ = cuesFromSEI(accessUnit{Codec: flv.VideoKindAVC, NALs: nals})
-		}
-	}()
-	select {
-	case <-done:
-	case <-time.After(2 * time.Second):
-		t.Fatal("annex-b scan hung on trailing start code")
-	}
-}
 
 func TestCuesFromEmbeddedUUID(t *testing.T) {
 	items := []rawCue{{Sub: "embedded", SubID: 9, OTMs: 0, DTMs: 500}}
@@ -73,7 +51,7 @@ func TestCuesFromSEIRBSP_survivesBufferReuse(t *testing.T) {
 	au := accessUnit{PTSMs: 2000, Codec: flv.VideoKindAVC, NALs: nal}
 
 	var owned []byte
-	foreachSEIRBSP(au, func(rbsp []byte) {
+	sei.ForEachRBSP(au.NALs, videoSEICodec(au.Codec), func(rbsp []byte) {
 		owned = append([]byte(nil), rbsp...)
 	})
 	if len(owned) == 0 {

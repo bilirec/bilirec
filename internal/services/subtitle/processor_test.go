@@ -26,30 +26,6 @@ func testSubtitleService() *Service {
 	}
 }
 
-func TestByteQueue_rejectsWhenFullUnlessEmpty(t *testing.T) {
-	q := newByteQueue(100)
-	if !q.canTake(50) {
-		t.Fatal("empty queue should accept 50")
-	}
-	q.push(queuedChunk{data: make([]byte, 50)})
-
-	if q.canTake(51) {
-		t.Fatal("should not accept 51 when 50 queued and max 100")
-	}
-	if !q.canTake(50) {
-		t.Fatal("should accept 50 when 50 queued")
-	}
-
-	if q.canTake(200) {
-		t.Fatal("should not accept 200 when 50 already queued")
-	}
-
-	q2 := newByteQueue(100)
-	if !q2.canTake(200) {
-		t.Fatal("empty-queue rule: single chunk over max should be accepted when queue empty")
-	}
-}
-
 func TestApplyChunkGap_clearsPESKeepsPID(t *testing.T) {
 	ts := tsScratch{videoPID: 0x101, codec: flv.VideoKindAVC, havePES: true, pesBuf: []byte{1, 2, 3}}
 	applyChunkGap(&ts)
