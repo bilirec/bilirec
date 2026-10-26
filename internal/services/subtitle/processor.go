@@ -78,7 +78,7 @@ func (p *segmentProcessor) Open(_ context.Context, _ logger.Logger) error {
 	p.done = make(chan struct{})
 	p.svc.idle.Add(1)
 	p.svc.track(p.videoPath, p.done)
-	go p.consume()
+	go p.consume(p.q)
 	return nil
 }
 
@@ -108,8 +108,7 @@ func (p *segmentProcessor) Close() error {
 	return nil
 }
 
-func (p *segmentProcessor) consume() {
-	q := p.q
+func (p *segmentProcessor) consume(q *ds.ChunkQueue[queuedChunk]) {
 	var fmp4 fmp4Scratch
 	var ts tsScratch
 	defer func() {
