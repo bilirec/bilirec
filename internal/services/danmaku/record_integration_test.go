@@ -14,7 +14,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bilirec/bilirec/internal/services/danmaku"
 	"github.com/bilirec/bilirec/internal/services/recorder"
 	"github.com/bilirec/bilirec/utils"
 )

@@ -22,6 +22,7 @@ import (
 	"github.com/bilirec/bilirec/internal/services/room"
 	"github.com/bilirec/bilirec/internal/services/stream"
 	"github.com/bilirec/bilirec/internal/services/subscribe"
+	"github.com/bilirec/bilirec/internal/services/subtitle"
 	"github.com/bilirec/bilirec/internal/services/webhook"
 	"go.uber.org/fx"
 	"go.uber.org/fx/fxtest"
@@ -113,6 +114,7 @@ func newSubcheckIntegrationSession(t *testing.T) *subcheckIntegrationSession {
 		fx.Provide(webhook.NewService),
 		fx.Provide(preview.NewService),
 		fx.Provide(danmaku.NewService),
+		fx.Provide(subtitle.NewService),
 		fx.Provide(recorder.NewService),
 		fx.Provide(NewService),
 		fx.Populate(&roomSvc, &subSvc, &recSvc, &subcheckSvc),
