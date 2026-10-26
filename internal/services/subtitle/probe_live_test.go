@@ -5,7 +5,10 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
+	"io"
 	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -13,7 +16,9 @@ import (
 	"github.com/bilirec/bilirec/internal/modules/bilibili"
 	"github.com/bilirec/bilirec/internal/modules/config"
 	"github.com/bilirec/bilirec/internal/services/stream"
+	"github.com/bilirec/bilirec/pkg/flv"
 	"github.com/bilirec/bilirec/pkg/hls"
+	"github.com/bilirec/bilirec/pkg/logger"
 	"go.uber.org/fx"
 	"go.uber.org/fx/fxtest"
 )
@@ -55,6 +60,190 @@ func TestLiveProbeHLSTSSEI(t *testing.T) {
 		}
 		return aus, cues
 	})
+}
+
+func TestLiveFLVSubtitleMerge(t *testing.T) {
+	if testing.Short() {
+		t.Skip("short mode")
+	}
+	if os.Getenv("BILIREC_SUBTITLE_PROBE") != "1" {
+		t.Skip("set BILIREC_SUBTITLE_PROBE=1 for live FLV subtitle merge")
+	}
+
+	var bili *bilibili.Client
+	app := fxtest.New(t,
+		config.Module,
+		bilibili.Module,
+		fx.Populate(&bili),
+	)
+	app.RequireStart()
+	defer app.RequireStop()
+
+	enabled, err := bili.RoomSubtitleEnabled(probeSubtitleRoomID)
+	if err != nil || !enabled {
+		t.Skip("room subtitle not enabled")
+	}
+	urls, err := bili.GetStreamURLsV2(probeSubtitleRoomID, bilibili.WithProfiles(bilibili.ProfileHTTPFLV))
+	if err != nil || len(urls) == 0 {
+		t.Skipf("no flv urls: %v", err)
+	}
+
+	captureSec := 90
+	if s := os.Getenv("BILIREC_SUBTITLE_PROBE_SECONDS"); s != "" {
+		if n, err := strconv.Atoi(s); err == nil && n > 0 {
+			captureSec = n
+		}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(captureSec+30)*time.Second)
+	defer cancel()
+	resp, err := bili.FetchLiveStreamUrlWithCtx(urls[0].URL, ctx)
+	if err != nil {
+		t.Fatalf("fetch flv: %v", err)
+	}
+	if resp.StatusCode() != 200 {
+		t.Fatalf("flv status %d", resp.StatusCode())
+	}
+	body := resp.RawBody()
+	var raw bytes.Buffer
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		_, _ = io.Copy(&raw, body)
+	}()
+	t.Logf("capturing live flv for %ds", captureSec)
+	time.Sleep(time.Duration(captureSec) * time.Second)
+	_ = body.Close()
+	<-done
+
+	flvBytes := raw.Bytes()
+	if len(flvBytes) < 1024 {
+		t.Fatalf("short flv capture: %d bytes", len(flvBytes))
+	}
+	chunks := splitCompleteFLVTags(flvBytes, 512<<10)
+	var tags bytes.Buffer
+	for _, chunk := range chunks {
+		tags.Write(chunk)
+	}
+
+	dir := t.TempDir()
+	videoPath := filepath.Join(dir, "live.flv")
+	if err := os.WriteFile(videoPath, flvBytes, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	svc := testSubtitleService()
+	p := &segmentProcessor{svc: svc, videoPath: videoPath, ext: ".flv"}
+	if err := p.Open(context.Background(), logger.Named("test")); err != nil {
+		t.Fatal(err)
+	}
+	for _, chunk := range chunks {
+		if _, err := p.Process(context.Background(), logger.Named("test"), chunk); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := p.Close(); err != nil {
+		t.Fatal(err)
+	}
+	svc.Wait(videoPath)
+
+	vttBytes, err := os.ReadFile(filepath.Join(dir, "live.vtt"))
+	if err != nil {
+		t.Fatalf("no vtt from live flv (%d bytes): %v", len(flvBytes), err)
+	}
+	vttTexts := vttCueTexts(string(vttBytes))
+	order, first, last, events := seiTextsBySubID(tags.Bytes())
+	t.Logf("flv=%d bytes tags=%d sei_events=%d sei_ids=%d vtt_cues=%d", len(flvBytes), tags.Len(), events, len(order), len(vttTexts))
+	if len(order) == 0 {
+		t.Fatal("live flv had no subtitle SEI")
+	}
+	if len(vttTexts) != len(order) {
+		t.Fatalf("cue count vtt=%d sei_ids=%d", len(vttTexts), len(order))
+	}
+	grew := 0
+	matchedLast := 0
+	shown := 0
+	for i, id := range order {
+		if last[id] != first[id] {
+			grew++
+			if shown < 5 {
+				t.Logf("append id=%d first=%q last=%q vtt=%q", id, truncText(first[id]), truncText(last[id]), truncText(vttTexts[i]))
+				shown++
+			}
+		}
+		if vttTexts[i] == last[id] {
+			matchedLast++
+		} else {
+			t.Errorf("id=%d vtt=%q first=%q last=%q", id, truncText(vttTexts[i]), truncText(first[id]), truncText(last[id]))
+		}
+	}
+	t.Logf("ids text grew=%d vtt matches last=%d/%d", grew, matchedLast, len(order))
+	if grew == 0 {
+		t.Fatal("capture had no sub_id text updates; cannot show append merge")
+	}
+	if matchedLast != len(order) {
+		t.Fatalf("vtt did not keep the last SEI text for every sub_id")
+	}
+}
+
+func splitCompleteFLVTags(data []byte, max int) [][]byte {
+	rest := data
+	var chunks [][]byte
+	var cur []byte
+	for len(rest) > 0 {
+		tag, next, ok, skip := flv.NextTag(rest)
+		if skip {
+			rest = next
+			continue
+		}
+		if !ok {
+			break
+		}
+		rest = next
+		if len(cur) > 0 && len(cur)+len(tag) > max {
+			chunks = append(chunks, cur)
+			cur = nil
+		}
+		cur = append(cur, tag...)
+	}
+	if len(cur) > 0 {
+		chunks = append(chunks, cur)
+	}
+	return chunks
+}
+
+func seiTextsBySubID(tagBytes []byte) (order []int64, first, last map[int64]string, events int) {
+	first = make(map[int64]string)
+	last = make(map[int64]string)
+	for _, au := range accessUnitsFromFLVChunk(tagBytes) {
+		for _, c := range cuesFromSEI(au) {
+			events++
+			if _, ok := first[c.ID]; !ok {
+				first[c.ID] = c.Text
+				order = append(order, c.ID)
+			}
+			last[c.ID] = c.Text
+		}
+	}
+	return order, first, last, events
+}
+
+func vttCueTexts(content string) []string {
+	var texts []string
+	for _, block := range strings.Split(content, "\n\n") {
+		lines := strings.Split(strings.TrimSpace(block), "\n")
+		if len(lines) < 2 || !strings.Contains(lines[0], "-->") {
+			continue
+		}
+		texts = append(texts, strings.TrimSpace(strings.Join(lines[1:], "\n")))
+	}
+	return texts
+}
+
+func truncText(s string) string {
+	r := []rune(s)
+	if len(r) <= 24 {
+		return s
+	}
+	return string(r[:24]) + "…"
 }
 
 func probeHLSSEI(t *testing.T, profile bilibili.StreamProfile, parse func([]byte, *fmp4State) (int, int)) {

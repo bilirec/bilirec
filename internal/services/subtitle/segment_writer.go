@@ -12,13 +12,14 @@ import (
 )
 
 type pendingCue struct {
+	id      int64
 	startMs int64
 	endMs   int64
 	text    string
 }
 
-// segmentWriter 在分段扫描 goroutine 里把 SEI 解析为 VTT cue 并写入 .vtt sidecar。
-// 首条有效 cue 才创建文件并写入 "WEBVTT\n\n" 头；无 cue 则不落盘。
+// segmentWriter 在分段扫描期间按 sub_id 合并 SEI（同一句的后续更新覆盖正文），
+// finish 时才写入 .vtt。首条有效 cue 才创建文件；无 cue 则不落盘。
 type segmentWriter struct {
 	svc       *Service
 	videoPath string
@@ -26,10 +27,10 @@ type segmentWriter struct {
 	writerCtx context.Context
 	writer    *pipeline.Pipe[[]byte]
 
-	seen   map[int64]struct{}
+	cues   []pendingCue
+	index  map[int64]int
 	baseMs int64
 	baseOK bool
-	last   *pendingCue
 }
 
 func newSegmentWriter(svc *Service, videoPath string) *segmentWriter {
@@ -37,7 +38,7 @@ func newSegmentWriter(svc *Service, videoPath string) *segmentWriter {
 		svc:       svc,
 		videoPath: videoPath,
 		writerCtx: context.Background(),
-		seen:      make(map[int64]struct{}),
+		index:     make(map[int64]int),
 	}
 }
 
@@ -53,54 +54,47 @@ func (w *segmentWriter) enqueueFromAccessUnit(au accessUnit) {
 }
 
 func (w *segmentWriter) finish() {
-	if w.last != nil {
-		w.flushLast(w.last.endMs)
+	if len(w.cues) == 0 {
+		return
 	}
-	if w.writer != nil {
-		w.writer.Close()
-		w.writer = nil
+	if err := w.openWriter(); err != nil {
+		log.Errorf("open subtitle sidecar failed path=%s err=%v", w.videoPath, err)
+		return
 	}
+	_, _ = w.writer.Process(w.writerCtx, []byte("WEBVTT\n\n"))
+	for i, c := range w.cues {
+		end := c.endMs
+		if i+1 < len(w.cues) {
+			end = w.cues[i+1].startMs
+		}
+		if end < c.startMs {
+			end = c.startMs
+		}
+		_, _ = w.writer.Process(w.writerCtx, formatVTTCue(c.startMs, end, c.text))
+	}
+	w.writer.Close()
+	w.writer = nil
 }
 
 func (w *segmentWriter) writeCue(c cue) {
-	if _, seen := w.seen[c.ID]; seen {
-		return
-	}
-	w.seen[c.ID] = struct{}{}
-
 	if !w.baseOK {
 		w.baseMs = c.PTSMs + c.OTMs
 		w.baseOK = true
 	}
-
-	if w.writer == nil {
-		if err := w.openWriter(); err != nil {
-			log.Errorf("open subtitle sidecar failed path=%s err=%v", w.videoPath, err)
-			return
-		}
-		// WebVTT 文件头（UTF-8 文本，无 BOM）。
-		_, _ = w.writer.Process(w.writerCtx, []byte("WEBVTT\n\n"))
-	}
-
 	start := c.PTSMs + c.OTMs - w.baseMs
 	end := start + c.DTMs
-	if w.last != nil {
-		w.flushLast(start)
-	}
-	w.last = &pendingCue{startMs: start, endMs: end, text: c.Text}
-}
-
-func (w *segmentWriter) flushLast(endMs int64) {
-	if w.last == nil || w.writer == nil {
+	if i, ok := w.index[c.ID]; ok {
+		w.cues[i].text = c.Text
+		w.cues[i].endMs = end
 		return
 	}
-	if endMs < w.last.startMs {
-		endMs = w.last.startMs
-	}
-	// 每条 cue 为一段 UTF-8 文本块，经 BufferedStreamWriter 落盘。
-	buf := formatVTTCue(w.last.startMs, endMs, w.last.text)
-	_, _ = w.writer.Process(w.writerCtx, buf)
-	w.last = nil
+	w.index[c.ID] = len(w.cues)
+	w.cues = append(w.cues, pendingCue{
+		id:      c.ID,
+		startMs: start,
+		endMs:   end,
+		text:    c.Text,
+	})
 }
 
 func (w *segmentWriter) openWriter() error {

@@ -3,8 +3,11 @@ package subtitle
 import (
 	"encoding/binary"
 	"encoding/json"
+	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+
 	"github.com/bilirec/bilirec/pkg/flv"
 	"github.com/bilirec/bilirec/pkg/sei"
 )
@@ -77,8 +80,44 @@ func TestSegmentWriter_rejectsOversizedRBSP(t *testing.T) {
 	copy(bigPayload, subtitleUUID)
 	au := accessUnit{PTSMs: 0, Codec: flv.VideoKindAVC, NALs: buildAVCSEINAL(bigPayload)}
 	w.enqueueFromAccessUnit(au)
-	if len(w.seen) != 0 || w.writer != nil {
+	if len(w.cues) != 0 || w.writer != nil {
 		t.Fatalf("expected oversized RBSP to produce no cues")
+	}
+}
+
+func TestSegmentWriter_mergesSameSubID(t *testing.T) {
+	dir := t.TempDir()
+	w := newSegmentWriter(testSubtitleService(), filepath.Join(dir, "seg.flv"))
+	feed := func(text string, id, pts int64) {
+		t.Helper()
+		au := accessUnit{
+			PTSMs: pts,
+			Codec: flv.VideoKindAVC,
+			NALs:  buildAVCSEINAL(mustSubtitleJSON(t, text, id)),
+		}
+		w.enqueueFromAccessUnit(au)
+	}
+	feed("嗯", 7, 0)
+	feed("谢谢你", 7, 400)
+	feed("下一句", 8, 2000)
+	w.finish()
+
+	data, err := os.ReadFile(filepath.Join(dir, "seg.vtt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := string(data)
+	if strings.Count(content, "-->") != 2 {
+		t.Fatalf("expected 2 cues, got %q", content)
+	}
+	if !strings.Contains(content, "谢谢你") || !strings.Contains(content, "下一句") {
+		t.Fatalf("missing merged text: %q", content)
+	}
+	if strings.Contains(content, "嗯") {
+		t.Fatalf("kept first SEI text: %q", content)
+	}
+	if !strings.Contains(content, "00:00:00.000 --> 00:00:02.000") {
+		t.Fatalf("expected first cue truncated at next start: %q", content)
 	}
 }
 
