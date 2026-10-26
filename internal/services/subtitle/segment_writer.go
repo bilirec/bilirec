@@ -7,7 +7,6 @@ import (
 
 	"github.com/bilirec/bilirec/internal/processors"
 	"github.com/bilirec/bilirec/pkg/pipeline"
-	"github.com/bilirec/bilirec/pkg/sei"
 	"github.com/bilirec/bilirec/utils"
 )
 
@@ -43,14 +42,9 @@ func newSegmentWriter(svc *Service, videoPath string) *segmentWriter {
 }
 
 func (w *segmentWriter) enqueueFromAccessUnit(au accessUnit) {
-	sei.ForEachRBSP(au.NALs, videoSEICodec(au.Codec), func(rbsp []byte) {
-		if len(rbsp) == 0 || len(rbsp) > maxSEIRBSPBytes {
-			return
-		}
-		for _, c := range cuesFromSEIRBSP(au.PTSMs, rbsp) {
-			w.writeCue(c)
-		}
-	})
+	for _, c := range cuesFromSEI(au) {
+		w.writeCue(c)
+	}
 }
 
 func (w *segmentWriter) finish() {

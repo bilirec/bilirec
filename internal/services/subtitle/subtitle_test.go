@@ -12,6 +12,20 @@ import (
 	"github.com/bilirec/bilirec/pkg/sei"
 )
 
+func TestCuesFromEmbeddedUUID_trailingBinary(t *testing.T) {
+	items := []rawCue{{Sub: "trail", SubID: 3, OTMs: 0, DTMs: 500}}
+	payload, err := json.Marshal(items)
+	if err != nil {
+		t.Fatal(err)
+	}
+	blob := append(append([]byte{}, subtitleUUID...), payload...)
+	blob = append(blob, 0x80, 0x00, 0xff)
+	cues := cuesFromEmbeddedUUID(blob, 42)
+	if len(cues) != 1 || cues[0].Text != "trail" || cues[0].PTSMs != 42 {
+		t.Fatalf("unexpected cues %+v", cues)
+	}
+}
+
 func TestCuesFromEmbeddedUUID(t *testing.T) {
 	items := []rawCue{{Sub: "embedded", SubID: 9, OTMs: 0, DTMs: 500}}
 	payload, err := json.Marshal(items)

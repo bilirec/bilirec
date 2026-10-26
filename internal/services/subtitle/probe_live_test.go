@@ -16,6 +16,7 @@ import (
 	"github.com/bilirec/bilirec/internal/modules/bilibili"
 	"github.com/bilirec/bilirec/internal/modules/config"
 	"github.com/bilirec/bilirec/internal/services/stream"
+	"github.com/bilirec/bilirec/utils"
 	"github.com/bilirec/bilirec/pkg/flv"
 	"github.com/bilirec/bilirec/pkg/hls"
 	"github.com/bilirec/bilirec/pkg/logger"
@@ -62,13 +63,20 @@ func TestLiveProbeHLSTSSEI(t *testing.T) {
 	})
 }
 
+func TestLiveFMP4SubtitleMerge(t *testing.T) {
+	skipUnlessLiveSubtitleProbe(t)
+	segments := captureHLSSegments(t, bilibili.ProfileHLSFMP4, "fmp4")
+	runLiveSubtitleMerge(t, "fmp4", ".fmp4", "live.fmp4", segments, nil)
+}
+
+func TestLiveTSSubtitleMerge(t *testing.T) {
+	skipUnlessLiveSubtitleProbe(t)
+	segments := captureHLSSegments(t, bilibili.ProfileHLSTS, "ts")
+	runLiveSubtitleMerge(t, "ts", ".ts", "live.ts", segments, nil)
+}
+
 func TestLiveFLVSubtitleMerge(t *testing.T) {
-	if testing.Short() {
-		t.Skip("short mode")
-	}
-	if os.Getenv("BILIREC_SUBTITLE_PROBE") != "1" {
-		t.Skip("set BILIREC_SUBTITLE_PROBE=1 for live FLV subtitle merge")
-	}
+	skipUnlessLiveSubtitleProbe(t)
 
 	var bili *bilibili.Client
 	app := fxtest.New(t,
@@ -88,12 +96,7 @@ func TestLiveFLVSubtitleMerge(t *testing.T) {
 		t.Skipf("no flv urls: %v", err)
 	}
 
-	captureSec := 90
-	if s := os.Getenv("BILIREC_SUBTITLE_PROBE_SECONDS"); s != "" {
-		if n, err := strconv.Atoi(s); err == nil && n > 0 {
-			captureSec = n
-		}
-	}
+	captureSec := probeCaptureSeconds()
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(captureSec+30)*time.Second)
 	defer cancel()
 	resp, err := bili.FetchLiveStreamUrlWithCtx(urls[0].URL, ctx)
@@ -151,9 +154,168 @@ func TestLiveFLVSubtitleMerge(t *testing.T) {
 	}
 	vttTexts := vttCueTexts(string(vttBytes))
 	order, first, last, events := seiTextsBySubID(tags.Bytes())
-	t.Logf("flv=%d bytes tags=%d sei_events=%d sei_ids=%d vtt_cues=%d", len(flvBytes), tags.Len(), events, len(order), len(vttTexts))
+	assertLiveSubtitleMerge(t, "flv", len(flvBytes), events, vttTexts, order, first, last)
+}
+
+func pickHLSStreamURL(t *testing.T, bili *bilibili.Client, profile bilibili.StreamProfile, wantFormat string) (bilibili.StreamURLInfo, bool) {
+	urls, err := bili.GetStreamURLsV2(
+		probeSubtitleRoomID,
+		bilibili.WithProfiles(profile),
+		bilibili.WithQn(bilibili.QualityOriginal),
+	)
+	if err != nil || len(urls) == 0 {
+		t.Skipf("no stream urls: %v", err)
+		return bilibili.StreamURLInfo{}, false
+	}
+	var info bilibili.StreamURLInfo
+	for _, u := range urls {
+		if u.Format == wantFormat {
+			info = u
+			break
+		}
+	}
+	if info.URL == "" {
+		t.Skipf("no %s url in %d candidates", wantFormat, len(urls))
+		return bilibili.StreamURLInfo{}, false
+	}
+	t.Logf("hls stream format=%s qn=%d codec=%s", info.Format, info.Qn, info.Codec)
+	return info, true
+}
+
+func skipUnlessLiveSubtitleProbe(t *testing.T) {
+	if testing.Short() {
+		t.Skip("short mode")
+	}
+	if os.Getenv("BILIREC_SUBTITLE_PROBE") != "1" {
+		t.Skip("set BILIREC_SUBTITLE_PROBE=1 for live subtitle merge")
+	}
+}
+
+func probeCaptureSeconds() int {
+	captureSec := 90
+	if s := os.Getenv("BILIREC_SUBTITLE_PROBE_SECONDS"); s != "" {
+		if n, err := strconv.Atoi(s); err == nil && n > 0 {
+			captureSec = n
+		}
+	}
+	return captureSec
+}
+
+func captureHLSSegments(t *testing.T, profile bilibili.StreamProfile, wantFormat string) [][]byte {
+	t.Helper()
+	var bili *bilibili.Client
+	var st *stream.Service
+	app := fxtest.New(t,
+		config.Module,
+		bilibili.Module,
+		fx.Provide(stream.NewService),
+		fx.Populate(&bili, &st),
+	)
+	app.RequireStart()
+	defer app.RequireStop()
+
+	enabled, err := bili.RoomSubtitleEnabled(probeSubtitleRoomID)
+	if err != nil || !enabled {
+		t.Skip("room subtitle not enabled")
+	}
+	info, ok := pickHLSStreamURL(t, bili, profile, wantFormat)
+	if !ok {
+		return nil
+	}
+
+	captureSec := probeCaptureSeconds()
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(captureSec+90)*time.Second)
+	defer cancel()
+	chunkPool, release := st.AcquireChunkPool(info.Qn)
+	defer release()
+
+	ch, err := st.ReadHlsStream(
+		func() (string, error) { return info.URL, nil },
+		bili.GetLiveHlsPlaylistClient(),
+		bili.GetLiveHlsSegmentClient(),
+		ctx,
+		info.Qn,
+		chunkPool,
+		release,
+	)
+	if err != nil {
+		t.Fatalf("ReadHlsStream: %v", err)
+	}
+
+	t.Logf("capturing live hls %s for %ds", wantFormat, captureSec)
+	deadline := time.After(time.Duration(captureSec) * time.Second)
+	var segments [][]byte
+	for {
+		select {
+		case seg, ok := <-ch:
+			if !ok {
+				if len(segments) == 0 {
+					t.Fatal("hls stream ended before any segment")
+				}
+				return segments
+			}
+			segments = append(segments, append([]byte(nil), seg...))
+		case <-deadline:
+			if len(segments) == 0 {
+				t.Fatal("no hls segments in capture window")
+			}
+			return segments
+		}
+	}
+}
+
+func runLiveSubtitleMerge(t *testing.T, label, ext, fileName string, chunks [][]byte, ref []byte) {
+	t.Helper()
+	var total int
+	for _, c := range chunks {
+		total += len(c)
+	}
+	dir := t.TempDir()
+	videoPath := filepath.Join(dir, fileName)
+	svc := testSubtitleService()
+	p := &segmentProcessor{svc: svc, videoPath: videoPath, ext: ext}
+	if err := p.Open(context.Background(), logger.Named("test")); err != nil {
+		t.Fatal(err)
+	}
+	for _, chunk := range chunks {
+		if _, err := p.Process(context.Background(), logger.Named("test"), chunk); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := p.Close(); err != nil {
+		t.Fatal(err)
+	}
+	svc.Wait(videoPath)
+
+	var order []int64
+	var first, last map[int64]string
+	var events int
+	switch ext {
+	case ".fmp4":
+		order, first, last, events = seiTextsBySubIDFMP4(chunks)
+	case ".ts":
+		order, first, last, events = seiTextsBySubIDTS(chunks)
+	default:
+		if ref == nil {
+			t.Fatalf("unsupported ext %s", ext)
+		}
+		order, first, last, events = seiTextsBySubID(ref)
+	}
+	_ = ref
+	vttBytes, err := os.ReadFile(utils.SidecarPathForVideo(videoPath, ".vtt"))
+	if err != nil {
+		t.Fatalf("no vtt from live %s (%d bytes %d chunks sei_events=%d sei_ids=%d): %v",
+			label, total, len(chunks), events, len(order), err)
+	}
+	vttTexts := vttCueTexts(string(vttBytes))
+	assertLiveSubtitleMerge(t, label, total, events, vttTexts, order, first, last)
+}
+
+func assertLiveSubtitleMerge(t *testing.T, label string, totalBytes int, events int, vttTexts []string, order []int64, first, last map[int64]string) {
+	t.Helper()
+	t.Logf("%s=%d bytes sei_events=%d sei_ids=%d vtt_cues=%d", label, totalBytes, events, len(order), len(vttTexts))
 	if len(order) == 0 {
-		t.Fatal("live flv had no subtitle SEI")
+		t.Fatalf("live %s had no subtitle SEI", label)
 	}
 	if len(vttTexts) != len(order) {
 		t.Fatalf("cue count vtt=%d sei_ids=%d", len(vttTexts), len(order))
@@ -182,6 +344,52 @@ func TestLiveFLVSubtitleMerge(t *testing.T) {
 	if matchedLast != len(order) {
 		t.Fatalf("vtt did not keep the last SEI text for every sub_id")
 	}
+}
+
+func seiTextsBySubIDFMP4(segments [][]byte) (order []int64, first, last map[int64]string, events int) {
+	first = make(map[int64]string)
+	last = make(map[int64]string)
+	var st fmp4State
+	for _, seg := range segments {
+		for _, au := range accessUnitsFromFMP4Chunk(seg, &st) {
+			for _, c := range cuesFromSEI(au) {
+				events++
+				if _, ok := first[c.ID]; !ok {
+					first[c.ID] = c.Text
+					order = append(order, c.ID)
+				}
+				last[c.ID] = c.Text
+			}
+		}
+	}
+	return order, first, last, events
+}
+
+func seiTextsBySubIDTS(segments [][]byte) (order []int64, first, last map[int64]string, events int) {
+	first = make(map[int64]string)
+	last = make(map[int64]string)
+	var sc tsScratch
+	record := func(c cue) {
+		events++
+		if _, ok := first[c.ID]; !ok {
+			first[c.ID] = c.Text
+			order = append(order, c.ID)
+		}
+		last[c.ID] = c.Text
+	}
+	for _, seg := range segments {
+		for _, au := range accessUnitsFromTSChunk(seg, &sc) {
+			for _, c := range cuesFromSEI(au) {
+				record(c)
+			}
+		}
+	}
+	if au, ok := flushTSPES(&sc); ok {
+		for _, c := range cuesFromSEI(au) {
+			record(c)
+		}
+	}
+	return order, first, last, events
 }
 
 func splitCompleteFLVTags(data []byte, max int) [][]byte {
@@ -264,23 +472,16 @@ func probeHLSSEI(t *testing.T, profile bilibili.StreamProfile, parse func([]byte
 		t.Skip("room subtitle not enabled")
 	}
 
-	urls, err := bili.GetStreamURLsV2(probeSubtitleRoomID, bilibili.WithProfiles(profile))
-	if err != nil || len(urls) == 0 {
-		t.Skipf("no stream urls: %v", err)
+	wantFormat := "fmp4"
+	if profile == bilibili.ProfileHLSTS {
+		wantFormat = "ts"
 	}
-	info := urls[0]
-	for _, u := range urls {
-		if u.Format == "fmp4" && profile == bilibili.ProfileHLSFMP4 {
-			info = u
-			break
-		}
-		if u.Format == "ts" && profile == bilibili.ProfileHLSTS {
-			info = u
-			break
-		}
+	info, ok := pickHLSStreamURL(t, bili, profile, wantFormat)
+	if !ok {
+		return
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 	chunkPool, release := st.AcquireChunkPool(info.Qn)
 	defer release()

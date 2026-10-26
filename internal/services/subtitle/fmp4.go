@@ -28,7 +28,64 @@ func accessUnitsFromFMP4Chunk(seg []byte, st *fmp4State) []accessUnit {
 	if !fmp4SegmentHasBox(seg, "moof") {
 		return nil
 	}
-	return samplesFromMoof(seg, st)
+	aus := samplesFromMoof(seg, st)
+	if !accessUnitsHaveSEICues(aus) && bytes.Contains(seg, subtitleUUID) {
+		if au, ok := embeddedAUFromFMP4Segment(seg, st); ok {
+			aus = append(aus, au)
+		}
+	}
+	return aus
+}
+
+func embeddedAUFromFMP4Segment(seg []byte, st *fmp4State) (accessUnit, bool) {
+	pts := firstMoofPTSMs(seg, st)
+	if len(cuesFromEmbeddedUUID(seg, pts)) == 0 {
+		return accessUnit{}, false
+	}
+	return accessUnit{PTSMs: pts, Codec: st.Codec, NALs: seg}, true
+}
+
+func firstMoofPTSMs(seg []byte, st *fmp4State) int64 {
+	ts := st.Timescale
+	if ts == 0 {
+		ts = 1000
+	}
+	for off := 0; off < len(seg); {
+		size, typ, _, ok := hls.ReadBoxHeader(seg, off)
+		if !ok {
+			break
+		}
+		end := off + size
+		if typ != "moof" {
+			off = end
+			continue
+		}
+		for o := off + 8; o < end; {
+			sz, boxTyp, _, ok2 := hls.ReadBoxHeader(seg, o)
+			if !ok2 {
+				break
+			}
+			e := o + sz
+			if boxTyp == "traf" {
+				var base uint64
+				for p := o + 8; p < e; {
+					ps, pt, _, pok := hls.ReadBoxHeader(seg, p)
+					if !pok {
+						break
+					}
+					pe := p + ps
+					if pt == "tfdt" {
+						base = tfdtValue(seg, p, pe)
+					}
+					p = pe
+				}
+				return int64(base * 1000 / uint64(ts))
+			}
+			o = e
+		}
+		off = end
+	}
+	return 0
 }
 
 func fmp4SegmentHasBox(seg []byte, typ string) bool {

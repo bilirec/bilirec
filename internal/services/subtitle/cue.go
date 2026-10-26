@@ -44,8 +44,16 @@ type cue struct {
 
 // cuesFromSEI 在 SEI payload 中匹配 UUID，解析 JSON（sub、sub_id、ot_ms、dt_ms）。
 func cuesFromSEI(au accessUnit) []cue {
+	if bytes.Contains(au.NALs, subtitleUUID) {
+		if embedded := cuesFromEmbeddedUUID(au.NALs, au.PTSMs); len(embedded) > 0 {
+			return embedded
+		}
+	}
 	var out []cue
 	sei.ForEachRBSP(au.NALs, videoSEICodec(au.Codec), func(rbsp []byte) {
+		if len(rbsp) == 0 || len(rbsp) > maxSEIRBSPBytes {
+			return
+		}
 		out = append(out, cuesFromSEIRBSP(au.PTSMs, rbsp)...)
 	})
 	if len(out) == 0 {
@@ -70,8 +78,9 @@ func cuesFromEmbeddedUUID(data []byte, ptsMs int64) []cue {
 			off = start
 			continue
 		}
+		dec := json.NewDecoder(bytes.NewReader(rest[bracket:]))
 		var items []rawCue
-		if err := json.Unmarshal(rest[bracket:], &items); err != nil {
+		if err := dec.Decode(&items); err != nil {
 			off = start
 			continue
 		}
@@ -88,7 +97,7 @@ func cuesFromEmbeddedUUID(data []byte, ptsMs int64) []cue {
 				DTMs:  it.DTMs,
 			})
 		}
-		off = start + bracket + 1
+		off = start + bracket + int(dec.InputOffset())
 	}
 	return out
 }
