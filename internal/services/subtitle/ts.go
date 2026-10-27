@@ -1,6 +1,8 @@
 package subtitle
 
 import (
+	"bytes"
+
 	"github.com/bilirec/bilirec/pkg/flv"
 )
 
@@ -65,7 +67,40 @@ func accessUnitsFromTSChunk(seg []byte, sc *tsScratch) []accessUnit {
 			sc.pesBuf = append(sc.pesBuf, payload...)
 		}
 	}
-	return out
+	return appendEmbeddedTSAccessUnitIfNeeded(seg, sc, out)
+}
+
+// B 站 hls-ts 常在分片内直接携带 BILILIVESUBTITLE JSON（不在视频 PES 的 H.264 SEI 里）。
+func appendEmbeddedTSAccessUnitIfNeeded(seg []byte, sc *tsScratch, out []accessUnit) []accessUnit {
+	if !bytes.Contains(seg, subtitleUUID) || tsChunkAlreadyHasSubtitleCues(out, sc) {
+		return out
+	}
+	pts := int64(0)
+	if len(out) > 0 {
+		pts = out[len(out)-1].PTSMs
+	} else if sc.pesPTS > 0 {
+		pts = int64(sc.pesPTS / 90)
+	}
+	if len(cuesFromEmbeddedUUID(seg, pts)) == 0 {
+		return out
+	}
+	codec := sc.codec
+	if codec == flv.VideoKindNone {
+		codec = flv.VideoKindAVC
+	}
+	return append(out, accessUnit{PTSMs: pts, Codec: codec, NALs: seg})
+}
+
+func tsChunkAlreadyHasSubtitleCues(out []accessUnit, sc *tsScratch) bool {
+	if accessUnitsHaveSEICues(out) {
+		return true
+	}
+	if sc.havePES && len(sc.pesBuf) > 0 {
+		if au, ok := pesToAccessUnit(sc.pesBuf, sc.pesPTS, sc.codec); ok {
+			return len(cuesFromSEI(au)) > 0
+		}
+	}
+	return false
 }
 
 // flushTSPES 在分片轮换或关闭时把未结束的 PES 收成 accessUnit（若有）。
@@ -96,17 +131,17 @@ func pmtVideoStream(seg []byte) (uint16, flv.VideoKind) {
 		if pkt[1]&0x40 == 0 {
 			continue
 		}
-		payload := tsPayload(pkt)
-		if len(payload) < 8 || payload[0] != 0 {
+		section := psiSection(tsPayload(pkt), 0)
+		if len(section) < 8 {
 			continue
 		}
-		sectionLen := int(payload[1]&0x0f)<<8 | int(payload[2])
-		if sectionLen+3 > len(payload) {
+		sectionLen := int(section[1]&0x0f)<<8 | int(section[2])
+		if sectionLen+3 > len(section) {
 			continue
 		}
-		for i := 8; i+4 <= sectionLen+3-1 && i+4 <= len(payload); i += 4 {
-			program := uint16(payload[i])<<8 | uint16(payload[i+1])
-			pmt := uint16(payload[i+2]&0x1f)<<8 | uint16(payload[i+3])
+		for i := 8; i+4 <= sectionLen+3-4 && i+4 <= len(section); i += 4 {
+			program := uint16(section[i])<<8 | uint16(section[i+1])
+			pmt := uint16(section[i+2]&0x1f)<<8 | uint16(section[i+3])
 			if program != 0 {
 				patPID = pmt
 			}
@@ -125,18 +160,18 @@ func pmtVideoStream(seg []byte) (uint16, flv.VideoKind) {
 		if pid != patPID || pkt[1]&0x40 == 0 {
 			continue
 		}
-		payload := tsPayload(pkt)
-		if len(payload) < 12 || payload[0] != 2 {
+		section := psiSection(tsPayload(pkt), 2)
+		if len(section) < 12 {
 			continue
 		}
-		sectionLen := int(payload[1]&0x0f)<<8 | int(payload[2])
-		progInfoLen := int(payload[10]&0x0f)<<8 | int(payload[11])
-		i := 12 + progInfoLen
+		sectionLen := int(section[1]&0x0f)<<8 | int(section[2])
+		progInfoLen := int(section[7]&0x0f)<<8 | int(section[8])
+		i := 9 + progInfoLen
 		end := sectionLen + 3 - 4
-		for i+5 <= end && i+5 <= len(payload) {
-			streamType := payload[i]
-			elemPID := uint16(payload[i+1]&0x1f)<<8 | uint16(payload[i+2])
-			esInfoLen := int(payload[i+3]&0x0f)<<8 | int(payload[i+4])
+		for i+5 <= end && i+5 <= len(section) {
+			streamType := section[i]
+			elemPID := uint16(section[i+1]&0x1f)<<8 | uint16(section[i+2])
+			esInfoLen := int(section[i+3]&0x0f)<<8 | int(section[i+4])
 			switch streamType {
 			case 0x1B:
 				return elemPID, flv.VideoKindAVC
@@ -208,4 +243,19 @@ func pesToAccessUnit(pes []byte, pts90k uint64, codec flv.VideoKind) (accessUnit
 	}
 	ptsMs := int64(pts90k / 90)
 	return accessUnit{PTSMs: ptsMs, Codec: codec, NALs: nals}, true
+}
+
+// psiSection 从 PUSI 负载取出 PSI section（跳过 pointer_field）。部分源站省略 pointer，payload 直接以 table_id 开头。
+func psiSection(payload []byte, tableID byte) []byte {
+	if len(payload) == 0 {
+		return nil
+	}
+	ptr := int(payload[0])
+	if 1+ptr < len(payload) && payload[1+ptr] == tableID {
+		return payload[1+ptr:]
+	}
+	if payload[0] == tableID {
+		return payload
+	}
+	return nil
 }
