@@ -19,12 +19,13 @@ import (
 )
 
 type Event struct {
-	Type      string `json:"type"`
-	RoomID    int    `json:"room_id"`
-	Streamer  string `json:"streamer_name"`
-	RoomTitle string `json:"room_title"`
-	Message   string `json:"message"`
-	Timestamp int64  `json:"timestamp"`
+	Type         string  `json:"type"`
+	RoomID       int     `json:"room_id"`
+	Streamer     string  `json:"streamer_name"`
+	RoomTitle    string  `json:"room_title"`
+	Message      string  `json:"message"`
+	Timestamp    int64   `json:"timestamp"`
+	AlertSeconds float64 `json:"alert_seconds,omitempty"`
 }
 
 type Service struct {
@@ -79,7 +80,9 @@ func NewService(lc fx.Lifecycle, cfg *config.Config) (*Service, error) {
 		sseToken:   cfg.NotifySSEToken,
 		sseClients: make(map[uint64]chan []byte),
 	}
-	s.metricsAlerts.onFire = s.fireMetricsAlert
+	s.metricsAlerts.onFire = func(roomID int, kind metricsAlertKind, sum float64, streamer, roomTitle string) {
+		s.fireMetricsAlert(roomID, kind, sum, streamer, roomTitle)
+	}
 
 	lc.Append(fx.StartStopHook(
 		func() error {

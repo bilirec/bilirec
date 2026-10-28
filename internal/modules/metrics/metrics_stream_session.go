@@ -14,10 +14,17 @@ const (
 	slowSyncMetricThreshold  = 1200 * time.Millisecond
 )
 
+// StreamSessionMeta is room identity for metrics alert push payloads.
+type StreamSessionMeta struct {
+	Streamer  string
+	RoomTitle string
+}
+
 // StreamSession holds per-room VictoriaMetrics counters for pipeline observers
 // on one recording connection. All handles are resolved once when created.
 type StreamSession struct {
 	roomID              int
+	meta                StreamSessionMeta
 	notify              *notify.Service
 	notifyMetricsAlerts bool
 
@@ -31,9 +38,10 @@ type StreamSession struct {
 }
 
 // StreamSession returns counter handles for one room when metrics export is enabled.
-func (e *Exporter) StreamSession(roomID int) *StreamSession {
+func (e *Exporter) StreamSession(roomID int, meta StreamSessionMeta) *StreamSession {
 	sess := &StreamSession{
 		roomID:              roomID,
+		meta:                meta,
 		notify:              e.notify,
 		notifyMetricsAlerts: e.notifyMetricsAlerts,
 	}
@@ -48,6 +56,14 @@ func (e *Exporter) StreamSession(roomID int) *StreamSession {
 	sess.slowFlushes = e.registry.counter(metricRoomStreamSlowFlushesTotal, roomID)
 	sess.slowSyncs = e.registry.counter(metricRoomStreamSlowSyncsTotal, roomID)
 	return sess
+}
+
+func (s *StreamSession) alertContext() notify.RecordingAlertContext {
+	return notify.RecordingAlertContext{
+		RoomID:    s.roomID,
+		Streamer:  s.meta.Streamer,
+		RoomTitle: s.meta.RoomTitle,
+	}
 }
 
 // RecordTimelineGap records a positive media timeline discontinuity to metrics and optional notify.
@@ -67,7 +83,7 @@ func (s *StreamSession) RecordTimelineGap(delta time.Duration) {
 		s.timestampJumpCollapsed.Add(float64(ms) / 1000)
 	}
 	if s.notifyMetricsAlerts {
-		s.notify.ObserveRecordingTimelineGap(s.roomID, delta)
+		s.notify.ObserveRecordingTimelineGap(s.alertContext(), delta)
 	}
 }
 
@@ -88,7 +104,7 @@ func (s *StreamSession) RecordFlush(duration time.Duration) {
 		s.slowFlushes.Inc()
 	}
 	if s.notifyMetricsAlerts {
-		s.notify.ObserveRecordingSlowFlush(s.roomID)
+		s.notify.ObserveRecordingSlowFlush(s.alertContext())
 	}
 }
 
@@ -101,7 +117,7 @@ func (s *StreamSession) RecordSync(duration time.Duration) {
 		s.slowSyncs.Inc()
 	}
 	if s.notifyMetricsAlerts {
-		s.notify.ObserveRecordingSlowSync(s.roomID)
+		s.notify.ObserveRecordingSlowSync(s.alertContext())
 	}
 }
 
@@ -114,7 +130,7 @@ func (s *StreamSession) RecordEnqueueWait(wait time.Duration) {
 		recordEnqueueWait(s.enqueueWaits, s.enqueueWaitSeconds, wait)
 	}
 	if s.notifyMetricsAlerts {
-		s.notify.ObserveRecordingEnqueueWait(s.roomID, wait)
+		s.notify.ObserveRecordingEnqueueWait(s.alertContext(), wait)
 	}
 }
 

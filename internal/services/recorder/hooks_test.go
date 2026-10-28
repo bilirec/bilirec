@@ -4,13 +4,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bilirec/bilirec/internal/modules/bilibili"
 	"github.com/bilirec/bilirec/internal/modules/metrics"
 	"github.com/bilirec/bilirec/internal/processors"
 )
 
 func TestPipelineHooks_MetricsDisabled(t *testing.T) {
 	r := &Service{m: &metrics.Exporter{}}
-	info := &Info{}
+	info := &Info{room: &bilibili.LiveRoomInfoDetail{}}
 	hooks := r.pipelineHooks(123, info)
 
 	if hooks.OnFlush == nil || hooks.OnSync == nil || hooks.OnEnqueueWait == nil || hooks.OnTimelineGap == nil {

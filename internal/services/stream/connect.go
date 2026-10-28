@@ -6,18 +6,20 @@ import (
 	"io"
 
 	"github.com/bilirec/bilirec/internal/modules/bilibili"
+	"github.com/bilirec/bilirec/internal/modules/metrics"
 	"github.com/bilirec/bilirec/pkg/logger"
 	"github.com/bilirec/bilirec/pkg/pool"
 )
 
 // ConnectRequest parameters for TryConnect.
 type ConnectRequest struct {
-	RoomID     int
-	StreamInfo bilibili.StreamURLInfo
-	Log        logger.Logger
-	Attempt    int
-	Total      int
-	URLPreview string
+	RoomID      int
+	SessionMeta metrics.StreamSessionMeta
+	StreamInfo  bilibili.StreamURLInfo
+	Log         logger.Logger
+	Attempt     int
+	Total       int
+	URLPreview  string
 }
 
 // ConnectResult is returned when ingest is established for one URL candidate.

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/bilirec/bilirec/internal/modules/metrics"
 	"github.com/bilirec/bilirec/pkg/hls"
 	"github.com/bilirec/bilirec/pkg/pool"
 	"github.com/go-resty/resty/v2"
@@ -25,6 +26,7 @@ var (
 // Protocol pieces are in pkg/hls; this method wires bilirec pool/logger/qn.
 func (r *Service) ReadHlsStream(
 	roomID int,
+	meta metrics.StreamSessionMeta,
 	fetchM3u8URL func() (string, error),
 	playlistClient, segmentClient *resty.Client,
 	ctx context.Context,
@@ -89,7 +91,7 @@ func (r *Service) ReadHlsStream(
 		nextSeq = mediaSeq
 	}
 
-	sess := r.metrics.StreamSession(roomID)
+	sess := r.metrics.StreamSession(roomID, meta)
 	onSegmentGap := func(d time.Duration) {
 		sess.RecordTimelineGap(d)
 	}

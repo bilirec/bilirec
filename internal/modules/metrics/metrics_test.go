@@ -41,7 +41,7 @@ func TestExporterDisabledNoop(t *testing.T) {
 	}
 	// All methods must be safe no-ops.
 	// All methods must be safe no-ops when registry is nil.
-	e.StreamSession(123)
+	e.StreamSession(123, StreamSessionMeta{})
 	e.AddStreamBytes(123, 1024)
 	e.RecordingStarted(123, "uname")
 	e.RecordingStopped(123)
@@ -162,7 +162,7 @@ func TestExporterEnabled(t *testing.T) {
 
 	e.RecordingStarted(123, "主播A")
 	e.AddStreamBytes(123, 1024)
-	sess := e.StreamSession(123)
+	sess := e.StreamSession(123, StreamSessionMeta{})
 	sess.AddBytesWritten(900)
 	sess.RecordTimelineGap(1200 * time.Millisecond)
 	sess.RecordEnqueueWait(50 * time.Millisecond)
@@ -278,7 +278,7 @@ func TestExporterEnabled(t *testing.T) {
 
 func TestStreamSession_EagerCountersAndEnqueueThreshold(t *testing.T) {
 	e := newExporter(t, true)
-	sess := e.StreamSession(789)
+	sess := e.StreamSession(789, StreamSessionMeta{})
 
 	sess.RecordEnqueueWait(500 * time.Microsecond)
 	out := e.scrape()
