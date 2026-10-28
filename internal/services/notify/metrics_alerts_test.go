@@ -7,7 +7,7 @@ import (
 
 func TestMetricsAlerts_FiresAfterForDuration(t *testing.T) {
 	var fired int
-	fire := func(roomID int, kind metricsAlertKind, sum float64) {
+	fire := func(roomID int, kind metricsAlertKind, sum float64, streamer, roomTitle string) {
 		fired++
 		if roomID != 9 || kind != metricsAlertTimeline || sum <= 30 {
 			t.Fatalf("unexpected fire room=%d kind=%d sum=%v", roomID, kind, sum)
@@ -19,12 +19,13 @@ func TestMetricsAlerts_FiresAfterForDuration(t *testing.T) {
 
 	now := time.Now()
 	params := metricsAlertParams{window: time.Minute, forDur: 0, threshold: 30}
-	h.observeWithParams(9, metricsAlertTimeline, 35, params)
+	ctx9 := RecordingAlertContext{RoomID: 9}
+	h.observeWithParams(ctx9, metricsAlertTimeline, 35, params)
 	if fired != 1 {
 		t.Fatalf("expected immediate fire with for=0, got %d", fired)
 	}
 
-	h.observeWithParams(9, metricsAlertTimeline, 1, metricsAlertParams{window: time.Minute, forDur: time.Minute, threshold: 30})
+	h.observeWithParams(ctx9, metricsAlertTimeline, 1, metricsAlertParams{window: time.Minute, forDur: time.Minute, threshold: 30})
 	if fired != 1 {
 		t.Fatalf("should not fire again while already in violation episode, got %d", fired)
 	}
@@ -36,9 +37,55 @@ func TestMetricsAlerts_FiresAfterForDuration(t *testing.T) {
 	st.fired = false
 	h.mu.Unlock()
 
-	h.observeWithParams(9, metricsAlertTimeline, 35, params)
+	h.observeWithParams(ctx9, metricsAlertTimeline, 35, params)
 	if fired != 2 {
 		t.Fatalf("expected second fire after reset, got %d", fired)
+	}
+}
+
+func TestMetricsAlerts_TickFiresWithoutNewSample(t *testing.T) {
+	var fired int
+	var h metricsAlerts
+	h.onFire = func(roomID int, kind metricsAlertKind, sum float64, streamer, roomTitle string) {
+		fired++
+	}
+
+	ctx7 := RecordingAlertContext{RoomID: 7}
+	h.observe(ctx7, metricsAlertTimeline, 40)
+	if fired != 0 {
+		t.Fatalf("should not fire before for duration, got %d", fired)
+	}
+
+	h.mu.Lock()
+	st := h.stateLocked(7, metricsAlertTimeline)
+	st.pendingSince = time.Now().Add(-6 * time.Minute)
+	st.fired = false
+	h.mu.Unlock()
+
+	h.tick()
+	if fired != 1 {
+		t.Fatalf("expected tick to fire after for duration, got %d", fired)
+	}
+}
+
+func TestMetricsAlerts_ClearRoomAllowsRefire(t *testing.T) {
+	var fired int
+	var h metricsAlerts
+	h.onFire = func(roomID int, kind metricsAlertKind, sum float64, streamer, roomTitle string) {
+		fired++
+	}
+
+	params := metricsAlertParams{window: time.Minute, forDur: 0, threshold: 30}
+	ctx3 := RecordingAlertContext{RoomID: 3}
+	h.observeWithParams(ctx3, metricsAlertTimeline, 35, params)
+	if fired != 1 {
+		t.Fatalf("expected first fire, got %d", fired)
+	}
+
+	h.clearRoom(3)
+	h.observeWithParams(ctx3, metricsAlertTimeline, 35, params)
+	if fired != 2 {
+		t.Fatalf("expected refire after clear, got %d", fired)
 	}
 }
 
@@ -52,5 +99,14 @@ func TestSumMetricsAlertSamples(t *testing.T) {
 	sum := sumMetricsAlertSamples(samples, now, 5*time.Minute)
 	if sum != 7 {
 		t.Fatalf("expected 7, got %v", sum)
+	}
+}
+
+func TestFormatTimelineGapAmount(t *testing.T) {
+	if got := formatTimelineGapAmount(45); got != "45 秒" {
+		t.Fatalf("got %q", got)
+	}
+	if got := formatTimelineGapAmount(120); got != "2.0 分钟" {
+		t.Fatalf("got %q", got)
 	}
 }

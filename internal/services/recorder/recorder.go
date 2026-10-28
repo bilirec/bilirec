@@ -554,6 +554,7 @@ func (r *Service) finalize(roomId int, info *Info, outputPath string, audioOnly 
 
 func (r *Service) stopAndPublish(roomId int, info *Info) {
 	r.Stop(roomId)
+	r.nt.ClearRecordingMetricsAlerts(roomId)
 	r.nt.PublishLiveState(roomId, info.room.Uname, info.room.Title, notify.LiveStateRecordStopped)
 }
 

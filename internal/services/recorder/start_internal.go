@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/bilirec/bilirec/internal/modules/bilibili"
+	"github.com/bilirec/bilirec/internal/modules/metrics"
 	rs "github.com/bilirec/bilirec/internal/record_strategies"
 	"github.com/bilirec/bilirec/internal/services/stream"
 	"github.com/bilirec/bilirec/pkg/backoff"
@@ -104,7 +105,16 @@ func (r *Service) internalStart(p internalStartParams) error {
 			urlPreview,
 		)
 
-		ch, strategy, chunkPool, connected, err := r.tryConnectStream(l, p.roomId, ctx, streamInfo, urlPreview, idx+1, len(streams))
+		ch, strategy, chunkPool, connected, err := r.tryConnectStream(
+			l,
+			p.roomId,
+			ctx,
+			streamInfo,
+			urlPreview,
+			idx+1,
+			len(streams),
+			metrics.StreamSessionMeta{Streamer: roomInfo.Uname, RoomTitle: roomInfo.Title},
+		)
 		if err != nil {
 			return err
 		}
@@ -247,14 +257,16 @@ func (r *Service) tryConnectStream(
 	streamInfo bilibili.StreamURLInfo,
 	urlPreview string,
 	attempt, total int,
+	sessionMeta metrics.StreamSessionMeta,
 ) (<-chan []byte, rs.RecordStrategy, *pool.BucketedBytesPool, bool, error) {
 	res, err := r.st.TryConnect(ctx, stream.ConnectRequest{
-		RoomID:     roomId,
-		StreamInfo: streamInfo,
-		Log:        l,
-		Attempt:    attempt,
-		Total:      total,
-		URLPreview: urlPreview,
+		RoomID:      roomId,
+		SessionMeta: sessionMeta,
+		StreamInfo:  streamInfo,
+		Log:         l,
+		Attempt:     attempt,
+		Total:       total,
+		URLPreview:  urlPreview,
 	})
 	if err != nil {
 		return nil, nil, nil, false, err
