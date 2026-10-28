@@ -135,7 +135,18 @@ func (r *StreamRunner) sendSettle() bool {
 }
 
 func (r *StreamRunner) acceptMap(mapData []byte) bool {
-	res := r.settle.AcceptMap(mapData)
+	return r.applyAcceptResult(r.settle.AcceptMap(mapData))
+}
+
+func (r *StreamRunner) acceptCachedMap(uri string) bool {
+	res, ok := r.settle.AcceptCachedMap(uri)
+	if !ok {
+		return false
+	}
+	return r.applyAcceptResult(res)
+}
+
+func (r *StreamRunner) applyAcceptResult(res AcceptMapResult) bool {
 	r.mapSent = true
 	if res.StopTimer {
 		r.stopDebounceTimer()
@@ -327,10 +338,14 @@ func (r *StreamRunner) onTick(
 
 	if baseSeq > r.nextSeq {
 		lost := baseSeq - r.nextSeq
-		r.log.Warnf("hls：检测到序列间隙，可能丢失了 %d 个分片（nextSeq=%d，baseSeq=%d）", lost, r.nextSeq, baseSeq)
-		if r.onSegmentGap != nil {
-			if delta := PlaylistSequenceGapDuration(pl, lost); delta > 0 {
-				r.onSegmentGap(delta)
+		if lost > 10_000 || lost > 2*int64(len(segs))+100 {
+			r.log.Warnf("hls：播放列表序列基线已切换（nextSeq=%d → baseSeq=%d），按新窗口继续", r.nextSeq, baseSeq)
+		} else {
+			r.log.Warnf("hls：检测到序列间隙，可能丢失了 %d 个分片（nextSeq=%d，baseSeq=%d）", lost, r.nextSeq, baseSeq)
+			if r.onSegmentGap != nil {
+				if delta := PlaylistSequenceGapDuration(pl, lost); delta > 0 {
+					r.onSegmentGap(delta)
+				}
 			}
 		}
 		r.nextSeq = baseSeq
@@ -347,7 +362,7 @@ func (r *StreamRunner) onTick(
 			r.stopDebounceTimer()
 		}
 		if r.currentMapURI != "" && pl.MapURI != "" && r.currentMapURI != pl.MapURI {
-			r.log.Infof("hls：EXT-X-MAP 已变更（%s → %s），将在拉取新 init 后判定是否防抖/切文件", r.currentMapURI, pl.MapURI)
+			r.log.Debugf("hls：EXT-X-MAP 已变更（%s → %s）", r.currentMapURI, pl.MapURI)
 		}
 		r.currentMapURI = pl.MapURI
 		r.mapSent = false
@@ -423,38 +438,45 @@ func (r *StreamRunner) deliverWindow(
 		}
 
 		if r.currentMapURI != "" && !r.mapSent {
-			mapFetchStart := time.Now()
-			mapURL, err := resolver.Resolve(r.currentMapURI)
-			if err != nil {
-				r.log.Warnf("hls：无法解析 map URL %q：%v", r.currentMapURI, err)
-				break
-			}
-
-			mapResp, err := r.segmentClient.R().SetContext(r.ctx).SetDoNotParseResponse(true).Get(mapURL)
-			if err != nil {
-				if isCanceled(err, r.ctx) {
+			if r.settle.HasCachedMap(r.currentMapURI) {
+				if !r.acceptCachedMap(r.currentMapURI) {
 					return false
 				}
-				r.log.Warnf("hls：拉取 map 失败：%v", err)
-				break
-			}
-			if mapResp.StatusCode() != 200 {
-				closeSegmentResponseBody(mapResp)
-				r.log.Warnf("hls：map 状态码 %d", mapResp.StatusCode())
-				break
-			}
-			mapData, readErr := r.readBody(mapResp)
-			if readErr != nil {
-				if isCanceled(readErr, r.ctx) {
+			} else {
+				mapFetchStart := time.Now()
+				mapURL, err := resolver.Resolve(r.currentMapURI)
+				if err != nil {
+					r.log.Warnf("hls：无法解析 map URL %q：%v", r.currentMapURI, err)
+					break
+				}
+
+				mapResp, err := r.segmentClient.R().SetContext(r.ctx).SetDoNotParseResponse(true).Get(mapURL)
+				if err != nil {
+					if isCanceled(err, r.ctx) {
+						return false
+					}
+					r.log.Warnf("hls：拉取 map 失败：%v", err)
+					break
+				}
+				if mapResp.StatusCode() != 200 {
+					closeSegmentResponseBody(mapResp)
+					r.log.Warnf("hls：map 状态码 %d", mapResp.StatusCode())
+					break
+				}
+				mapData, readErr := r.readBody(mapResp)
+				if readErr != nil {
+					if isCanceled(readErr, r.ctx) {
+						return false
+					}
+					r.log.Warnf("hls：读取 map 失败：%v", readErr)
+					break
+				}
+				r.log.Debugf("hls: map fetch ok bytes=%d elapsed=%v", len(mapData), time.Since(mapFetchStart))
+
+				r.settle.RememberMap(r.currentMapURI, mapData)
+				if !r.acceptMap(mapData) {
 					return false
 				}
-				r.log.Warnf("hls：读取 map 失败：%v", readErr)
-				break
-			}
-			r.log.Debugf("hls: map fetch ok bytes=%d elapsed=%v", len(mapData), time.Since(mapFetchStart))
-
-			if !r.acceptMap(mapData) {
-				return false
 			}
 		}
 

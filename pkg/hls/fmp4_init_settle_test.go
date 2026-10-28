@@ -100,3 +100,60 @@ func TestInitSettle_ChurnBackToConfirmedDropsBuf(t *testing.T) {
 		t.Fatal("held pending init should be released on cancel")
 	}
 }
+
+func TestInitSettle_MuxCompatibleSkipsDebounce(t *testing.T) {
+	s := &InitSettle{Window: 50 * time.Millisecond, Release: func([]byte) {}, Log: testLog()}
+
+	initA := buildTestInit(1000, 1280<<16, []byte{0x01, 0x02}, 0)
+	res := s.AcceptMap(append([]byte(nil), initA...))
+	if res.DeliverNow == nil || res.ArmTimer {
+		t.Fatalf("first init: %+v", res)
+	}
+
+	initA2 := buildTestInit(9999, 1280<<16, []byte{0x01, 0x02}, 0)
+	res = s.AcceptMap(append([]byte(nil), initA2...))
+	if res.DeliverNow != nil || res.ArmTimer || s.Active() {
+		t.Fatalf("mux-compatible should skip debounce, got %+v active=%v", res, s.Active())
+	}
+}
+
+func TestInitSettle_RememberMapAndAcceptCached(t *testing.T) {
+	var released int
+	s := &InitSettle{
+		Window:  50 * time.Millisecond,
+		Release: func([]byte) { released++ },
+		Log:     testLog(),
+	}
+	init1 := []byte("INIT-A")
+	s.RememberMap("map-a", init1)
+	res, ok := s.AcceptCachedMap("map-a")
+	if !ok {
+		t.Fatal("expected cached map")
+	}
+	if res.DeliverNow == nil {
+		t.Fatal("first cached accept should deliver")
+	}
+	if released != 0 {
+		t.Fatal("cached accept must not release to pool")
+	}
+
+	res, ok = s.AcceptCachedMap("map-a")
+	if !ok {
+		t.Fatal("expected cached map")
+	}
+	if res.DeliverNow != nil || res.ArmTimer {
+		t.Fatalf("URI-only cached should skip, got %+v", res)
+	}
+	if released != 0 {
+		t.Fatal("cached skip must not release")
+	}
+}
+
+func TestInitSettle_ResetClearsMapCache(t *testing.T) {
+	s := &InitSettle{Release: func([]byte) {}, Log: testLog()}
+	s.RememberMap("u", []byte("x"))
+	s.Reset("test")
+	if s.HasCachedMap("u") {
+		t.Fatal("Reset should clear map cache")
+	}
+}

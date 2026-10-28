@@ -1,10 +1,13 @@
 package processors
 
 import (
+	"bytes"
 	"context"
+	"encoding/binary"
 	"errors"
 	"testing"
 
+	"github.com/bilirec/bilirec/pkg/hls"
 	"github.com/bilirec/bilirec/pkg/logger"
 )
 
@@ -315,4 +318,100 @@ func TestFmp4BoxGuard_ChangedInitRotatesImmediately(t *testing.T) {
 	if !errors.Is(err, ErrFmp4Discontinuity) {
 		t.Fatalf("expected immediate discontinuity on changed init, got %v", err)
 	}
+}
+
+func TestFmp4BoxGuard_SkipsMuxCompatibleInitAfterMedia(t *testing.T) {
+	initA := moovInitForGuardTest(1000)
+	initB := moovInitForGuardTest(9999)
+	if !hls.InitMuxCompatible(initA, initB) {
+		t.Fatal("fixture inits must be mux-compatible")
+	}
+
+	processor, lastInit := newFmp4BoxGuardForTest()
+	ctx := context.Background()
+	log := logger.Nop()
+	_ = processor.Open(ctx, log)
+
+	_, _ = processor.Process(ctx, log, initA)
+	_, _ = processor.Process(ctx, log, makeMediaFragment())
+
+	result, err := processor.Process(ctx, log, initB)
+	if err != nil {
+		t.Fatalf("mux-compatible init after media should skip: %v", err)
+	}
+	if result != nil {
+		t.Fatal("expected skip (nil result)")
+	}
+	if !bytes.Equal(*lastInit, initA) {
+		t.Fatal("lastInit should remain first init after compatible skip")
+	}
+}
+
+func moovInitForGuardTest(mvhdDuration uint32) []byte {
+	ftyp := make([]byte, 20)
+	binary.BigEndian.PutUint32(ftyp[0:4], 20)
+	copy(ftyp[4:8], "ftyp")
+	copy(ftyp[8:12], "isom")
+	copy(ftyp[16:20], "isom")
+	moov := moovBoxForGuardTest(mvhdDuration)
+	return append(ftyp, moov...)
+}
+
+func moovBoxForGuardTest(mvhdDuration uint32) []byte {
+	trak := trakBoxForGuardTest()
+	mvhd := make([]byte, 108)
+	binary.BigEndian.PutUint32(mvhd[0:4], 108)
+	copy(mvhd[4:8], "mvhd")
+	binary.BigEndian.PutUint32(mvhd[20:24], mvhdDuration)
+	binary.BigEndian.PutUint32(mvhd[24:28], 1000)
+	children := append(mvhd, trak...)
+	moov := make([]byte, 8+len(children))
+	binary.BigEndian.PutUint32(moov[0:4], uint32(len(moov)))
+	copy(moov[4:8], "moov")
+	copy(moov[8:], children)
+	return moov
+}
+
+func trakBoxForGuardTest() []byte {
+	tkhd := make([]byte, 92)
+	binary.BigEndian.PutUint32(tkhd[0:4], 92)
+	copy(tkhd[4:8], "tkhd")
+	binary.BigEndian.PutUint32(tkhd[12:16], 1)
+	binary.BigEndian.PutUint32(tkhd[76:80], 1280<<16)
+	binary.BigEndian.PutUint32(tkhd[80:84], 720<<16)
+	mdhd := make([]byte, 32)
+	binary.BigEndian.PutUint32(mdhd[0:4], 32)
+	copy(mdhd[4:8], "mdhd")
+	binary.BigEndian.PutUint32(mdhd[20:24], 90000)
+	hdlr := make([]byte, 44)
+	binary.BigEndian.PutUint32(hdlr[0:4], 44)
+	copy(hdlr[4:8], "hdlr")
+	copy(hdlr[16:20], "vide")
+	avcC := wrapGuardBox("avcC", []byte{1, 2})
+	avc1 := make([]byte, 86+len(avcC))
+	binary.BigEndian.PutUint32(avc1[0:4], uint32(len(avc1)))
+	copy(avc1[4:8], "avc1")
+	copy(avc1[86:], avcC)
+	stsdPayload := make([]byte, 8+len(avc1))
+	binary.BigEndian.PutUint32(stsdPayload[4:8], 1)
+	copy(stsdPayload[8:], avc1)
+	stsd := wrapGuardBox("stsd", stsdPayload)
+	stbl := wrapGuardBox("stbl", stsd)
+	minf := wrapGuardBox("minf", stbl)
+	mdiaPayload := append(append(mdhd, hdlr...), minf...)
+	mdia := wrapGuardBox("mdia", mdiaPayload)
+	trakPayload := append(tkhd, mdia...)
+	trak := make([]byte, 8+len(trakPayload))
+	binary.BigEndian.PutUint32(trak[0:4], uint32(len(trak)))
+	copy(trak[4:8], "trak")
+	copy(trak[8:], trakPayload)
+	return trak
+}
+
+func wrapGuardBox(typ string, payload []byte) []byte {
+	out := make([]byte, 8+len(payload))
+	binary.BigEndian.PutUint32(out[0:4], uint32(len(out)))
+	copy(out[4:8], []byte(typ))
+	copy(out[8:], payload)
+	return out
 }

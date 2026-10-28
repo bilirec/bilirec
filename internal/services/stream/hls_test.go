@@ -2,6 +2,7 @@ package stream
 
 import (
 	"context"
+	"encoding/binary"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -436,6 +437,167 @@ func TestReadHlsStream_MapURIChangeSameInitContinues(t *testing.T) {
 	if ftypCount != 1 {
 		t.Fatalf("URI-only map change must not re-deliver init, ftypCount=%d", ftypCount)
 	}
+}
+
+func TestReadHlsStream_MuxCompatibleMapFlapDoesNotRedeliver(t *testing.T) {
+	initStreamTestConfig(t)
+	oldPoll := hlsutil.PlaylistRetryDelay
+	oldDebounce := hlsutil.Fmp4InitDebounceWindow
+	hlsutil.PlaylistRetryDelay = 5 * time.Millisecond
+	hlsutil.Fmp4InitDebounceWindow = 80 * time.Millisecond
+	t.Cleanup(func() {
+		hlsutil.PlaylistRetryDelay = oldPoll
+		hlsutil.Fmp4InitDebounceWindow = oldDebounce
+	})
+
+	var mediaSeq atomic.Int64
+	mediaSeq.Store(5000)
+	var mapURI atomic.Value
+	mapURI.Store("map-a.m4s")
+	var mapGets atomic.Int64
+	useMapA := true
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/playlist.m3u8":
+			body := strings.Join([]string{
+				"#EXTM3U",
+				"#EXT-X-VERSION:7",
+				"#EXT-X-TARGETDURATION:1",
+				fmt.Sprintf("#EXT-X-MEDIA-SEQUENCE:%d", mediaSeq.Load()),
+				fmt.Sprintf("#EXT-X-MAP:URI=%q", mapURI.Load().(string)),
+				"#EXTINF:1.0,",
+				fmt.Sprintf("seg-%d.m4s", mediaSeq.Load()),
+			}, "\n")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(body))
+		case strings.HasPrefix(r.URL.Path, "/map-"):
+			mapGets.Add(1)
+			w.WriteHeader(http.StatusOK)
+			if strings.Contains(r.URL.Path, "map-a") {
+				_, _ = w.Write(streamTestMoovInit(1000))
+			} else {
+				_, _ = w.Write(streamTestMoovInit(9999))
+			}
+		case strings.HasPrefix(r.URL.Path, "/seg-"):
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write(makeMoofSeg())
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	svc := testHlsService()
+	playlistClient := resty.New().SetTimeout(3 * time.Second)
+	segmentClient := resty.New().SetTimeout(5 * time.Second)
+	fetchURL := func() (string, error) { return server.URL + "/playlist.m3u8", nil }
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	chunkPool, releasePool := svc.AcquireChunkPool(10000)
+	ch, err := svc.ReadHlsStream(0, metrics.StreamSessionMeta{}, fetchURL, playlistClient, segmentClient, ctx, 10000, chunkPool, releasePool)
+	if err != nil {
+		t.Fatalf("ReadHlsStream: %v", err)
+	}
+
+	ftypCount := 0
+	moofCount := 0
+	deadline := time.After(10 * time.Second)
+	for moofCount < 5 {
+		select {
+		case data, ok := <-ch:
+			if !ok {
+				t.Fatal("channel closed early")
+			}
+			switch boxTypeOf(data) {
+			case "ftyp":
+				ftypCount++
+			case "moof":
+				moofCount++
+				useMapA = !useMapA
+				if useMapA {
+					mapURI.Store("map-a.m4s")
+				} else {
+					mapURI.Store("map-b.m4s")
+				}
+				mediaSeq.Add(1)
+			}
+		case <-deadline:
+			t.Fatalf("timeout ftyp=%d moof=%d mapGets=%d", ftypCount, moofCount, mapGets.Load())
+		}
+	}
+	if ftypCount != 1 {
+		t.Fatalf("mux-compatible flap must not re-deliver init, ftypCount=%d", ftypCount)
+	}
+	if got := mapGets.Load(); got > 2 {
+		t.Fatalf("expected at most 2 map HTTP GETs (one per URI), got %d", got)
+	}
+}
+
+func streamTestMoovInit(mvhdDuration uint32) []byte {
+	ftyp := makeFtypInit("isom")
+	moov := streamTestMoovBox(mvhdDuration)
+	return append(ftyp, moov...)
+}
+
+func streamTestMoovBox(mvhdDuration uint32) []byte {
+	trak := streamTestTrakBox()
+	mvhd := make([]byte, 108)
+	binary.BigEndian.PutUint32(mvhd[0:4], 108)
+	copy(mvhd[4:8], "mvhd")
+	binary.BigEndian.PutUint32(mvhd[20:24], mvhdDuration)
+	binary.BigEndian.PutUint32(mvhd[24:28], 1000)
+	children := append(mvhd, trak...)
+	moov := make([]byte, 8+len(children))
+	binary.BigEndian.PutUint32(moov[0:4], uint32(len(moov)))
+	copy(moov[4:8], "moov")
+	copy(moov[8:], children)
+	return moov
+}
+
+func streamTestTrakBox() []byte {
+	tkhd := make([]byte, 92)
+	binary.BigEndian.PutUint32(tkhd[0:4], 92)
+	copy(tkhd[4:8], "tkhd")
+	binary.BigEndian.PutUint32(tkhd[12:16], 1)
+	binary.BigEndian.PutUint32(tkhd[76:80], 1280<<16)
+	binary.BigEndian.PutUint32(tkhd[80:84], 720<<16)
+	mdhd := make([]byte, 32)
+	binary.BigEndian.PutUint32(mdhd[0:4], 32)
+	copy(mdhd[4:8], "mdhd")
+	binary.BigEndian.PutUint32(mdhd[20:24], 90000)
+	hdlr := make([]byte, 44)
+	binary.BigEndian.PutUint32(hdlr[0:4], 44)
+	copy(hdlr[4:8], "hdlr")
+	copy(hdlr[16:20], "vide")
+	avcC := streamTestWrapBox("avcC", []byte{1, 2})
+	avc1 := make([]byte, 86+len(avcC))
+	binary.BigEndian.PutUint32(avc1[0:4], uint32(len(avc1)))
+	copy(avc1[4:8], "avc1")
+	copy(avc1[86:], avcC)
+	stsdPayload := make([]byte, 8+len(avc1))
+	binary.BigEndian.PutUint32(stsdPayload[4:8], 1)
+	copy(stsdPayload[8:], avc1)
+	stsd := streamTestWrapBox("stsd", stsdPayload)
+	stbl := streamTestWrapBox("stbl", stsd)
+	minf := streamTestWrapBox("minf", stbl)
+	mdiaPayload := append(append(mdhd, hdlr...), minf...)
+	mdia := streamTestWrapBox("mdia", mdiaPayload)
+	trakPayload := append(tkhd, mdia...)
+	trak := make([]byte, 8+len(trakPayload))
+	binary.BigEndian.PutUint32(trak[0:4], uint32(len(trak)))
+	copy(trak[4:8], "trak")
+	copy(trak[8:], trakPayload)
+	return trak
+}
+
+func streamTestWrapBox(typ string, payload []byte) []byte {
+	out := make([]byte, 8+len(payload))
+	binary.BigEndian.PutUint32(out[0:4], uint32(len(out)))
+	copy(out[4:8], []byte(typ))
+	copy(out[8:], payload)
+	return out
 }
 
 func TestReadHlsStream_ChangedInitSettlesAfterDebounce(t *testing.T) {

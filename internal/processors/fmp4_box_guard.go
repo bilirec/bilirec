@@ -90,8 +90,9 @@ func (p *Fmp4BoxGuardProcessor) Process(_ context.Context, log logger.Logger, da
 	switch boxType {
 	case "ftyp":
 		if p.seenMedia {
-			if p.lastInit != nil && len(*p.lastInit) > 0 && bytes.Equal(data, *p.lastInit) {
-				log.Debugf("fmp4-box-guard：媒体分片后收到相同 init 分片（%d B），已跳过", len(data))
+			if p.lastInit != nil && len(*p.lastInit) > 0 &&
+				(bytes.Equal(data, *p.lastInit) || hls.InitMuxCompatible(data, *p.lastInit)) {
+				log.Debugf("fmp4-box-guard：媒体分片后收到相同/兼容 init 分片（%d B），已跳过", len(data))
 				return nil, nil
 			}
 			log.Warnf("fmp4-box-guard：媒体分片后出现新的 init 分片（%d B），检测到流不连续，需要切换文件", len(data))

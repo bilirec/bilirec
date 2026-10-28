@@ -11,17 +11,24 @@ import (
 // init-byte change on fMP4 (EXT-X-MAP) playlists. Hardcoded product default.
 const DefaultFmp4InitDebounceWindow = 2 * time.Second
 
+const maxCachedMaps = 4
+
 // Fmp4InitDebounceWindow is the active debounce window. Tests may shorten it.
 var Fmp4InitDebounceWindow = DefaultFmp4InitDebounceWindow
 
 // BytesReleaser returns owned buffers to a pool (optional).
 type BytesReleaser func([]byte)
 
+type cachedMap struct {
+	uri  string
+	data []byte
+}
+
 // InitSettle holds fMP4 init changes until the debounce window settles.
 // TS / empty-MapURI playlists never use this.
 //
 // Integrity rules:
-//   - URI-only (same init bytes): no rotate, do not re-deliver init
+//   - URI-only (same init bytes or mux-compatible): no rotate, do not re-deliver init
 //   - True init change: hold media, do not write into the previous file
 //   - Churn back to confirmed: cancel and drop buffered media
 type InitSettle struct {
@@ -33,6 +40,7 @@ type InitSettle struct {
 	active    bool
 	pending   []byte
 	buf       [][]byte
+	maps      []cachedMap
 }
 
 // Active reports whether settle is holding a pending init.
@@ -50,6 +58,7 @@ func (s *InitSettle) BufferMedia(data []byte) {
 func (s *InitSettle) Reset(reason string) {
 	s.cancel(reason)
 	s.confirmed = nil
+	s.maps = nil
 }
 
 // Cancel drops pending init and buffered media, leaving confirmed unchanged.
@@ -63,7 +72,7 @@ func (s *InitSettle) cancel(reason string) {
 	}
 	s.dropBuf(reason)
 	s.active = false
-	s.release(s.pending)
+	s.releaseOwned(s.pending)
 	s.pending = nil
 }
 
@@ -86,11 +95,48 @@ func (s *InitSettle) release(b []byte) {
 	}
 }
 
+func (s *InitSettle) releaseOwned(b []byte) {
+	s.release(b)
+}
+
 func (s *InitSettle) window() time.Duration {
 	if s.Window > 0 {
 		return s.Window
 	}
 	return Fmp4InitDebounceWindow
+}
+
+// RememberMap stores a private copy of init bytes for uri (used to skip repeat HTTP GET).
+func (s *InitSettle) RememberMap(uri string, data []byte) {
+	if uri == "" || len(data) == 0 {
+		return
+	}
+	copyData := append([]byte(nil), data...)
+	for i := range s.maps {
+		if s.maps[i].uri == uri {
+			s.maps[i].data = copyData
+			return
+		}
+	}
+	s.maps = append(s.maps, cachedMap{uri: uri, data: copyData})
+	if len(s.maps) > maxCachedMaps {
+		s.maps = s.maps[len(s.maps)-maxCachedMaps:]
+	}
+}
+
+// HasCachedMap reports whether uri was stored via RememberMap.
+func (s *InitSettle) HasCachedMap(uri string) bool {
+	_, ok := s.cachedMap(uri)
+	return ok
+}
+
+func (s *InitSettle) cachedMap(uri string) ([]byte, bool) {
+	for i := range s.maps {
+		if s.maps[i].uri == uri {
+			return s.maps[i].data, true
+		}
+	}
+	return nil, false
 }
 
 // AcceptMapResult is the outcome of AcceptMap.
@@ -109,37 +155,81 @@ type AcceptMapResult struct {
 // pending (until Settle transfers ownership or Cancel/Reset releases it),
 // or releases it. confirmed always keeps a private copy for Equal checks.
 func (s *InitSettle) AcceptMap(mapData []byte) AcceptMapResult {
+	return s.acceptMap(mapData, true)
+}
+
+// AcceptCachedMap applies the same rules as AcceptMap using a cached init for uri.
+// Cached bytes are never returned to the bytes pool.
+func (s *InitSettle) AcceptCachedMap(uri string) (AcceptMapResult, bool) {
+	data, ok := s.cachedMap(uri)
+	if !ok {
+		return AcceptMapResult{}, false
+	}
+	return s.acceptMap(data, false), true
+}
+
+func (s *InitSettle) acceptMap(mapData []byte, releaseIncoming bool) AcceptMapResult {
+	releaseIn := func(b []byte) {
+		if releaseIncoming {
+			s.release(b)
+		}
+	}
+	clone := func(b []byte) []byte {
+		return append([]byte(nil), b...)
+	}
+
 	if s.active {
 		switch {
-		case len(s.confirmed) > 0 && bytes.Equal(mapData, s.confirmed):
+		case len(s.confirmed) > 0 && (bytes.Equal(mapData, s.confirmed) || InitMuxCompatible(mapData, s.confirmed)):
 			s.cancel("init 回到已确认内容")
-			s.release(mapData)
+			releaseIn(mapData)
 			return AcceptMapResult{StopTimer: true}
 		case bytes.Equal(mapData, s.pending):
-			s.release(mapData)
+			releaseIn(mapData)
 			s.Log.Debugf("hls：fMP4 init 防抖期间再次收到相同 pending init，已重置 %v 窗口", s.window())
+			return AcceptMapResult{ArmTimer: true}
+		case len(s.pending) > 0 && InitMuxCompatible(mapData, s.pending):
+			releaseIn(mapData)
+			s.Log.Debugf("hls：fMP4 init 防抖期间 pending init 编码参数未变，已重置 %v 窗口", s.window())
 			return AcceptMapResult{ArmTimer: true}
 		default:
 			s.dropBuf("pending init 被更新")
-			s.release(s.pending)
-			s.pending = mapData
+			s.releaseOwned(s.pending)
+			if releaseIncoming {
+				s.pending = mapData
+			} else {
+				s.pending = clone(mapData)
+			}
 			s.Log.Infof("hls：fMP4 init 防抖期间 init 内容再次变更，已更新 pending 并重置 %v 窗口", s.window())
 			return AcceptMapResult{ArmTimer: true}
 		}
 	}
 
 	if len(s.confirmed) > 0 && bytes.Equal(mapData, s.confirmed) {
-		s.release(mapData)
-		s.Log.Infof("hls：EXT-X-MAP URI 变更但 init 内容未变（%d B），继续当前文件", len(s.confirmed))
+		releaseIn(mapData)
+		s.Log.Debugf("hls：EXT-X-MAP URI 变更但 init 内容未变（%d B），继续当前文件", len(s.confirmed))
+		return AcceptMapResult{}
+	}
+
+	if len(s.confirmed) > 0 && InitMuxCompatible(mapData, s.confirmed) {
+		releaseIn(mapData)
+		s.Log.Debugf("hls：EXT-X-MAP init 元数据变更但编码参数未变（%d B），继续当前文件", len(s.confirmed))
 		return AcceptMapResult{}
 	}
 
 	if len(s.confirmed) == 0 {
-		s.confirmed = append(s.confirmed[:0], mapData...)
-		return AcceptMapResult{DeliverNow: mapData}
+		s.confirmed = clone(mapData)
+		if releaseIncoming {
+			return AcceptMapResult{DeliverNow: mapData}
+		}
+		return AcceptMapResult{DeliverNow: clone(mapData)}
 	}
 
-	s.pending = mapData
+	if releaseIncoming {
+		s.pending = mapData
+	} else {
+		s.pending = clone(mapData)
+	}
 	s.active = true
 	s.buf = nil
 	s.Log.Infof("hls：检测到 fMP4 init 内容变更（%d B），进入 %v 防抖；媒体将缓冲至窗口结束", len(s.pending), s.window())
