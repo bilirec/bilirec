@@ -8,7 +8,7 @@ import (
 
 func TestStreamSession_RecordTimelineGap(t *testing.T) {
 	e := newExporter(t, true)
-	sess := e.StreamSession(42)
+	sess := e.StreamSession(42, StreamSessionMeta{})
 	sess.RecordTimelineGap(2 * time.Second)
 	sess.RecordTimelineGap(3 * time.Second)
 	sess.RecordTimelineGap(1500 * time.Millisecond)
@@ -24,7 +24,7 @@ func TestStreamSession_RecordTimelineGap(t *testing.T) {
 
 func TestStreamSession_RecordFlushThreshold(t *testing.T) {
 	e := newExporter(t, true)
-	sess := e.StreamSession(5)
+	sess := e.StreamSession(5, StreamSessionMeta{})
 	sess.RecordFlush(2 * time.Second)
 	sess.RecordFlush(4 * time.Second)
 	out := e.scrape()

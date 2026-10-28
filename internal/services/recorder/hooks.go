@@ -1,12 +1,16 @@
 package recorder
 
 import (
+	"github.com/bilirec/bilirec/internal/modules/metrics"
 	"github.com/bilirec/bilirec/internal/processors"
 	rs "github.com/bilirec/bilirec/internal/record_strategies"
 )
 
 func (r *Service) pipelineHooks(roomID int, info *Info) rs.PipelineHooks {
-	sess := r.m.StreamSession(roomID)
+	sess := r.m.StreamSession(roomID, metrics.StreamSessionMeta{
+		Streamer:  info.room.Uname,
+		RoomTitle: info.room.Title,
+	})
 
 	return rs.PipelineHooks{
 		OnBytesWritten: func(n int) {
