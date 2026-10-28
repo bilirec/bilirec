@@ -33,10 +33,14 @@ func (s *HlsFmp4Strategy) FileExtension() string { return ".fmp4" }
 
 func (s *HlsFmp4Strategy) BuildPipeline(ctx context.Context, outputPath string, state *RotationState, hooks PipelineHooks) (*pipeline.Pipe[[]byte], error) {
 	pendingInit := state.Data[fmp4StatePendingInit]
+	var onGap func(processors.TimelineGap)
+	if hooks.OnTimelineGap != nil {
+		onGap = hooks.OnTimelineGap
+	}
 	return pipeline.New(
 		processors.NewSegmentDedup(),
 		processors.NewFmp4BoxGuard(&s.bases, &s.lastInit),
-		processors.NewFmp4TimestampNormalizer(&s.bases),
+		processors.NewFmp4TimestampNormalizer(&s.bases, onGap),
 		processors.NewFmp4InitWriter(pendingInit),
 		processors.NewBufferedStreamWriter(
 			outputPath,

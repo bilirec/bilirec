@@ -15,6 +15,8 @@ import (
 
 	"github.com/bilirec/bilirec/internal/modules/bilibili"
 	"github.com/bilirec/bilirec/internal/modules/config"
+	"github.com/bilirec/bilirec/internal/modules/metrics"
+	"github.com/bilirec/bilirec/internal/services/notify"
 	"github.com/bilirec/bilirec/internal/services/stream"
 	"github.com/bilirec/bilirec/utils"
 	"github.com/bilirec/bilirec/pkg/flv"
@@ -208,6 +210,8 @@ func captureHLSSegments(t *testing.T, profile bilibili.StreamProfile, wantFormat
 	app := fxtest.New(t,
 		config.Module,
 		bilibili.Module,
+		metrics.Module,
+		fx.Provide(notify.NewService),
 		fx.Provide(stream.NewService),
 		fx.Populate(&bili, &st),
 	)
@@ -230,6 +234,7 @@ func captureHLSSegments(t *testing.T, profile bilibili.StreamProfile, wantFormat
 	defer release()
 
 	ch, err := st.ReadHlsStream(
+		0,
 		func() (string, error) { return info.URL, nil },
 		bili.GetLiveHlsPlaylistClient(),
 		bili.GetLiveHlsSegmentClient(),
@@ -461,6 +466,8 @@ func probeHLSSEI(t *testing.T, profile bilibili.StreamProfile, parse func([]byte
 	app := fxtest.New(t,
 		config.Module,
 		bilibili.Module,
+		metrics.Module,
+		fx.Provide(notify.NewService),
 		fx.Provide(stream.NewService),
 		fx.Populate(&bili, &st),
 	)
@@ -489,7 +496,7 @@ func probeHLSSEI(t *testing.T, profile bilibili.StreamProfile, parse func([]byte
 	fetchM3u8 := func() (string, error) {
 		return info.URL, nil
 	}
-	ch, err := st.ReadHlsStream(fetchM3u8, bili.GetLiveHlsPlaylistClient(), bili.GetLiveHlsSegmentClient(), ctx, info.Qn, chunkPool, release)
+	ch, err := st.ReadHlsStream(0, fetchM3u8, bili.GetLiveHlsPlaylistClient(), bili.GetLiveHlsSegmentClient(), ctx, info.Qn, chunkPool, release)
 	if err != nil {
 		t.Fatalf("ReadHlsStream: %v", err)
 	}

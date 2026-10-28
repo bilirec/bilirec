@@ -28,6 +28,7 @@ type StreamRunnerOptions struct {
 	PollInterval    time.Duration
 	NextSeq         int64
 	PrevBaseSeq     int64
+	OnSegmentGap    func(time.Duration)
 }
 
 // StreamRunner owns the poll/delivery loop after playlist session is ready.
@@ -47,6 +48,7 @@ type StreamRunner struct {
 	currentMapURI string
 	mapSent       bool
 	debounceTimer *time.Timer
+	onSegmentGap  func(time.Duration)
 }
 
 // Start validates options, creates the output channel, and starts the runner goroutine.
@@ -85,6 +87,7 @@ func Start(ctx context.Context, opt StreamRunnerOptions) (<-chan []byte, error) 
 		prevBaseSeq:   opt.PrevBaseSeq,
 		currentMapURI: opt.InitialPlaylist.MapURI,
 		mapSent:       false,
+		onSegmentGap:  opt.OnSegmentGap,
 	}
 	go runner.run()
 	return ch, nil
@@ -325,6 +328,11 @@ func (r *StreamRunner) onTick(
 	if baseSeq > r.nextSeq {
 		lost := baseSeq - r.nextSeq
 		r.log.Warnf("hls：检测到序列间隙，可能丢失了 %d 个分片（nextSeq=%d，baseSeq=%d）", lost, r.nextSeq, baseSeq)
+		if r.onSegmentGap != nil {
+			if delta := PlaylistSequenceGapDuration(pl, lost); delta > 0 {
+				r.onSegmentGap(delta)
+			}
+		}
 		r.nextSeq = baseSeq
 	}
 	if ShouldResetSequenceOnRollback(r.prevBaseSeq, baseSeq, len(segs), r.nextSeq) {

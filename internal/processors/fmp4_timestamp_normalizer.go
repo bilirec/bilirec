@@ -2,6 +2,7 @@ package processors
 
 import (
 	"context"
+	"time"
 
 	"github.com/bilirec/bilirec/pkg/logger"
 
@@ -9,19 +10,27 @@ import (
 	"github.com/bilirec/bilirec/pkg/pipeline"
 )
 
+// TimelineGap is a positive media timeline discontinuity reported to observers.
+type TimelineGap struct {
+	Delta time.Duration
+}
+
 // Fmp4TimestampNormalizerProcessor normalizes tfdt timestamps in fragmented MP4
 // segments in place so concatenated segments keep monotonic decode timelines.
 type Fmp4TimestampNormalizerProcessor struct {
 	bases                  *map[uint32]uint64
+	lastRawTfdt            map[uint32]uint64
+	timescale              uint32
+	onGap                  func(TimelineGap)
 	segmentCount           uint64
 	normalizedSegmentCount uint64
 	normalizedTfdtTotal    uint64
 }
 
-func NewFmp4TimestampNormalizer(bases *map[uint32]uint64) *pipeline.ProcessorInfo[[]byte] {
+func NewFmp4TimestampNormalizer(bases *map[uint32]uint64, onGap func(TimelineGap)) *pipeline.ProcessorInfo[[]byte] {
 	return pipeline.NewProcessorInfo(
 		"fmp4-timestamp-normalizer",
-		&Fmp4TimestampNormalizerProcessor{bases: bases},
+		&Fmp4TimestampNormalizerProcessor{bases: bases, onGap: onGap},
 	)
 }
 
@@ -29,6 +38,7 @@ func (p *Fmp4TimestampNormalizerProcessor) Open(_ context.Context, _ logger.Logg
 	p.segmentCount = 0
 	p.normalizedSegmentCount = 0
 	p.normalizedTfdtTotal = 0
+	p.lastRawTfdt = make(map[uint32]uint64)
 	return nil
 }
 
@@ -44,6 +54,19 @@ func (p *Fmp4TimestampNormalizerProcessor) Process(_ context.Context, log logger
 		boxType := string(data[4:8])
 		if segmentNo <= 3 || boxType == "ftyp" || segmentNo%60 == 0 {
 			log.Debugf("fmp4 segment: box=%s size=%d seg=%d", boxType, len(data), segmentNo)
+		}
+	}
+
+	if p.timescale == 0 {
+		if ts := hls.TimescaleFromInit(data); ts > 0 {
+			p.timescale = ts
+		}
+	}
+
+	if gap := hls.NoteFragmentTimeline(data, p.timescale, p.lastRawTfdt); gap > 0 {
+		log.Warnf("fmp4：检测到媒体时间轴跳变（delta=%v，seg=%d）", gap, segmentNo)
+		if p.onGap != nil {
+			p.onGap(TimelineGap{Delta: gap})
 		}
 	}
 

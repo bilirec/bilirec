@@ -8,6 +8,7 @@ import (
 	"github.com/bilirec/bilirec/internal/modules/config"
 	"github.com/bilirec/bilirec/internal/modules/metrics"
 	"github.com/bilirec/bilirec/internal/services/convert"
+	"github.com/bilirec/bilirec/internal/services/notify"
 	"github.com/bilirec/bilirec/internal/services/webhook"
 	"github.com/bilirec/bilirec/utils"
 	"go.uber.org/fx"
@@ -27,6 +28,7 @@ func TestCloudConvert(t *testing.T) {
 		config.Module,
 		metrics.Module,
 		fx.Provide(webhook.NewService),
+		fx.Provide(notify.NewService),
 		fx.Provide(convert.NewService),
 		fx.Populate(&svc),
 	)
@@ -51,6 +53,7 @@ func TestUntilCloudConvertCompleted(t *testing.T) {
 		config.Module,
 		metrics.Module,
 		fx.Provide(webhook.NewService),
+		fx.Provide(notify.NewService),
 		fx.Provide(convert.NewService),
 		fx.Populate(&svc),
 	)
@@ -91,6 +94,7 @@ func TestCancelUnExistingCloudConvertTask(t *testing.T) {
 		config.Module,
 		metrics.Module,
 		fx.Provide(webhook.NewService),
+		fx.Provide(notify.NewService),
 		fx.Provide(convert.NewService),
 		fx.Populate(&svc),
 	)

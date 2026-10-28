@@ -3,6 +3,7 @@ package metrics
 import (
 	vm "github.com/VictoriaMetrics/metrics"
 	"github.com/bilirec/bilirec/internal/modules/config"
+	"github.com/bilirec/bilirec/internal/services/notify"
 	"github.com/bilirec/bilirec/pkg/logger"
 	"go.uber.org/fx"
 )
@@ -23,17 +24,23 @@ var log = logger.Named("metrics")
 type Exporter struct {
 	set      *vm.Set
 	registry *roomRegistry
+	notify   *notify.Service
+
+	notifyMetricsAlerts bool
 }
 
-func provider(lc fx.Lifecycle, cfg *config.Config) *Exporter {
+func provider(lc fx.Lifecycle, cfg *config.Config, nt *notify.Service) *Exporter {
+	base := &Exporter{notify: nt, notifyMetricsAlerts: cfg.NotifyMetricsAlerts}
 	if !cfg.MetricsEnabled {
-		return &Exporter{}
+		return base
 	}
 
 	registry := newRoomRegistry()
 	exporter := &Exporter{
-		set:      registry.set,
-		registry: registry,
+		set:                   registry.set,
+		registry:              registry,
+		notify:                nt,
+		notifyMetricsAlerts: cfg.NotifyMetricsAlerts,
 	}
 	exporter.registerRuntimeGauges()
 	exporter.registerServer(lc, cfg)

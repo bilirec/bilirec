@@ -1,147 +1,67 @@
 package processors
 
 import (
+	"context"
 	"encoding/binary"
 	"testing"
+	"time"
 
-	"github.com/bilirec/bilirec/pkg/hls"
+	"github.com/bilirec/bilirec/pkg/logger"
 )
 
-func box(typ string, payload []byte) []byte {
-	size := 8 + len(payload)
-	out := make([]byte, size)
-	binary.BigEndian.PutUint32(out[:4], uint32(size))
-	copy(out[4:8], []byte(typ))
-	copy(out[8:], payload)
-	return out
-}
-
-func fullBox(version byte, flags uint32, payload []byte) []byte {
-	out := make([]byte, 4+len(payload))
-	out[0] = version
-	out[1] = byte(flags >> 16)
-	out[2] = byte(flags >> 8)
-	out[3] = byte(flags)
-	copy(out[4:], payload)
-	return out
-}
-
-func makeMoof(trackID uint32, tfdtVersion byte, decodeTime uint64) []byte {
-	tfhdPayload := make([]byte, 4)
-	binary.BigEndian.PutUint32(tfhdPayload, trackID)
-	tfhd := box("tfhd", fullBox(0, 0, tfhdPayload))
-
-	var tfdtPayload []byte
-	if tfdtVersion == 1 {
-		tfdtPayload = make([]byte, 8)
-		binary.BigEndian.PutUint64(tfdtPayload, decodeTime)
-	} else {
-		tfdtPayload = make([]byte, 4)
-		binary.BigEndian.PutUint32(tfdtPayload, uint32(decodeTime))
-	}
-	tfdt := box("tfdt", fullBox(tfdtVersion, 0, tfdtPayload))
-
-	traf := box("traf", append(tfhd, tfdt...))
-	moof := box("moof", traf)
-	mdat := box("mdat", []byte{0x00, 0x01, 0x02, 0x03})
-	return append(moof, mdat...)
-}
-
-func firstTfdtValue(segment []byte) (uint64, bool) {
-	for off := 0; off < len(segment); {
-		size, typ, _, ok := hls.ReadBoxHeader(segment, off)
-		if !ok {
-			return 0, false
-		}
-		boxEnd := off + size
-		if typ == "moof" {
-			for child := off + 8; child < boxEnd; {
-				childSize, childType, _, childOK := hls.ReadBoxHeader(segment, child)
-				if !childOK {
-					return 0, false
-				}
-				childEnd := child + childSize
-				if childType == "traf" {
-					for inner := child + 8; inner < childEnd; {
-						innerSize, innerType, _, innerOK := hls.ReadBoxHeader(segment, inner)
-						if !innerOK {
-							return 0, false
-						}
-						innerEnd := inner + innerSize
-						if innerType == "tfdt" {
-							version := segment[inner+8]
-							if version == 1 {
-								return binary.BigEndian.Uint64(segment[inner+12 : inner+20]), true
-							}
-							return uint64(binary.BigEndian.Uint32(segment[inner+12 : inner+16])), true
-						}
-						inner = innerEnd
-					}
-				}
-				child = childEnd
-			}
-		}
-		off = boxEnd
-	}
-	return 0, false
-}
-
-func TestNormalizeFragmentTimestamps_Version1(t *testing.T) {
+func TestFmp4TimestampNormalizer_OnGap(t *testing.T) {
 	bases := map[uint32]uint64{}
-
-	seg1 := makeMoof(1, 1, 90000)
-	changed1 := hls.NormalizeFragmentTimestamps(seg1, bases)
-	if changed1 != 1 {
-		t.Fatalf("expected one tfdt normalized in seg1, got %d", changed1)
-	}
-	got1, ok := firstTfdtValue(seg1)
-	if !ok {
-		t.Fatal("cannot read tfdt from seg1")
-	}
-	if got1 != 0 {
-		t.Fatalf("expected first tfdt to become 0, got %d", got1)
+	var reported time.Duration
+	proc := &Fmp4TimestampNormalizerProcessor{
+		bases: &bases,
+		onGap: func(g TimelineGap) { reported = g.Delta },
 	}
 
-	seg2 := makeMoof(1, 1, 180000)
-	changed2 := hls.NormalizeFragmentTimestamps(seg2, bases)
-	if changed2 != 1 {
-		t.Fatalf("expected one tfdt normalized in seg2, got %d", changed2)
+	ctx := context.Background()
+	log := logger.Named("test")
+	if err := proc.Open(ctx, log); err != nil {
+		t.Fatal(err)
 	}
-	got2, ok := firstTfdtValue(seg2)
-	if !ok {
-		t.Fatal("cannot read tfdt from seg2")
+
+	const timescale = 1000
+	last := map[uint32]uint64{1: 0}
+	moof := buildNormalizerTestMoof(1, 11000)
+	proc.timescale = timescale
+	proc.lastRawTfdt = last
+
+	if _, err := proc.Process(ctx, log, moof); err != nil {
+		t.Fatal(err)
 	}
-	if got2 != 90000 {
-		t.Fatalf("expected second tfdt to become 90000, got %d", got2)
+	if reported < 11*time.Second {
+		t.Fatalf("expected gap callback, got %v", reported)
 	}
 }
 
-func TestNormalizeFragmentTimestamps_Version0(t *testing.T) {
-	bases := map[uint32]uint64{}
+func buildNormalizerTestMoof(trackID uint32, tfdtV0 uint32) []byte {
+	const boxTypeMoof = 0x6d6f6f66
+	const boxTypeTraf = 0x74726166
+	const boxTypeTfhd = 0x74666864
+	const boxTypeTfdt = 0x74666474
 
-	seg1 := makeMoof(2, 0, 1000)
-	changed1 := hls.NormalizeFragmentTimestamps(seg1, bases)
-	if changed1 != 1 {
-		t.Fatalf("expected one tfdt normalized in seg1, got %d", changed1)
-	}
-	got1, ok := firstTfdtValue(seg1)
-	if !ok {
-		t.Fatal("cannot read tfdt from seg1")
-	}
-	if got1 != 0 {
-		t.Fatalf("expected first tfdt to become 0, got %d", got1)
-	}
+	tfhd := make([]byte, 16)
+	binary.BigEndian.PutUint32(tfhd[0:4], 16)
+	binary.BigEndian.PutUint32(tfhd[4:8], boxTypeTfhd)
+	binary.BigEndian.PutUint32(tfhd[12:16], trackID)
 
-	seg2 := makeMoof(2, 0, 1600)
-	changed2 := hls.NormalizeFragmentTimestamps(seg2, bases)
-	if changed2 != 1 {
-		t.Fatalf("expected one tfdt normalized in seg2, got %d", changed2)
-	}
-	got2, ok := firstTfdtValue(seg2)
-	if !ok {
-		t.Fatal("cannot read tfdt from seg2")
-	}
-	if got2 != 600 {
-		t.Fatalf("expected second tfdt to become 600, got %d", got2)
-	}
+	tfdt := make([]byte, 16)
+	binary.BigEndian.PutUint32(tfdt[0:4], 16)
+	binary.BigEndian.PutUint32(tfdt[4:8], boxTypeTfdt)
+	binary.BigEndian.PutUint32(tfdt[12:16], tfdtV0)
+
+	trafPayload := append(tfhd, tfdt...)
+	traf := make([]byte, 8+len(trafPayload))
+	binary.BigEndian.PutUint32(traf[0:4], uint32(8+len(trafPayload)))
+	binary.BigEndian.PutUint32(traf[4:8], boxTypeTraf)
+	copy(traf[8:], trafPayload)
+
+	moof := make([]byte, 8+len(traf))
+	binary.BigEndian.PutUint32(moof[0:4], uint32(8+len(traf)))
+	binary.BigEndian.PutUint32(moof[4:8], boxTypeMoof)
+	copy(moof[8:], traf)
+	return moof
 }

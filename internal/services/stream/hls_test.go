@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bilirec/bilirec/internal/modules/metrics"
 	"github.com/bilirec/bilirec/pkg/benchreport"
 	hlsutil "github.com/bilirec/bilirec/pkg/hls"
 	"github.com/go-resty/resty/v2"
@@ -17,6 +18,14 @@ import (
 
 type hlsSegment = hlsutil.Segment
 type hlsPlaylist = hlsutil.Playlist
+
+func testHlsService() *Service {
+	return &Service{
+		chunkPools:     newTestChunkPools(64*1024, 128*1024),
+		chanBufferSize: 16,
+		metrics:        &metrics.Exporter{},
+	}
+}
 
 func buildPlaylistBody(segCount int, withMap bool) string {
 	lines := make([]string, 0, segCount*2+4)
@@ -381,10 +390,7 @@ func TestReadHlsStream_MapURIChangeSameInitContinues(t *testing.T) {
 	}))
 	defer server.Close()
 
-	svc := &Service{
-		chunkPools:     newTestChunkPools(64*1024, 128*1024),
-		chanBufferSize: 16,
-	}
+	svc := testHlsService()
 	playlistClient := resty.New().SetTimeout(3 * time.Second)
 	segmentClient := resty.New().SetTimeout(5 * time.Second)
 	fetchURL := func() (string, error) { return server.URL + "/playlist.m3u8", nil }
@@ -392,7 +398,7 @@ func TestReadHlsStream_MapURIChangeSameInitContinues(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	chunkPool, releasePool := svc.AcquireChunkPool(10000)
-	ch, err := svc.ReadHlsStream(fetchURL, playlistClient, segmentClient, ctx, 10000, chunkPool, releasePool)
+	ch, err := svc.ReadHlsStream(0, fetchURL, playlistClient, segmentClient, ctx, 10000, chunkPool, releasePool)
 	if err != nil {
 		t.Fatalf("ReadHlsStream: %v", err)
 	}
@@ -478,10 +484,7 @@ func TestReadHlsStream_ChangedInitSettlesAfterDebounce(t *testing.T) {
 	}))
 	defer server.Close()
 
-	svc := &Service{
-		chunkPools:     newTestChunkPools(64*1024, 128*1024),
-		chanBufferSize: 16,
-	}
+	svc := testHlsService()
 	playlistClient := resty.New().SetTimeout(3 * time.Second)
 	segmentClient := resty.New().SetTimeout(5 * time.Second)
 	fetchURL := func() (string, error) { return server.URL + "/playlist.m3u8", nil }
@@ -489,7 +492,7 @@ func TestReadHlsStream_ChangedInitSettlesAfterDebounce(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	chunkPool, releasePool := svc.AcquireChunkPool(10000)
-	ch, err := svc.ReadHlsStream(fetchURL, playlistClient, segmentClient, ctx, 10000, chunkPool, releasePool)
+	ch, err := svc.ReadHlsStream(0, fetchURL, playlistClient, segmentClient, ctx, 10000, chunkPool, releasePool)
 	if err != nil {
 		t.Fatalf("ReadHlsStream: %v", err)
 	}
@@ -574,10 +577,7 @@ func TestReadHlsStream_InitChurnBackToConfirmedCancels(t *testing.T) {
 	}))
 	defer server.Close()
 
-	svc := &Service{
-		chunkPools:     newTestChunkPools(64*1024, 128*1024),
-		chanBufferSize: 16,
-	}
+	svc := testHlsService()
 	playlistClient := resty.New().SetTimeout(3 * time.Second)
 	segmentClient := resty.New().SetTimeout(5 * time.Second)
 	fetchURL := func() (string, error) { return server.URL + "/playlist.m3u8", nil }
@@ -585,7 +585,7 @@ func TestReadHlsStream_InitChurnBackToConfirmedCancels(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	chunkPool, releasePool := svc.AcquireChunkPool(10000)
-	ch, err := svc.ReadHlsStream(fetchURL, playlistClient, segmentClient, ctx, 10000, chunkPool, releasePool)
+	ch, err := svc.ReadHlsStream(0, fetchURL, playlistClient, segmentClient, ctx, 10000, chunkPool, releasePool)
 	if err != nil {
 		t.Fatalf("ReadHlsStream: %v", err)
 	}
@@ -682,10 +682,7 @@ func TestReadHlsStream_MapFetchFailureDoesNotSkipSeq(t *testing.T) {
 	}))
 	defer server.Close()
 
-	svc := &Service{
-		chunkPools:     newTestChunkPools(64*1024, 128*1024),
-		chanBufferSize: 16,
-	}
+	svc := testHlsService()
 	playlistClient := resty.New().SetTimeout(3 * time.Second)
 	segmentClient := resty.New().SetTimeout(5 * time.Second)
 	fetchURL := func() (string, error) { return server.URL + "/playlist.m3u8", nil }
@@ -693,7 +690,7 @@ func TestReadHlsStream_MapFetchFailureDoesNotSkipSeq(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	chunkPool, releasePool := svc.AcquireChunkPool(10000)
-	ch, err := svc.ReadHlsStream(fetchURL, playlistClient, segmentClient, ctx, 10000, chunkPool, releasePool)
+	ch, err := svc.ReadHlsStream(0, fetchURL, playlistClient, segmentClient, ctx, 10000, chunkPool, releasePool)
 	if err != nil {
 		t.Fatalf("ReadHlsStream: %v", err)
 	}
@@ -752,10 +749,7 @@ func TestReadHlsStream_TSWithoutMapUnaffected(t *testing.T) {
 	}))
 	defer server.Close()
 
-	svc := &Service{
-		chunkPools:     newTestChunkPools(64*1024, 128*1024),
-		chanBufferSize: 16,
-	}
+	svc := testHlsService()
 	playlistClient := resty.New().SetTimeout(3 * time.Second)
 	segmentClient := resty.New().SetTimeout(5 * time.Second)
 	fetchURL := func() (string, error) { return server.URL + "/playlist.m3u8", nil }
@@ -763,7 +757,7 @@ func TestReadHlsStream_TSWithoutMapUnaffected(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	chunkPool, releasePool := svc.AcquireChunkPool(10000)
-	ch, err := svc.ReadHlsStream(fetchURL, playlistClient, segmentClient, ctx, 10000, chunkPool, releasePool)
+	ch, err := svc.ReadHlsStream(0, fetchURL, playlistClient, segmentClient, ctx, 10000, chunkPool, releasePool)
 	if err != nil {
 		t.Fatalf("ReadHlsStream: %v", err)
 	}

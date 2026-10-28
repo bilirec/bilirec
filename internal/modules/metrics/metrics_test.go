@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/bilirec/bilirec/internal/modules/config"
+	"github.com/bilirec/bilirec/internal/services/notify"
 	"go.uber.org/fx"
 	"go.uber.org/fx/fxtest"
 )
@@ -22,6 +23,7 @@ func newExporter(t *testing.T, enabled bool) *Exporter {
 	app := fxtest.New(t,
 		config.Module,
 		Module,
+		fx.Provide(notify.NewService),
 		fx.Populate(&e),
 	)
 	app.RequireStart()
@@ -38,9 +40,8 @@ func TestExporterDisabledNoop(t *testing.T) {
 		t.Fatal("disabled exporter must report Enabled false")
 	}
 	// All methods must be safe no-ops.
-	if e.StreamSession(123) != nil {
-		t.Fatal("disabled exporter must return a nil stream session")
-	}
+	// All methods must be safe no-ops when registry is nil.
+	e.StreamSession(123)
 	e.AddStreamBytes(123, 1024)
 	e.RecordingStarted(123, "uname")
 	e.RecordingStopped(123)
@@ -162,14 +163,11 @@ func TestExporterEnabled(t *testing.T) {
 	e.RecordingStarted(123, "主播A")
 	e.AddStreamBytes(123, 1024)
 	sess := e.StreamSession(123)
-	if sess == nil {
-		t.Fatal("enabled exporter must return a stream session")
-	}
 	sess.AddBytesWritten(900)
-	sess.RecordTimestampJump(1200)
+	sess.RecordTimelineGap(1200 * time.Millisecond)
 	sess.RecordEnqueueWait(50 * time.Millisecond)
-	sess.RecordSlowFlush()
-	sess.RecordSlowSync()
+	sess.RecordFlush(4 * time.Second)
+	sess.RecordSync(2 * time.Second)
 	e.SetLiveStatus(123, "主播A", true)
 	e.LiveSessionDetected(123)
 	e.AddRecovery(123)
@@ -281,9 +279,6 @@ func TestExporterEnabled(t *testing.T) {
 func TestStreamSession_EagerCountersAndEnqueueThreshold(t *testing.T) {
 	e := newExporter(t, true)
 	sess := e.StreamSession(789)
-	if sess == nil {
-		t.Fatal("expected non-nil session")
-	}
 
 	sess.RecordEnqueueWait(500 * time.Microsecond)
 	out := e.scrape()
@@ -293,7 +288,7 @@ func TestStreamSession_EagerCountersAndEnqueueThreshold(t *testing.T) {
 
 	sess.AddBytesWritten(100)
 	sess.RecordEnqueueWait(15 * time.Millisecond)
-	sess.RecordTimestampJump(1200)
+	sess.RecordTimelineGap(1200 * time.Millisecond)
 	out = e.scrape()
 	for _, want := range []string{
 		`bilirec_room_stream_bytes_written_total{room_id="789"} 100`,

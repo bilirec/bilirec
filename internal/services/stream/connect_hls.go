@@ -37,6 +37,7 @@ func connectHLS(
 
 	fetchM3u8URL := hlsFetchM3u8URL(ctx, svc.bilic, req.RoomID, streamInfo, profile)
 	hlsCh, hlsErr := svc.ReadHlsStream(
+		req.RoomID,
 		fetchM3u8URL,
 		svc.bilic.GetLiveHlsPlaylistClient(),
 		svc.bilic.GetLiveHlsSegmentClient(),

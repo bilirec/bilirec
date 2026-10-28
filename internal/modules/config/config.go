@@ -91,8 +91,9 @@ type Config struct {
 	PublicBaseUrl     string
 	FrontendURLs      []string // CORS AllowOrigins (normalized origins)
 	WebPushSubscriber string
-	NotifySSEToken     string
-	WebhookURLs        string // newline-separated BililiveRecorder v2 webhook targets
+	NotifySSEToken              string
+	NotifyMetricsAlerts bool
+	WebhookURLs                 string // newline-separated BililiveRecorder v2 webhook targets
 	Username           string
 	PasswordHash       string
 	ViewerUsername     string
@@ -246,6 +247,7 @@ func provider(lc fx.Lifecycle) (*Config, error) {
 		PublicBaseUrl:                      strings.TrimSpace(os.Getenv("PUBLIC_BASE_URL")),
 		WebPushSubscriber:                  utils.EmptyOrElse(os.Getenv("WEBPUSH_SUBSCRIBER"), "mailto:webpush@example.com"),
 		NotifySSEToken:                     strings.TrimSpace(os.Getenv("NOTIFY_SSE_TOKEN")),
+		NotifyMetricsAlerts:                os.Getenv("NOTIFY_METRICS_ALERTS") == "true",
 		WebhookURLs:                        os.Getenv("WEBHOOK_URLS"),
 		Username:                           username,
 		PasswordHash:                       string(passwordHash),

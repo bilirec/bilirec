@@ -2,8 +2,10 @@ package recorder
 
 import (
 	"testing"
+	"time"
 
 	"github.com/bilirec/bilirec/internal/modules/metrics"
+	"github.com/bilirec/bilirec/internal/processors"
 )
 
 func TestPipelineHooks_MetricsDisabled(t *testing.T) {
@@ -11,8 +13,8 @@ func TestPipelineHooks_MetricsDisabled(t *testing.T) {
 	info := &Info{}
 	hooks := r.pipelineHooks(123, info)
 
-	if hooks.OnFlush != nil || hooks.OnSync != nil || hooks.OnEnqueueWait != nil || hooks.OnTimestampJump != nil {
-		t.Fatal("metric observers must be nil when exporter is disabled")
+	if hooks.OnFlush == nil || hooks.OnSync == nil || hooks.OnEnqueueWait == nil || hooks.OnTimelineGap == nil {
+		t.Fatal("pipeline hooks must always be wired; StreamSession no-ops VM when disabled")
 	}
 	if hooks.OnBytesWritten == nil {
 		t.Fatal("OnBytesWritten must always be set for stats")
@@ -22,4 +24,9 @@ func TestPipelineHooks_MetricsDisabled(t *testing.T) {
 	if got := info.bytesWritten.Load(); got != 4096 {
 		t.Fatalf("expected bytesWritten 4096, got %d", got)
 	}
+
+	hooks.OnFlush(processors.FlushEvent{Duration: 4 * time.Second})
+	hooks.OnSync(processors.SyncEvent{Duration: 2 * time.Second})
+	hooks.OnEnqueueWait(processors.EnqueueWaitEvent{Duration: 50 * time.Millisecond})
+	hooks.OnTimelineGap(processors.TimelineGap{Delta: time.Second})
 }

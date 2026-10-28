@@ -45,8 +45,13 @@ func (s *FlvStrategy) BuildPipeline(ctx context.Context, outputPath string, stat
 	videoHdr := state.Data[flvStateVideoHdr]
 	audioHdr := state.Data[flvStateAudioHdr]
 
-	if hooks.OnTimestampJump != nil {
-		s.sharedFixer.SetTimestampJumpReporter(hooks.OnTimestampJump)
+	if hooks.OnTimelineGap != nil {
+		onGap := hooks.OnTimelineGap
+		s.sharedFixer.SetTimestampJumpReporter(func(w flv.TimestampJumpWarning) {
+			if w.Delta > 0 {
+				onGap(processors.TimelineGap{Delta: time.Duration(w.Delta) * time.Millisecond})
+			}
+		})
 	}
 
 	return pipeline.New(
