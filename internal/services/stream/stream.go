@@ -3,26 +3,28 @@ package stream
 import (
 	"time"
 
-	"github.com/bilirec/bilirec/pkg/logger"
-
+	"github.com/bilirec/bilirec/internal/modules/bilibili"
 	"github.com/bilirec/bilirec/internal/modules/config"
+	"github.com/bilirec/bilirec/pkg/logger"
 	"github.com/bilirec/bilirec/pkg/pool"
 )
 
 var log = logger.Named("stream")
 
 type Service struct {
+	bilic              *bilibili.Client
 	chunkPools         *pool.LazyDualPool[*pool.BucketedBytesPool]
 	chanBufferSize     int
 	highChanBufferSize int
 	streamIdleTimeout  time.Duration
 }
 
-func NewService(cfg *config.Config) *Service {
+func NewService(cfg *config.Config, bilic *bilibili.Client) *Service {
 	highChanBufferSize := config.ReadOnly.ReadStreamChanBufferSizeHigh()
 	boundedHigh := config.ReadStreamBytesPoolBoundedCapacity(highChanBufferSize)
 	bounded := config.ReadStreamBytesPoolBoundedCapacity(cfg.ReadStreamChanBufferSize)
 	return &Service{
+		bilic: bilic,
 		chunkPools: pool.NewLazyDualPool(
 			pool.DefaultLazyDualPoolIdleTTL,
 			func() *pool.BucketedBytesPool {
