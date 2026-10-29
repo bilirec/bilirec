@@ -38,7 +38,6 @@ func connectHLS(
 	fetchM3u8URL := hlsFetchM3u8URL(ctx, svc.bilic, req.RoomID, streamInfo, profile)
 	hlsCh, hlsErr := svc.ReadHlsStream(
 		req.RoomID,
-		req.SessionMeta,
 		fetchM3u8URL,
 		svc.bilic.GetLiveHlsPlaylistClient(),
 		svc.bilic.GetLiveHlsSegmentClient(),
@@ -46,6 +45,7 @@ func connectHLS(
 		streamInfo.Qn,
 		chunkPool,
 		releaseChunkPool,
+		req.OnSegmentGap,
 	)
 	if hlsErr != nil {
 		if errors.Is(hlsErr, context.Canceled) || ctx.Err() != nil {

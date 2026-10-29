@@ -4,22 +4,22 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"time"
 
 	"github.com/bilirec/bilirec/internal/modules/bilibili"
-	"github.com/bilirec/bilirec/internal/modules/metrics"
 	"github.com/bilirec/bilirec/pkg/logger"
 	"github.com/bilirec/bilirec/pkg/pool"
 )
 
 // ConnectRequest parameters for TryConnect.
 type ConnectRequest struct {
-	RoomID      int
-	SessionMeta metrics.StreamObservationMeta
-	StreamInfo  bilibili.StreamURLInfo
-	Log         logger.Logger
-	Attempt     int
-	Total       int
-	URLPreview  string
+	RoomID       int
+	StreamInfo   bilibili.StreamURLInfo
+	Log          logger.Logger
+	Attempt      int
+	Total        int
+	URLPreview   string
+	OnSegmentGap func(time.Duration)
 }
 
 // ConnectResult is returned when ingest is established for one URL candidate.
@@ -29,7 +29,7 @@ type ConnectResult struct {
 	Connected bool
 }
 
-// TryConnect establishes ingest for one stream URL candidate.
+// TryConnect establishes ingest for one URL candidate.
 // When Connected is false and err is nil, caller should try the next URL.
 func (s *Service) TryConnect(ctx context.Context, req ConnectRequest) (ConnectResult, error) {
 	var out ConnectResult

@@ -207,13 +207,14 @@ func captureHLSSegments(t *testing.T, profile bilibili.StreamProfile, wantFormat
 	t.Helper()
 	var bili *bilibili.Client
 	var st *stream.Service
+	var exp *metrics.Exporter
 	app := fxtest.New(t,
 		config.Module,
 		bilibili.Module,
 		metrics.Module,
 		fx.Provide(notify.NewService),
 		fx.Provide(stream.NewService),
-		fx.Populate(&bili, &st),
+		fx.Populate(&bili, &st, &exp),
 	)
 	app.RequireStart()
 	defer app.RequireStop()
@@ -233,9 +234,9 @@ func captureHLSSegments(t *testing.T, profile bilibili.StreamProfile, wantFormat
 	chunkPool, release := st.AcquireChunkPool(info.Qn)
 	defer release()
 
+	obs := exp.StreamObservation(0, metrics.StreamObservationMeta{})
 	ch, err := st.ReadHlsStream(
 		0,
-		metrics.StreamObservationMeta{},
 		func() (string, error) { return info.URL, nil },
 		bili.GetLiveHlsPlaylistClient(),
 		bili.GetLiveHlsSegmentClient(),
@@ -243,6 +244,7 @@ func captureHLSSegments(t *testing.T, profile bilibili.StreamProfile, wantFormat
 		info.Qn,
 		chunkPool,
 		release,
+		obs.RecordTimelineGap,
 	)
 	if err != nil {
 		t.Fatalf("ReadHlsStream: %v", err)
@@ -464,13 +466,14 @@ func probeHLSSEI(t *testing.T, profile bilibili.StreamProfile, parse func([]byte
 	t.Helper()
 	var bili *bilibili.Client
 	var st *stream.Service
+	var exp *metrics.Exporter
 	app := fxtest.New(t,
 		config.Module,
 		bilibili.Module,
 		metrics.Module,
 		fx.Provide(notify.NewService),
 		fx.Provide(stream.NewService),
-		fx.Populate(&bili, &st),
+		fx.Populate(&bili, &st, &exp),
 	)
 	app.RequireStart()
 	defer app.RequireStop()
@@ -497,7 +500,8 @@ func probeHLSSEI(t *testing.T, profile bilibili.StreamProfile, parse func([]byte
 	fetchM3u8 := func() (string, error) {
 		return info.URL, nil
 	}
-	ch, err := st.ReadHlsStream(0, metrics.StreamObservationMeta{}, fetchM3u8, bili.GetLiveHlsPlaylistClient(), bili.GetLiveHlsSegmentClient(), ctx, info.Qn, chunkPool, release)
+	obs := exp.StreamObservation(0, metrics.StreamObservationMeta{})
+	ch, err := st.ReadHlsStream(0, fetchM3u8, bili.GetLiveHlsPlaylistClient(), bili.GetLiveHlsSegmentClient(), ctx, info.Qn, chunkPool, release, obs.RecordTimelineGap)
 	if err != nil {
 		t.Fatalf("ReadHlsStream: %v", err)
 	}

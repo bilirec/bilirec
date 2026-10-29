@@ -77,14 +77,6 @@ var (
 	}
 )
 
-// AddStreamBytes accumulates TCP bytes read from the live stream for a room.
-func (e *Exporter) AddStreamBytes(roomID int, n int) {
-	if e.registry == nil {
-		return
-	}
-	e.registry.counter(metricRoomStreamBytesTotal, roomID).Add(n)
-}
-
 // RecordingStarted records a session, marks recording as active, and updates
 // the room metadata.
 func (e *Exporter) RecordingStarted(roomID int, uname string) {

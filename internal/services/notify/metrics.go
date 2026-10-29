@@ -16,9 +16,9 @@ type RecordingAlertContext struct {
 }
 
 const (
-	metricsEventTimelineGap  = "metrics_timeline_gap"
-	metricsEventSlowIO       = "metrics_slow_io"
-	metricsEventEnqueueWait  = "metrics_enqueue_wait"
+	metricsEventTimelineGap = "metrics_timeline_gap"
+	metricsEventSlowIO      = "metrics_slow_io"
+	metricsEventEnqueueWait = "metrics_enqueue_wait"
 )
 
 // ClearRecordingMetricsAlerts drops in-memory alert state when a recording session ends.
@@ -112,17 +112,25 @@ type streamNotifyObserver struct {
 	svc *Service
 }
 
+func (o *streamNotifyObserver) OnBytesRead(_ int, _ metrics.StreamObservationMeta, _ int) {}
+
 func (o *streamNotifyObserver) OnBytesWritten(_ int, _ metrics.StreamObservationMeta, _ int) {}
 
 func (o *streamNotifyObserver) OnTimelineGap(roomID int, meta metrics.StreamObservationMeta, delta time.Duration) {
 	o.svc.ObserveRecordingTimelineGap(recordingAlertContext(roomID, meta), delta)
 }
 
-func (o *streamNotifyObserver) OnSlowFlush(roomID int, meta metrics.StreamObservationMeta) {
+func (o *streamNotifyObserver) OnFlush(roomID int, meta metrics.StreamObservationMeta, duration time.Duration) {
+	if duration <= metrics.SlowFlushMetricThreshold {
+		return
+	}
 	o.svc.ObserveRecordingSlowFlush(recordingAlertContext(roomID, meta))
 }
 
-func (o *streamNotifyObserver) OnSlowSync(roomID int, meta metrics.StreamObservationMeta) {
+func (o *streamNotifyObserver) OnSync(roomID int, meta metrics.StreamObservationMeta, duration time.Duration) {
+	if duration <= metrics.SlowSyncMetricThreshold {
+		return
+	}
 	o.svc.ObserveRecordingSlowSync(recordingAlertContext(roomID, meta))
 }
 

@@ -33,6 +33,27 @@ type internalStartParams struct {
 	session *Info // recovery only
 }
 
+// sessionObservation pairs session-scoped pipeline stats with their StreamObservation fan-out.
+type sessionObservation struct {
+	stats *statsObserver
+	obs   *metrics.StreamObservation
+}
+
+// sessionConnectCommit is everything known when one stream URL connects successfully.
+type sessionConnectCommit struct {
+	txn  tx.Txn[int]
+	room *bilibili.LiveRoomInfoDetail
+	at   time.Time
+	obs  sessionObservation
+}
+
+func (r *Service) maxRecordingDuration(p internalStartParams) time.Duration {
+	if p.opts.hasDuration {
+		return p.opts.duration
+	}
+	return time.Duration(r.cfg.MaxRecordingHours) * time.Hour
+}
+
 func (r *Service) internalStart(p internalStartParams) error {
 	l := log.With("room", p.roomId)
 
@@ -89,6 +110,19 @@ func (r *Service) internalStart(p internalStartParams) error {
 	now := time.Now()
 	ctx := p.ctx
 
+	previousStats := &statsObserver{}
+	if p.session != nil && p.session.stats != nil {
+		previousStats = p.session.stats
+	}
+
+	observation := sessionObservation{
+		stats: previousStats,
+		obs: r.m.StreamObservation(p.roomId,
+			metrics.StreamObservationMeta{Streamer: roomInfo.Uname, RoomTitle: roomInfo.Title},
+			previousStats,
+		),
+	}
+
 	for idx, streamInfo := range streams {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -113,7 +147,7 @@ func (r *Service) internalStart(p internalStartParams) error {
 			urlPreview,
 			idx+1,
 			len(streams),
-			metrics.StreamObservationMeta{Streamer: roomInfo.Uname, RoomTitle: roomInfo.Title},
+			observation.obs.RecordTimelineGap,
 		)
 		if err != nil {
 			return err
@@ -130,14 +164,12 @@ func (r *Service) internalStart(p internalStartParams) error {
 			return context.Canceled
 		}
 
-		var maxDuration time.Duration
-		if p.opts.hasDuration {
-			maxDuration = p.opts.duration
-		} else {
-			maxDuration = time.Duration(r.cfg.MaxRecordingHours) * time.Hour
-		}
-
-		info, err := r.commitSession(p, txn, roomInfo, now, maxDuration)
+		info, err := r.commitSession(p, sessionConnectCommit{
+			txn:  txn,
+			room: roomInfo,
+			at:   now,
+			obs:  observation,
+		})
 		if err != nil {
 			discardStreamCh(ch, chunkPool)
 			return err
@@ -177,23 +209,20 @@ func (r *Service) sessionReadyForConfirm(p internalStartParams) bool {
 	return ok && existing == p.session
 }
 
-func (r *Service) commitSession(
-	p internalStartParams,
-	txn tx.Txn[int],
-	roomInfo *bilibili.LiveRoomInfoDetail,
-	now time.Time,
-	maxDuration time.Duration,
-) (*Info, error) {
+func (r *Service) commitSession(p internalStartParams, c sessionConnectCommit) (*Info, error) {
+	maxDuration := r.maxRecordingDuration(p)
 	if p.mode == startModeRecovery {
 		info := p.session
-		info.room = roomInfo
-		info.fileTime = nextFileTime(info.fileTime, now)
+		info.room = c.room
+		info.fileTime = nextFileTime(info.fileTime, c.at)
+		info.stats = c.obs.stats
+		info.streamObs = c.obs.obs
 		if r.cfg.RecordingRecoveryDuration == "reset" {
-			info.startTime = now
+			info.startTime = c.at
 		}
 		// Recovery reuses the session's existing options. Keep them immutable
 		// after the session is published so concurrent stats reads stay safe.
-		txn.ConfirmWith(p.roomId, func() {
+		c.txn.ConfirmWith(p.roomId, func() {
 			info.status.Store(recordingPtr)
 		})
 		if err := info.ctx.Err(); err != nil {
@@ -214,11 +243,13 @@ func (r *Service) commitSession(
 		ctx:          p.ctx,
 		cancel:       p.cancel,
 		startOptions: snapshotStartOptions(p.opts),
-		startTime:    now,
-		fileTime:     now,
-		room:         roomInfo,
+		startTime:    c.at,
+		fileTime:     c.at,
+		room:         c.room,
 		maxDuration:  maxDuration,
 		sessionID:    sessionID,
+		stats:        c.obs.stats,
+		streamObs:    c.obs.obs,
 		backoff: backoff.NewSequence(
 			2*time.Second,
 			2*time.Second,
@@ -230,10 +261,10 @@ func (r *Service) commitSession(
 	}
 	info.SetOutputPath("")
 
-	txn.ConfirmWith(p.roomId, func() {
+	c.txn.ConfirmWith(p.roomId, func() {
 		info.status.Store(recordingPtr)
 		r.recording.Store(p.roomId, info)
-		r.m.RecordingStarted(p.roomId, roomInfo.Uname)
+		r.m.RecordingStarted(p.roomId, c.room.Uname)
 	})
 
 	return info, nil
@@ -257,16 +288,16 @@ func (r *Service) tryConnectStream(
 	streamInfo bilibili.StreamURLInfo,
 	urlPreview string,
 	attempt, total int,
-	sessionMeta metrics.StreamObservationMeta,
+	onSegmentGap func(time.Duration),
 ) (<-chan []byte, rs.RecordStrategy, *pool.BucketedBytesPool, bool, error) {
 	res, err := r.st.TryConnect(ctx, stream.ConnectRequest{
-		RoomID:      roomId,
-		SessionMeta: sessionMeta,
-		StreamInfo:  streamInfo,
-		Log:         l,
-		Attempt:     attempt,
-		Total:       total,
-		URLPreview:  urlPreview,
+		RoomID:       roomId,
+		StreamInfo:   streamInfo,
+		Log:          l,
+		Attempt:      attempt,
+		Total:        total,
+		URLPreview:   urlPreview,
+		OnSegmentGap: onSegmentGap,
 	})
 	if err != nil {
 		return nil, nil, nil, false, err
