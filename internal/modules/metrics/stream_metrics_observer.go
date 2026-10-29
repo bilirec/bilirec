@@ -8,6 +8,7 @@ import (
 )
 
 type streamMetricsObserver struct {
+	bytesRead              *vm.Counter
 	bytesWritten           *vm.Counter
 	timestampJumps         *vm.Counter
 	timestampJumpCollapsed *vm.FloatCounter
@@ -19,6 +20,7 @@ type streamMetricsObserver struct {
 
 func newStreamMetricsObserver(reg *roomRegistry, roomID int) *streamMetricsObserver {
 	return &streamMetricsObserver{
+		bytesRead:              reg.counter(metricRoomStreamBytesTotal, roomID),
 		bytesWritten:           reg.counter(metricRoomStreamBytesWrittenTotal, roomID),
 		timestampJumps:         reg.counter(metricRoomStreamTimestampJumpsTotal, roomID),
 		timestampJumpCollapsed: reg.floatCounter(metricRoomStreamTimestampJumpCollapsedSec, roomID),
@@ -27,6 +29,13 @@ func newStreamMetricsObserver(reg *roomRegistry, roomID int) *streamMetricsObser
 		slowFlushes:            reg.counter(metricRoomStreamSlowFlushesTotal, roomID),
 		slowSyncs:              reg.counter(metricRoomStreamSlowSyncsTotal, roomID),
 	}
+}
+
+func (o *streamMetricsObserver) OnBytesRead(_ int, _ StreamObservationMeta, n int) {
+	if n <= 0 || o.bytesRead == nil {
+		return
+	}
+	o.bytesRead.Add(n)
 }
 
 func (o *streamMetricsObserver) OnBytesWritten(_ int, _ StreamObservationMeta, n int) {
@@ -51,16 +60,18 @@ func (o *streamMetricsObserver) OnTimelineGap(_ int, _ StreamObservationMeta, de
 	o.timestampJumpCollapsed.Add(float64(ms) / 1000)
 }
 
-func (o *streamMetricsObserver) OnSlowFlush(_ int, _ StreamObservationMeta) {
-	if o.slowFlushes != nil {
-		o.slowFlushes.Inc()
+func (o *streamMetricsObserver) OnFlush(_ int, _ StreamObservationMeta, duration time.Duration) {
+	if duration <= SlowFlushMetricThreshold || o.slowFlushes == nil {
+		return
 	}
+	o.slowFlushes.Inc()
 }
 
-func (o *streamMetricsObserver) OnSlowSync(_ int, _ StreamObservationMeta) {
-	if o.slowSyncs != nil {
-		o.slowSyncs.Inc()
+func (o *streamMetricsObserver) OnSync(_ int, _ StreamObservationMeta, duration time.Duration) {
+	if duration <= SlowSyncMetricThreshold || o.slowSyncs == nil {
+		return
 	}
+	o.slowSyncs.Inc()
 }
 
 func (o *streamMetricsObserver) OnEnqueueWait(_ int, _ StreamObservationMeta, wait time.Duration) {

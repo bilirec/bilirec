@@ -3,9 +3,9 @@ package metrics
 import "time"
 
 const (
-	minEnqueueWaitRecord     = 10 * time.Millisecond
-	slowFlushMetricThreshold = 3 * time.Second
-	slowSyncMetricThreshold  = 1200 * time.Millisecond
+	MinEnqueueWaitRecord     = 10 * time.Millisecond
+	SlowFlushMetricThreshold = 3 * time.Second
+	SlowSyncMetricThreshold  = 1200 * time.Millisecond
 )
 
 // StreamObservationMeta is room identity for stream pipeline observers and alert payloads.
@@ -16,10 +16,11 @@ type StreamObservationMeta struct {
 
 // StreamObserver receives recording pipeline events for one room.
 type StreamObserver interface {
+	OnBytesRead(roomID int, meta StreamObservationMeta, n int)
 	OnBytesWritten(roomID int, meta StreamObservationMeta, n int)
 	OnTimelineGap(roomID int, meta StreamObservationMeta, delta time.Duration)
-	OnSlowFlush(roomID int, meta StreamObservationMeta)
-	OnSlowSync(roomID int, meta StreamObservationMeta)
+	OnFlush(roomID int, meta StreamObservationMeta, duration time.Duration)
+	OnSync(roomID int, meta StreamObservationMeta, duration time.Duration)
 	OnEnqueueWait(roomID int, meta StreamObservationMeta, wait time.Duration)
 }
 
@@ -41,7 +42,8 @@ func (e *Exporter) Register(o StreamObserver) {
 }
 
 // StreamObservation returns pipeline observers for one room.
-func (e *Exporter) StreamObservation(roomID int, meta StreamObservationMeta) *StreamObservation {
+// Optional local observers are session-scoped (e.g. recorder stats); global Register observers are appended after.
+func (e *Exporter) StreamObservation(roomID int, meta StreamObservationMeta, local ...StreamObserver) *StreamObservation {
 	obs := &StreamObservation{
 		roomID: roomID,
 		meta:   meta,
@@ -54,18 +56,29 @@ func (e *Exporter) StreamObservation(roomID int, meta StreamObservationMeta) *St
 	if e.registry != nil {
 		capN++
 	}
-	if capN == 0 {
+	if capN == 0 && len(local) == 0 {
 		return obs
 	}
-	observers := make([]StreamObserver, 0, capN)
+	observers := make([]StreamObserver, 0, capN+len(local))
 	if e.registry != nil {
 		observers = append(observers, newStreamMetricsObserver(e.registry, roomID))
 	}
+	observers = append(observers, local...)
 	e.observersMu.RLock()
 	observers = append(observers, e.streamObservers...)
 	e.observersMu.RUnlock()
 	obs.observers = observers
 	return obs
+}
+
+// AddBytesRead accumulates bytes read from the live stream ingest path.
+func (s *StreamObservation) AddBytesRead(n int) {
+	if n <= 0 {
+		return
+	}
+	for _, o := range s.observers {
+		o.OnBytesRead(s.roomID, s.meta, n)
+	}
 }
 
 // AddBytesWritten accumulates bytes passed to the segment writer Write().
@@ -88,29 +101,29 @@ func (s *StreamObservation) RecordTimelineGap(delta time.Duration) {
 	}
 }
 
-// RecordFlush records periodic or close flushes; slow flushes fan out to observers.
+// RecordFlush records periodic or close flushes; observers apply their own thresholds.
 func (s *StreamObservation) RecordFlush(duration time.Duration) {
-	if duration <= slowFlushMetricThreshold {
+	if duration <= 0 {
 		return
 	}
 	for _, o := range s.observers {
-		o.OnSlowFlush(s.roomID, s.meta)
+		o.OnFlush(s.roomID, s.meta, duration)
 	}
 }
 
-// RecordSync records fsync timing; slow syncs fan out to observers.
+// RecordSync records fsync timing; observers apply their own thresholds.
 func (s *StreamObservation) RecordSync(duration time.Duration) {
-	if duration <= slowSyncMetricThreshold {
+	if duration <= 0 {
 		return
 	}
 	for _, o := range s.observers {
-		o.OnSlowSync(s.roomID, s.meta)
+		o.OnSync(s.roomID, s.meta, duration)
 	}
 }
 
 // RecordEnqueueWait records backpressure while the writer queue was full.
 func (s *StreamObservation) RecordEnqueueWait(wait time.Duration) {
-	if wait < minEnqueueWaitRecord {
+	if wait < MinEnqueueWaitRecord {
 		return
 	}
 	for _, o := range s.observers {

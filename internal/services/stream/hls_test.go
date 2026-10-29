@@ -28,6 +28,11 @@ func testHlsService() *Service {
 	}
 }
 
+func testHlsOnSegmentGap(svc *Service) func(time.Duration) {
+	obs := svc.metrics.StreamObservation(0, metrics.StreamObservationMeta{})
+	return obs.RecordTimelineGap
+}
+
 func buildPlaylistBody(segCount int, withMap bool) string {
 	lines := make([]string, 0, segCount*2+4)
 	lines = append(lines,
@@ -399,7 +404,7 @@ func TestReadHlsStream_MapURIChangeSameInitContinues(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	chunkPool, releasePool := svc.AcquireChunkPool(10000)
-	ch, err := svc.ReadHlsStream(0, metrics.StreamObservationMeta{}, fetchURL, playlistClient, segmentClient, ctx, 10000, chunkPool, releasePool)
+	ch, err := svc.ReadHlsStream(0, fetchURL, playlistClient, segmentClient, ctx, 10000, chunkPool, releasePool, testHlsOnSegmentGap(svc))
 	if err != nil {
 		t.Fatalf("ReadHlsStream: %v", err)
 	}
@@ -496,7 +501,7 @@ func TestReadHlsStream_MuxCompatibleMapFlapDoesNotRedeliver(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	chunkPool, releasePool := svc.AcquireChunkPool(10000)
-	ch, err := svc.ReadHlsStream(0, metrics.StreamObservationMeta{}, fetchURL, playlistClient, segmentClient, ctx, 10000, chunkPool, releasePool)
+	ch, err := svc.ReadHlsStream(0, fetchURL, playlistClient, segmentClient, ctx, 10000, chunkPool, releasePool, testHlsOnSegmentGap(svc))
 	if err != nil {
 		t.Fatalf("ReadHlsStream: %v", err)
 	}
@@ -654,7 +659,7 @@ func TestReadHlsStream_ChangedInitSettlesAfterDebounce(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	chunkPool, releasePool := svc.AcquireChunkPool(10000)
-	ch, err := svc.ReadHlsStream(0, metrics.StreamObservationMeta{}, fetchURL, playlistClient, segmentClient, ctx, 10000, chunkPool, releasePool)
+	ch, err := svc.ReadHlsStream(0, fetchURL, playlistClient, segmentClient, ctx, 10000, chunkPool, releasePool, testHlsOnSegmentGap(svc))
 	if err != nil {
 		t.Fatalf("ReadHlsStream: %v", err)
 	}
@@ -747,7 +752,7 @@ func TestReadHlsStream_InitChurnBackToConfirmedCancels(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	chunkPool, releasePool := svc.AcquireChunkPool(10000)
-	ch, err := svc.ReadHlsStream(0, metrics.StreamObservationMeta{}, fetchURL, playlistClient, segmentClient, ctx, 10000, chunkPool, releasePool)
+	ch, err := svc.ReadHlsStream(0, fetchURL, playlistClient, segmentClient, ctx, 10000, chunkPool, releasePool, testHlsOnSegmentGap(svc))
 	if err != nil {
 		t.Fatalf("ReadHlsStream: %v", err)
 	}
@@ -852,7 +857,7 @@ func TestReadHlsStream_MapFetchFailureDoesNotSkipSeq(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	chunkPool, releasePool := svc.AcquireChunkPool(10000)
-	ch, err := svc.ReadHlsStream(0, metrics.StreamObservationMeta{}, fetchURL, playlistClient, segmentClient, ctx, 10000, chunkPool, releasePool)
+	ch, err := svc.ReadHlsStream(0, fetchURL, playlistClient, segmentClient, ctx, 10000, chunkPool, releasePool, testHlsOnSegmentGap(svc))
 	if err != nil {
 		t.Fatalf("ReadHlsStream: %v", err)
 	}
@@ -919,7 +924,7 @@ func TestReadHlsStream_TSWithoutMapUnaffected(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	chunkPool, releasePool := svc.AcquireChunkPool(10000)
-	ch, err := svc.ReadHlsStream(0, metrics.StreamObservationMeta{}, fetchURL, playlistClient, segmentClient, ctx, 10000, chunkPool, releasePool)
+	ch, err := svc.ReadHlsStream(0, fetchURL, playlistClient, segmentClient, ctx, 10000, chunkPool, releasePool, testHlsOnSegmentGap(svc))
 	if err != nil {
 		t.Fatalf("ReadHlsStream: %v", err)
 	}

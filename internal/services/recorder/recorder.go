@@ -16,10 +16,10 @@ import (
 	rs "github.com/bilirec/bilirec/internal/record_strategies"
 	"github.com/bilirec/bilirec/internal/services/convert"
 	"github.com/bilirec/bilirec/internal/services/danmaku"
-	"github.com/bilirec/bilirec/internal/services/subtitle"
 	"github.com/bilirec/bilirec/internal/services/notify"
 	"github.com/bilirec/bilirec/internal/services/preview"
 	"github.com/bilirec/bilirec/internal/services/stream"
+	"github.com/bilirec/bilirec/internal/services/subtitle"
 	"github.com/bilirec/bilirec/internal/services/webhook"
 	"github.com/bilirec/bilirec/pkg/ds"
 	"github.com/bilirec/bilirec/pkg/logger"
@@ -224,7 +224,7 @@ func (r *Service) rotate(roomId int, ch <-chan []byte, strategy rs.RecordStrateg
 
 	segment := 0
 	state := &rs.RotationState{Data: map[string][]byte{}}
-	hooks := r.pipelineHooks(roomId, info)
+	hooks := r.pipelineHooks(info.streamObs)
 	for {
 		outputPath, err := r.rotateFilePath(info, segment, strategy.FileExtension())
 		if err != nil {
@@ -327,8 +327,7 @@ func (r *Service) rev(roomId int, ch <-chan []byte, info *Info, ctx context.Cont
 		go r.finalize(roomId, info, outputPath, info.isAudioOnly.Load())
 	}()
 	for data := range ch {
-		info.bytesRead.Add(uint64(len(data)))
-		r.m.AddStreamBytes(roomId, len(data))
+		info.streamObs.AddBytesRead(len(data))
 		result, err := pipe.Process(ctx, data)
 		if info.chunkPool != nil && cap(data) > 0 {
 			info.chunkPool.Put(data[:cap(data)])
@@ -375,7 +374,8 @@ func (r *Service) checkRecordingDurationPeriodically(roomId int, ctx context.Con
 
 			if int(elapsed.Minutes())%30 == 0 {
 				remaining := maxDuration - elapsed
-				log.Infof("录制中：已用时 %v，剩余 %v，%d MB", elapsed.Round(time.Minute), remaining.Round(time.Minute), info.bytesRead.Load()/1024/1024)
+				readMB := info.stats.BytesRead.Load() / 1024 / 1024
+				log.Infof("录制中：已用时 %v，剩余 %v，%d MB", elapsed.Round(time.Minute), remaining.Round(time.Minute), readMB)
 			}
 
 		case <-ctx.Done():

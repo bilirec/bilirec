@@ -200,13 +200,19 @@ func TestCommitSession_RecoveryPreserveStartTime(t *testing.T) {
 	txn := r.reser.Begin()
 	now := time.Now()
 	roomInfo := &bilibili.LiveRoomInfoDetail{RoomID: 1, LiveStatus: 1}
+	sessionStats := &statsObserver{}
 
 	got, err := r.commitSession(internalStartParams{
 		roomId:  1,
 		ctx:     ctx,
 		mode:    startModeRecovery,
 		session: info,
-	}, txn, roomInfo, now, time.Hour)
+	}, sessionConnectCommit{
+		txn:  txn,
+		room: roomInfo,
+		at:   now,
+		obs:  sessionObservation{stats: sessionStats},
+	})
 	if err != nil {
 		t.Fatalf("commitSession: %v", err)
 	}
@@ -244,13 +250,19 @@ func TestCommitSession_RecoveryResetStartTime(t *testing.T) {
 	txn := r.reser.Begin()
 	now := time.Now()
 	roomInfo := &bilibili.LiveRoomInfoDetail{RoomID: 1, LiveStatus: 1}
+	sessionStats := &statsObserver{}
 
 	got, err := r.commitSession(internalStartParams{
 		roomId:  1,
 		ctx:     ctx,
 		mode:    startModeRecovery,
 		session: info,
-	}, txn, roomInfo, now, time.Hour)
+	}, sessionConnectCommit{
+		txn:  txn,
+		room: roomInfo,
+		at:   now,
+		obs:  sessionObservation{stats: sessionStats},
+	})
 	if err != nil {
 		t.Fatalf("commitSession: %v", err)
 	}
