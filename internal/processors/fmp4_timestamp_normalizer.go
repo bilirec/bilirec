@@ -58,8 +58,10 @@ func (p *Fmp4TimestampNormalizerProcessor) Process(_ context.Context, log logger
 		}
 	}
 
-	if ts := hls.TrackTimescalesFromInit(data); len(ts) > 0 {
-		p.timescales = ts
+	if p.timescales == nil || hls.SegmentHasMoov(data) {
+		if ts := hls.TrackTimescalesFromInit(data); len(ts) > 0 {
+			p.timescales = ts
+		}
 	}
 
 	if gap := hls.NoteFragmentTimeline(data, p.timescales, p.lastRawTfdt); gap > 0 {

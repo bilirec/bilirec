@@ -44,7 +44,6 @@ func TestInitMuxCompatible_AvcCChange(t *testing.T) {
 	}
 }
 
-
 func makeFtypInitTest(brand string) []byte {
 	init := make([]byte, 20)
 	binary.BigEndian.PutUint32(init[0:4], 20)

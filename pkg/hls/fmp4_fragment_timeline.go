@@ -17,9 +17,27 @@ const (
 	fmp4TimelineForwardThreshold  = 10 * time.Second
 )
 
+// SegmentHasMoov reports whether data contains a top-level moov box (init segment).
+func SegmentHasMoov(data []byte) bool {
+	for off := 0; off < len(data); {
+		size, typ, _, ok := readBoxHeaderCode(data, off)
+		if !ok {
+			break
+		}
+		if typ == boxTypeMoov {
+			return true
+		}
+		off += size
+	}
+	return false
+}
+
 // TrackTimescalesFromInit maps each trak track_ID to that trak's mdhd timescale.
 // A missing or truncated trak is omitted. The result is nil when no trak yields both fields.
 func TrackTimescalesFromInit(init []byte) map[uint32]uint32 {
+	if !SegmentHasMoov(init) {
+		return nil
+	}
 	out := make(map[uint32]uint32)
 	for off := 0; off < len(init); {
 		size, typ, _, ok := readBoxHeaderCode(init, off)

@@ -8,13 +8,26 @@ import (
 	"github.com/bilirec/bilirec/pkg/hls"
 )
 
-// fmp4State 在 init 段（ftyp/moov）解析后保存视频轨 ID、timescale、codec，供后续 moof 使用。
+// fmp4State 在 init 段（ftyp/moov）解析后保存视频轨 ID、各轨 timescale、codec，供后续 moof 使用。
 type fmp4State struct {
-	VideoTrackID uint32
-	Timescale    uint32
-	Codec        flv.VideoKind
-	trexDur      map[uint32]uint32
-	trexSize     map[uint32]uint32
+	VideoTrackID    uint32
+	Timescale       uint32 // 视频轨 mdhd timescale；仅作 TrackTimescales 缺轨时的回退
+	TrackTimescales map[uint32]uint32
+	Codec           flv.VideoKind
+	trexDur         map[uint32]uint32
+	trexSize        map[uint32]uint32
+}
+
+func (st *fmp4State) timescaleForTrack(trackID uint32) uint32 {
+	if st.TrackTimescales != nil {
+		if ts, ok := st.TrackTimescales[trackID]; ok && ts > 0 {
+			return ts
+		}
+	}
+	if st.Timescale > 0 {
+		return st.Timescale
+	}
+	return 1000
 }
 
 // accessUnitsFromFMP4Chunk 处理 fMP4 媒体分片：init 只更新 state；moof+mdat 按 trun 切 sample。
@@ -46,10 +59,6 @@ func embeddedAUFromFMP4Segment(seg []byte, st *fmp4State) (accessUnit, bool) {
 }
 
 func firstMoofPTSMs(seg []byte, st *fmp4State) int64 {
-	ts := st.Timescale
-	if ts == 0 {
-		ts = 1000
-	}
 	for off := 0; off < len(seg); {
 		size, typ, _, ok := hls.ReadBoxHeader(seg, off)
 		if !ok {
@@ -67,6 +76,7 @@ func firstMoofPTSMs(seg []byte, st *fmp4State) int64 {
 			}
 			e := o + sz
 			if boxTyp == "traf" {
+				var trackID uint32
 				var base uint64
 				for p := o + 8; p < e; {
 					ps, pt, _, pok := hls.ReadBoxHeader(seg, p)
@@ -74,11 +84,25 @@ func firstMoofPTSMs(seg []byte, st *fmp4State) int64 {
 						break
 					}
 					pe := p + ps
-					if pt == "tfdt" {
+					switch pt {
+					case "tfhd":
+						if id, ok := hls.TfhdTrackID(seg, p, pe); ok {
+							trackID = id
+						}
+					case "tfdt":
 						base = tfdtValue(seg, p, pe)
 					}
 					p = pe
 				}
+				if trackID == 0 {
+					o = e
+					continue
+				}
+				if st.VideoTrackID != 0 && trackID != st.VideoTrackID {
+					o = e
+					continue
+				}
+				ts := st.timescaleForTrack(trackID)
 				return int64(base * 1000 / uint64(ts))
 			}
 			o = e
@@ -105,6 +129,7 @@ func fmp4SegmentHasBox(seg []byte, typ string) bool {
 func parseInit(seg []byte, st *fmp4State) {
 	st.VideoTrackID = 0
 	st.Timescale = 1000
+	st.TrackTimescales = make(map[uint32]uint32)
 	st.Codec = flv.VideoKindAVC
 	var fallbackTrack uint32
 	var fallbackTS uint32
@@ -124,6 +149,7 @@ func parseInit(seg []byte, st *fmp4State) {
 		st.VideoTrackID = fallbackTrack
 		if fallbackTS > 0 {
 			st.Timescale = fallbackTS
+			st.TrackTimescales[fallbackTrack] = fallbackTS
 		}
 		if fallbackCodec != flv.VideoKindNone {
 			st.Codec = fallbackCodec
@@ -147,14 +173,17 @@ func parseInitBoxes(seg []byte, start, end int, st *fmp4State, fallbackTrack *ui
 			if trackID == 0 {
 				break
 			}
-			if timescale > st.Timescale {
-				st.Timescale = timescale
+			if timescale > 0 {
+				st.TrackTimescales[trackID] = timescale
 			}
 			if codec != flv.VideoKindNone && isVideo {
 				st.Codec = codec
 			}
 			if isVideo && trackID < 256 {
 				st.VideoTrackID = trackID
+				if timescale > 0 {
+					st.Timescale = timescale
+				}
 			} else if *fallbackTrack == 0 && trackID < 256 {
 				*fallbackTrack = trackID
 				*fallbackTS = timescale
@@ -375,7 +404,7 @@ func samplesFromTraf(data []byte, trafStart, trafEnd int, st *fmp4State, mdat []
 	}
 	defDur, hasDefDur, defSize, hasDefSize := tfhdDefaults(data, tfhdStart, tfhdEnd)
 	aus := parseTrun(data, trunStart, trunEnd, base, st, trackID, mdat, moofStart, mdatPayloadStart, defDur, hasDefDur, defSize, hasDefSize)
-	if frag, ok := fragmentAUFromTraf(data, trunStart, trunEnd, base, st, mdat, moofStart, mdatPayloadStart); ok {
+	if frag, ok := fragmentAUFromTraf(data, trunStart, trunEnd, base, st, trackID, mdat, moofStart, mdatPayloadStart); ok {
 		if !accessUnitsHaveSEICues(aus) {
 			aus = append(aus, frag)
 		}
@@ -394,7 +423,7 @@ func accessUnitsHaveSEICues(aus []accessUnit) bool {
 }
 
 // fragmentAUFromTraf：B 站 fMP4 常在 trun 里不写 sample_size，整段视频 mdat（从 data_offset 起）仍是合法 AVCC，适合扫 SEI。
-func fragmentAUFromTraf(data []byte, trunStart, trunEnd int, base uint64, st *fmp4State, mdat []byte, moofStart, mdatPayloadStart int) (accessUnit, bool) {
+func fragmentAUFromTraf(data []byte, trunStart, trunEnd int, base uint64, st *fmp4State, trackID uint32, mdat []byte, moofStart, mdatPayloadStart int) (accessUnit, bool) {
 	off, ok := trunDataOffset(data, trunStart, trunEnd)
 	if !ok || off <= 0 {
 		return accessUnit{}, false
@@ -407,10 +436,7 @@ func fragmentAUFromTraf(data []byte, trunStart, trunEnd int, base uint64, st *fm
 	if cursor >= len(mdat) || !bytes.Contains(mdat[cursor:], subtitleUUID) {
 		return accessUnit{}, false
 	}
-	ts := st.Timescale
-	if ts == 0 {
-		ts = 1000
-	}
+	ts := st.timescaleForTrack(trackID)
 	ptsMs := int64(base * 1000 / uint64(ts))
 	return accessUnit{PTSMs: ptsMs, Codec: st.Codec, NALs: mdat[cursor:]}, true
 }
@@ -503,10 +529,7 @@ func parseTrun(data []byte, start, end int, base uint64, st *fmp4State, trackID 
 	if firstSampleFlagsPresent {
 		off += 4
 	}
-	ts := st.Timescale
-	if ts == 0 {
-		ts = 1000
-	}
+	ts := st.timescaleForTrack(trackID)
 	abs := moofStart + int(dataOffset)
 	if abs < mdatPayloadStart {
 		return nil

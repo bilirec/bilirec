@@ -35,6 +35,23 @@ func TestTrackTimescalesFromInit(t *testing.T) {
 	}
 }
 
+func TestTrackTimescalesFromInit_NoMoov(t *testing.T) {
+	moof := buildTestMoof(1, 1000, 0)
+	if got := TrackTimescalesFromInit(moof); got != nil {
+		t.Fatalf("expected nil without moov, got %#v", got)
+	}
+}
+
+func TestSegmentHasMoov(t *testing.T) {
+	init := buildTwoTrackInit(1, 12800, 2, 44100)
+	if !SegmentHasMoov(init) {
+		t.Fatal("init should contain moov")
+	}
+	if SegmentHasMoov(buildTestMoof(1, 1000, 0)) {
+		t.Fatal("moof-only should not report moov")
+	}
+}
+
 func TestNoteFragmentTimelineNormalStep(t *testing.T) {
 	last := map[uint32]uint64{1: 0}
 	moof := buildTestMoof(1, 2000, 0)
