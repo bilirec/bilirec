@@ -15,7 +15,7 @@ func TestPipelineHooks_MetricsDisabled(t *testing.T) {
 	hooks := r.pipelineHooks(123, info)
 
 	if hooks.OnFlush == nil || hooks.OnSync == nil || hooks.OnEnqueueWait == nil || hooks.OnTimelineGap == nil {
-		t.Fatal("pipeline hooks must always be wired; StreamSession no-ops VM when disabled")
+		t.Fatal("pipeline hooks must always be wired; StreamObservation no-ops VM when disabled")
 	}
 	if hooks.OnBytesWritten == nil {
 		t.Fatal("OnBytesWritten must always be set for stats")

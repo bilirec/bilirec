@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/bilirec/bilirec/internal/modules/config"
-	"github.com/bilirec/bilirec/internal/services/notify"
 	"go.uber.org/fx"
 	"go.uber.org/fx/fxtest"
 )
@@ -23,7 +22,6 @@ func newExporter(t *testing.T, enabled bool) *Exporter {
 	app := fxtest.New(t,
 		config.Module,
 		Module,
-		fx.Provide(notify.NewService),
 		fx.Populate(&e),
 	)
 	app.RequireStart()
@@ -41,7 +39,7 @@ func TestExporterDisabledNoop(t *testing.T) {
 	}
 	// All methods must be safe no-ops.
 	// All methods must be safe no-ops when registry is nil.
-	e.StreamSession(123, StreamSessionMeta{})
+	e.StreamObservation(123, StreamObservationMeta{})
 	e.AddStreamBytes(123, 1024)
 	e.RecordingStarted(123, "uname")
 	e.RecordingStopped(123)
@@ -162,7 +160,7 @@ func TestExporterEnabled(t *testing.T) {
 
 	e.RecordingStarted(123, "主播A")
 	e.AddStreamBytes(123, 1024)
-	sess := e.StreamSession(123, StreamSessionMeta{})
+	sess := e.StreamObservation(123, StreamObservationMeta{})
 	sess.AddBytesWritten(900)
 	sess.RecordTimelineGap(1200 * time.Millisecond)
 	sess.RecordEnqueueWait(50 * time.Millisecond)
@@ -276,14 +274,14 @@ func TestExporterEnabled(t *testing.T) {
 	}
 }
 
-func TestStreamSession_EagerCountersAndEnqueueThreshold(t *testing.T) {
+func TestStreamObservation_EagerCountersAndEnqueueThreshold(t *testing.T) {
 	e := newExporter(t, true)
-	sess := e.StreamSession(789, StreamSessionMeta{})
+	sess := e.StreamObservation(789, StreamObservationMeta{})
 
 	sess.RecordEnqueueWait(500 * time.Microsecond)
 	out := e.scrape()
 	if strings.Contains(out, `bilirec_room_stream_enqueue_waits_total{room_id="789"} 1`) {
-		t.Fatalf("StreamSession should ignore sub-threshold waits:\n%s", out)
+		t.Fatalf("StreamObservation should ignore sub-threshold waits:\n%s", out)
 	}
 
 	sess.AddBytesWritten(100)

@@ -14,6 +14,7 @@ import (
 	"github.com/bilirec/bilirec/pkg/logger"
 
 	"github.com/bilirec/bilirec/internal/modules/config"
+	"github.com/bilirec/bilirec/internal/modules/metrics"
 	"github.com/bilirec/bilirec/pkg/db"
 	"go.uber.org/fx"
 )
@@ -73,7 +74,7 @@ const (
 	LiveStateRecordStopped          LiveState = "live_record_stopped"
 )
 
-func NewService(lc fx.Lifecycle, cfg *config.Config) (*Service, error) {
+func NewService(lc fx.Lifecycle, cfg *config.Config, m *metrics.Exporter) (*Service, error) {
 
 	s := &Service{
 		httpClient: &http.Client{Timeout: 60 * time.Second},
@@ -82,6 +83,10 @@ func NewService(lc fx.Lifecycle, cfg *config.Config) (*Service, error) {
 	}
 	s.metricsAlerts.onFire = func(roomID int, kind metricsAlertKind, sum float64, streamer, roomTitle string) {
 		s.fireMetricsAlert(roomID, kind, sum, streamer, roomTitle)
+	}
+
+	if cfg.NotifyMetricsAlerts {
+		m.Register(&streamNotifyObserver{svc: s})
 	}
 
 	lc.Append(fx.StartStopHook(

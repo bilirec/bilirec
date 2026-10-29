@@ -224,6 +224,7 @@ func (r *Service) rotate(roomId int, ch <-chan []byte, strategy rs.RecordStrateg
 
 	segment := 0
 	state := &rs.RotationState{Data: map[string][]byte{}}
+	hooks := r.pipelineHooks(roomId, info)
 	for {
 		outputPath, err := r.rotateFilePath(info, segment, strategy.FileExtension())
 		if err != nil {
@@ -233,8 +234,6 @@ func (r *Service) rotate(roomId int, ch <-chan []byte, strategy rs.RecordStrateg
 		info.SetOutputPath(outputPath)
 
 		segmentOpen := time.Now()
-
-		hooks := r.pipelineHooks(roomId, info)
 
 		// 弹幕录制与视频管道完全解耦：仅在此非阻塞地启动/轮换，
 		// 失败或缺失不影响录播。userStart 仅在使用者发起的首次分段为 true。
