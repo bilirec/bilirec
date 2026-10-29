@@ -40,7 +40,6 @@ func TestExporterDisabledNoop(t *testing.T) {
 	// All methods must be safe no-ops.
 	// All methods must be safe no-ops when registry is nil.
 	e.StreamObservation(123, StreamObservationMeta{})
-	e.AddStreamBytes(123, 1024)
 	e.RecordingStarted(123, "uname")
 	e.RecordingStopped(123)
 	e.SetLiveStatus(123, "uname", true)
@@ -159,8 +158,8 @@ func TestExporterEnabled(t *testing.T) {
 	}
 
 	e.RecordingStarted(123, "主播A")
-	e.AddStreamBytes(123, 1024)
 	sess := e.StreamObservation(123, StreamObservationMeta{})
+	sess.AddBytesRead(1024)
 	sess.AddBytesWritten(900)
 	sess.RecordTimelineGap(1200 * time.Millisecond)
 	sess.RecordEnqueueWait(50 * time.Millisecond)
@@ -306,7 +305,6 @@ func TestExporterDeleteRoomClearsAllSpecs(t *testing.T) {
 		registry: registry,
 	}
 
-	e.AddStreamBytes(123, 1)
 	e.RecordingStarted(123, "主播")
 	e.RecordingStopped(123)
 	e.SetLiveStatus(123, "主播", false)
@@ -411,7 +409,7 @@ func TestRecorderCountersSurviveUnregister(t *testing.T) {
 	}
 
 	e.RecordingStarted(123, "主播")
-	e.AddStreamBytes(123, 1024)
+	e.StreamObservation(123, StreamObservationMeta{}).AddBytesRead(1024)
 	e.StreamConnectAttempt(123)
 	e.RecordingStopped(123)
 	e.UnregisterRecorderRoom(123)

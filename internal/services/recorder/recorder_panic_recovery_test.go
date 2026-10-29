@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/bilirec/bilirec/internal/modules/bilibili"
+	"github.com/bilirec/bilirec/internal/modules/metrics"
 	"github.com/bilirec/bilirec/internal/record_strategies"
 	"github.com/bilirec/bilirec/internal/services/preview"
 	"github.com/bilirec/bilirec/pkg/backoff"
@@ -63,7 +64,8 @@ func (s *panickingStrategy) Close() error {
 }
 
 // newPanicTestSession wires a recording session the way internalStart would:
-// status recording and a valid cancel/backoff pair.
+// status recording, valid cancel/backoff, and a non-nil StreamObservation so
+// rev's per-chunk accounting never dereferences nil.
 func newPanicTestSession(r *Service, roomID int, uname string) (*Info, context.CancelFunc) {
 	ctx, cancel := context.WithCancel(context.Background())
 	info := &Info{
@@ -77,6 +79,8 @@ func newPanicTestSession(r *Service, roomID int, uname string) (*Info, context.C
 			LiveStatus: 1,
 		},
 		startOptions: RecordStartOptions{},
+		stats:        &statsObserver{},
+		streamObs:    r.m.StreamObservation(roomID, metrics.StreamObservationMeta{}),
 	}
 	info.status.Store(recordingPtr)
 	r.recording.Store(roomID, info)

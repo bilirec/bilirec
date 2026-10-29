@@ -6,23 +6,24 @@ import (
 	"time"
 
 	"github.com/bilirec/bilirec/internal/modules/bilibili"
+	"github.com/bilirec/bilirec/internal/modules/metrics"
 	"github.com/bilirec/bilirec/pkg/backoff"
 	"github.com/bilirec/bilirec/pkg/ds"
 	"github.com/bilirec/bilirec/pkg/pool"
 )
 
 type Info struct {
-	status             atomic.Pointer[RecordStatus]
-	bytesRead          atomic.Uint64
-	bytesWritten       atomic.Uint64
-	actualQn           atomic.Int32
-	actualStreamFormat ds.Atomic[string]
-	isAudioOnly        atomic.Bool
+	status              atomic.Pointer[RecordStatus]
+	stats               *statsObserver
+	streamObs           *metrics.StreamObservation
+	actualQn            atomic.Int32
+	actualStreamFormat  ds.Atomic[string]
+	isAudioOnly         atomic.Bool
 	liveSubtitleEnabled atomic.Bool
-	startTime          time.Time // duration / stats (ElapsedSeconds, max recording)
-	fileTime           time.Time // rotateFilePath filename timestamp
-	outputPath         ds.Atomic[string]
-	maxDuration        time.Duration // internal runtime semantics: 0 = unlimited
+	startTime           time.Time // duration / stats (ElapsedSeconds, max recording)
+	fileTime            time.Time // rotateFilePath filename timestamp
+	outputPath          ds.Atomic[string]
+	maxDuration         time.Duration // internal runtime semantics: 0 = unlimited
 
 	ctx          context.Context
 	cancel       context.CancelFunc

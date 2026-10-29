@@ -22,6 +22,15 @@ type Stats struct {
 	ActualStreamFormat  string       `json:"actual_stream_format,omitempty"`
 	IsAudioOnly         bool         `json:"is_audio_only"`
 	RoomTitle           string       `json:"room_title"`
+
+	FlushCount    uint64 `json:"flush_count,omitempty"`
+	FlushMs       uint64 `json:"flush_ms,omitempty"`
+	SyncCount     uint64 `json:"sync_count,omitempty"`
+	SyncMs        uint64 `json:"sync_ms,omitempty"`
+	EnqueueWaits  uint64 `json:"enqueue_waits,omitempty"`
+	EnqueueWaitMs uint64 `json:"enqueue_wait_ms,omitempty"`
+	TimelineGaps  uint64 `json:"timeline_gaps,omitempty"`
+	TimelineGapMs uint64 `json:"timeline_gap_ms,omitempty"`
 }
 
 func (r *Service) GetStatus(roomId int) RecordStatus {
@@ -64,9 +73,11 @@ func (r *Service) GetStats(roomId int) (*Stats, bool) {
 	if r.dm != nil {
 		danmakuBytes = r.dm.GetBytesWritten(roomId)
 	}
+	stats := info.stats
+
 	return &Stats{
-		BytesRead:           info.bytesRead.Load(),
-		BytesWritten:        info.bytesWritten.Load(),
+		BytesRead:           stats.BytesRead.Load(),
+		BytesWritten:        stats.BytesWritten.Load(),
 		DanmakuBytesWritten: danmakuBytes,
 		RecordDanmaku:       info.startOptions.recordDanmaku,
 		RecordSubtitle:      info.startOptions.recordSubtitle,
@@ -78,6 +89,14 @@ func (r *Service) GetStats(roomId int) (*Stats, bool) {
 		ActualStreamFormat:  info.actualStreamFormat.LoadOr(""),
 		IsAudioOnly:         info.isAudioOnly.Load(),
 		RoomTitle:           roomTitle,
+		FlushCount:          stats.FlushCount.Load(),
+		FlushMs:             stats.FlushNs.Load() / 1_000_000,
+		SyncCount:           stats.SyncCount.Load(),
+		SyncMs:              stats.SyncNs.Load() / 1_000_000,
+		EnqueueWaits:        stats.EnqueueWaits.Load(),
+		EnqueueWaitMs:       stats.EnqueueWaitNs.Load() / 1_000_000,
+		TimelineGaps:        stats.TimelineGaps.Load(),
+		TimelineGapMs:       stats.TimelineGapNs.Load() / 1_000_000,
 	}, true
 }
 

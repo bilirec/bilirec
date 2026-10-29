@@ -49,8 +49,9 @@ func TestGetStatsSeparatesReadAndWritten(t *testing.T) {
 	}
 	info := &Info{}
 	info.startTime = time.Now()
-	info.bytesRead.Store(5000)
-	info.bytesWritten.Store(3000)
+	info.stats = &statsObserver{}
+	info.stats.BytesRead.Store(5000)
+	info.stats.BytesWritten.Store(3000)
 
 	svc.recording.Store(42, info)
 
@@ -63,5 +64,41 @@ func TestGetStatsSeparatesReadAndWritten(t *testing.T) {
 	}
 	if stats.BytesWritten != 3000 {
 		t.Fatalf("bytes_written = %d, want 3000", stats.BytesWritten)
+	}
+}
+
+func TestGetStatsPipelineIoSums(t *testing.T) {
+	svc := &Service{
+		recording: xsync.NewMap[int, *Info](),
+	}
+	info := &Info{}
+	info.startTime = time.Now()
+	info.stats = &statsObserver{}
+	info.stats.FlushCount.Store(1)
+	info.stats.FlushNs.Store(uint64(1500 * time.Millisecond))
+	info.stats.SyncCount.Store(1)
+	info.stats.SyncNs.Store(uint64(800 * time.Millisecond))
+	info.stats.EnqueueWaits.Store(1)
+	info.stats.EnqueueWaitNs.Store(uint64(25 * time.Millisecond))
+	info.stats.TimelineGaps.Store(1)
+	info.stats.TimelineGapNs.Store(uint64(500 * time.Millisecond))
+
+	svc.recording.Store(7, info)
+
+	stats, ok := svc.GetStats(7)
+	if !ok {
+		t.Fatal("expected stats")
+	}
+	if stats.FlushCount != 1 || stats.FlushMs != 1500 {
+		t.Fatalf("flush: count=%d ms=%d", stats.FlushCount, stats.FlushMs)
+	}
+	if stats.SyncCount != 1 || stats.SyncMs != 800 {
+		t.Fatalf("sync: count=%d ms=%d", stats.SyncCount, stats.SyncMs)
+	}
+	if stats.EnqueueWaits != 1 || stats.EnqueueWaitMs != 25 {
+		t.Fatalf("enqueue: count=%d ms=%d", stats.EnqueueWaits, stats.EnqueueWaitMs)
+	}
+	if stats.TimelineGaps != 1 || stats.TimelineGapMs != 500 {
+		t.Fatalf("timeline: count=%d ms=%d", stats.TimelineGaps, stats.TimelineGapMs)
 	}
 }

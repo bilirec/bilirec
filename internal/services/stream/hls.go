@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/bilirec/bilirec/internal/modules/metrics"
 	"github.com/bilirec/bilirec/pkg/hls"
 	"github.com/bilirec/bilirec/pkg/pool"
 	"github.com/go-resty/resty/v2"
@@ -26,13 +25,13 @@ var (
 // Protocol pieces are in pkg/hls; this method wires bilirec pool/logger/qn.
 func (r *Service) ReadHlsStream(
 	roomID int,
-	meta metrics.StreamObservationMeta,
 	fetchM3u8URL func() (string, error),
 	playlistClient, segmentClient *resty.Client,
 	ctx context.Context,
 	qn int,
 	chunkPool *pool.BucketedBytesPool,
 	releasePool func(),
+	onSegmentGap func(time.Duration),
 ) (<-chan []byte, error) {
 	readBody := hls.PoolSegmentBodyReader(chunkPool, r.streamIdleTimeout)
 	release := hls.PoolBytesReleaser(chunkPool)
@@ -91,9 +90,8 @@ func (r *Service) ReadHlsStream(
 		nextSeq = mediaSeq
 	}
 
-	sess := r.metrics.StreamObservation(roomID, meta)
-	onSegmentGap := func(d time.Duration) {
-		sess.RecordTimelineGap(d)
+	if onSegmentGap == nil {
+		onSegmentGap = func(time.Duration) {}
 	}
 
 	return hls.Start(ctx, hls.StreamRunnerOptions{
