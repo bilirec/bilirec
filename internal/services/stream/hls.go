@@ -26,7 +26,7 @@ var (
 // Protocol pieces are in pkg/hls; this method wires bilirec pool/logger/qn.
 func (r *Service) ReadHlsStream(
 	roomID int,
-	meta metrics.StreamSessionMeta,
+	meta metrics.StreamObservationMeta,
 	fetchM3u8URL func() (string, error),
 	playlistClient, segmentClient *resty.Client,
 	ctx context.Context,
@@ -91,7 +91,7 @@ func (r *Service) ReadHlsStream(
 		nextSeq = mediaSeq
 	}
 
-	sess := r.metrics.StreamSession(roomID, meta)
+	sess := r.metrics.StreamObservation(roomID, meta)
 	onSegmentGap := func(d time.Duration) {
 		sess.RecordTimelineGap(d)
 	}

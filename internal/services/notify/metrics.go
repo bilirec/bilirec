@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"math"
 	"time"
+
+	"github.com/bilirec/bilirec/internal/modules/metrics"
 )
 
 // RecordingAlertContext identifies a room for metrics alert aggregation and push payloads.
@@ -104,4 +106,34 @@ func formatTimelineGapAmount(seconds float64) string {
 		return fmt.Sprintf("%.1f 分钟", minutes)
 	}
 	return fmt.Sprintf("%.0f 分钟", math.Round(minutes))
+}
+
+type streamNotifyObserver struct {
+	svc *Service
+}
+
+func (o *streamNotifyObserver) OnBytesWritten(_ int, _ metrics.StreamObservationMeta, _ int) {}
+
+func (o *streamNotifyObserver) OnTimelineGap(roomID int, meta metrics.StreamObservationMeta, delta time.Duration) {
+	o.svc.ObserveRecordingTimelineGap(recordingAlertContext(roomID, meta), delta)
+}
+
+func (o *streamNotifyObserver) OnSlowFlush(roomID int, meta metrics.StreamObservationMeta) {
+	o.svc.ObserveRecordingSlowFlush(recordingAlertContext(roomID, meta))
+}
+
+func (o *streamNotifyObserver) OnSlowSync(roomID int, meta metrics.StreamObservationMeta) {
+	o.svc.ObserveRecordingSlowSync(recordingAlertContext(roomID, meta))
+}
+
+func (o *streamNotifyObserver) OnEnqueueWait(roomID int, meta metrics.StreamObservationMeta, wait time.Duration) {
+	o.svc.ObserveRecordingEnqueueWait(recordingAlertContext(roomID, meta), wait)
+}
+
+func recordingAlertContext(roomID int, meta metrics.StreamObservationMeta) RecordingAlertContext {
+	return RecordingAlertContext{
+		RoomID:    roomID,
+		Streamer:  meta.Streamer,
+		RoomTitle: meta.RoomTitle,
+	}
 }

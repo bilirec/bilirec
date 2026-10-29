@@ -235,7 +235,7 @@ func captureHLSSegments(t *testing.T, profile bilibili.StreamProfile, wantFormat
 
 	ch, err := st.ReadHlsStream(
 		0,
-		metrics.StreamSessionMeta{},
+		metrics.StreamObservationMeta{},
 		func() (string, error) { return info.URL, nil },
 		bili.GetLiveHlsPlaylistClient(),
 		bili.GetLiveHlsSegmentClient(),
@@ -497,7 +497,7 @@ func probeHLSSEI(t *testing.T, profile bilibili.StreamProfile, parse func([]byte
 	fetchM3u8 := func() (string, error) {
 		return info.URL, nil
 	}
-	ch, err := st.ReadHlsStream(0, metrics.StreamSessionMeta{}, fetchM3u8, bili.GetLiveHlsPlaylistClient(), bili.GetLiveHlsSegmentClient(), ctx, info.Qn, chunkPool, release)
+	ch, err := st.ReadHlsStream(0, metrics.StreamObservationMeta{}, fetchM3u8, bili.GetLiveHlsPlaylistClient(), bili.GetLiveHlsSegmentClient(), ctx, info.Qn, chunkPool, release)
 	if err != nil {
 		t.Fatalf("ReadHlsStream: %v", err)
 	}

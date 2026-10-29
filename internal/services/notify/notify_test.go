@@ -10,6 +10,7 @@ import (
 
 	webpush "github.com/SherClockHolmes/webpush-go"
 	"github.com/bilirec/bilirec/internal/modules/config"
+	"github.com/bilirec/bilirec/internal/modules/metrics"
 	ns "github.com/bilirec/bilirec/internal/services/notify"
 	"go.uber.org/fx"
 	"go.uber.org/fx/fxtest"
@@ -42,6 +43,7 @@ func newNotifyService(tb testing.TB, webPushSubscriber string) *ns.Service {
 	var svc *ns.Service
 	app := fxtest.New(tb,
 		config.Module,
+		metrics.Module,
 		fx.Provide(ns.NewService),
 		fx.Populate(&svc),
 	)
