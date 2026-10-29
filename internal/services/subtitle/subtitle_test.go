@@ -178,14 +178,75 @@ func TestFMP4TrunDataOffset(t *testing.T) {
 	}
 }
 
+// PTS must be derived from the video track's own timescale. Using the audio
+// timescale (44100) instead of the video one (12800) scales PTS by ~0.29.
+func TestFMP4PerTrackTimescaleDrivesPTS(t *testing.T) {
+	items := []rawCue{{Sub: "timescale", SubID: 4, OTMs: 0, DTMs: 1000}}
+	payload, err := json.Marshal(items)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seiPayload := append(append([]byte{}, subtitleUUID...), payload...)
+	sample := buildAVCSEINAL(seiPayload)
+
+	// 2s of video at 12800 ticks/s.
+	const videoTS = 12800
+	const audioTS = 44100
+	const tfdt = 2 * videoTS
+
+	seg := buildMoofMdatSegmentWithTfdt(1, tfdt, sample)
+	st := &fmp4State{
+		VideoTrackID:    1,
+		Timescale:       audioTS, // legacy max-timescale value; must not win
+		TrackTimescales: map[uint32]uint32{1: videoTS, 2: audioTS},
+		Codec:           flv.VideoKindAVC,
+	}
+	aus := accessUnitsFromFMP4Chunk(seg, st)
+	if len(aus) != 1 {
+		t.Fatalf("expected 1 access unit, got %d", len(aus))
+	}
+	if aus[0].PTSMs != 2000 {
+		t.Fatalf("PTS = %d ms, want 2000 (video timescale %d, not audio %d)",
+			aus[0].PTSMs, videoTS, audioTS)
+	}
+	if cues := cuesFromSEI(aus[0]); len(cues) != 1 || cues[0].PTSMs != 2000 {
+		t.Fatalf("unexpected cues %+v", cues)
+	}
+}
+
+// Without a video entry the fallback Timescale applies, so subtitle PTS keeps
+// working for init segments that never yielded a per-track map.
+func TestFMP4TimescaleFallsBackWhenTrackMissing(t *testing.T) {
+	st := &fmp4State{
+		VideoTrackID:    1,
+		Timescale:       90000,
+		TrackTimescales: map[uint32]uint32{2: 44100},
+		Codec:           flv.VideoKindAVC,
+	}
+	if got := st.timescaleForTrack(1); got != 90000 {
+		t.Fatalf("fallback timescale = %d, want 90000", got)
+	}
+	if got := st.timescaleForTrack(2); got != 44100 {
+		t.Fatalf("mapped timescale = %d, want 44100", got)
+	}
+	if got := st.timescaleForTrack(3); got != 90000 {
+		t.Fatalf("unknown track should use fallback, got %d", got)
+	}
+}
+
 func buildMoofMdatSegment(trackID uint32, sample []byte) []byte {
+	return buildMoofMdatSegmentWithTfdt(trackID, 0, sample)
+}
+
+func buildMoofMdatSegmentWithTfdt(trackID uint32, tfdtBase uint64, sample []byte) []byte {
 	tfhd := appendISOBox("tfhd", []byte{
 		0, 0, 0, 0,
 		byte(trackID >> 24), byte(trackID >> 16), byte(trackID >> 8), byte(trackID),
 	})
 	tfdt := appendISOBox("tfdt", []byte{
-		0, 0, 0, 0,
-		0, 0, 0, 0,
+		1, 0, 0, 0, // version 1: 64-bit baseMediaDecodeTime
+		byte(tfdtBase >> 56), byte(tfdtBase >> 48), byte(tfdtBase >> 40), byte(tfdtBase >> 32),
+		byte(tfdtBase >> 24), byte(tfdtBase >> 16), byte(tfdtBase >> 8), byte(tfdtBase),
 	})
 	trunBody := make([]byte, 16)
 	trunBody[2] = 0x02
