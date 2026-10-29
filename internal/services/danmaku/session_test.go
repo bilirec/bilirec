@@ -13,12 +13,11 @@ import (
 	"time"
 
 	"github.com/bilirec/bilirec/internal/modules/config"
-	"go.uber.org/fx"
 	"github.com/bilirec/bilirec/internal/modules/metrics"
 	"github.com/bilirec/bilirec/internal/services/preview"
 	"github.com/bilirec/bilirec/pkg/pool"
 	"github.com/bilirec/bilirec/utils"
-	"github.com/puzpuzpuz/xsync/v4"
+	"go.uber.org/fx"
 )
 
 const testDanmakuJSON = `{"cmd":"DANMU_MSG","info":[[0,1,25,16777215,1754668800000,0],"测试<弹幕>&\"'",[123456,"测试用户"],0,0,0,0,0]}`
@@ -35,13 +34,9 @@ func TestMain(m *testing.M) {
 }
 
 func newTestService() *Service {
-	return &Service{
-		outputFormat: "jsonl",
-		preview:      preview.NewService(nil),
-		sessions:     xsync.NewMap[int, *session](),
-		metrics:      &metrics.Exporter{},
-		pool:         pool.NewBytesPool(4096),
-	}
+	s := New(&config.Config{DanmakuOutputFormat: "jsonl"}, nil, &metrics.Exporter{}, preview.NewService(nil))
+	s.pool = pool.NewBytesPool(4096)
+	return s
 }
 
 func newTestSession(svc *Service, format string) (*session, string) {

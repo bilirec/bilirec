@@ -182,9 +182,7 @@ func (r *Service) Start(roomId int, options ...RecordStartOption) error {
 }
 
 func (r *Service) Stop(roomId int) bool {
-	if r.nt != nil {
-		r.nt.ClearRecordingMetricsAlerts(roomId)
-	}
+	r.nt.ClearRecordingMetricsAlerts(roomId)
 
 	info, hasRecording := r.recording.LoadAndDelete(roomId)
 	pipe, hasPipe := r.pipes.LoadAndDelete(roomId)

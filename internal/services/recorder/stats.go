@@ -69,10 +69,7 @@ func (r *Service) GetStats(roomId int) (*Stats, bool) {
 	if info.room != nil {
 		roomTitle = info.room.Title
 	}
-	var danmakuBytes uint64
-	if r.dm != nil {
-		danmakuBytes = r.dm.GetBytesWritten(roomId)
-	}
+	danmakuBytes := r.dm.GetBytesWritten(roomId)
 	stats := info.stats
 
 	return &Stats{
