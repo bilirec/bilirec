@@ -58,10 +58,10 @@ func (p *Fmp4TimestampNormalizerProcessor) Process(_ context.Context, log logger
 		}
 	}
 
-	if p.timescales == nil || hls.SegmentHasMoov(data) {
-		if ts := hls.TrackTimescalesFromInit(data); len(ts) > 0 {
-			p.timescales = ts
-		}
+	// TrackTimescalesFromInit is a cheap top-level box walk that returns nil for
+	// media-only fragments, so the learned map survives without an extra guard.
+	if ts := hls.TrackTimescalesFromInit(data); len(ts) > 0 {
+		p.timescales = ts
 	}
 
 	if gap := hls.NoteFragmentTimeline(data, p.timescales, p.lastRawTfdt); gap > 0 {
