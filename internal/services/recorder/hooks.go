@@ -7,7 +7,7 @@ import (
 )
 
 func (r *Service) pipelineHooks(roomID int, info *Info) rs.PipelineHooks {
-	sess := r.m.StreamSession(roomID, metrics.StreamSessionMeta{
+	sess := r.m.StreamObservation(roomID, metrics.StreamObservationMeta{
 		Streamer:  info.room.Uname,
 		RoomTitle: info.room.Title,
 	})

@@ -223,6 +223,7 @@ func newSubcheckTestSession(t *testing.T) *subcheckTestSession {
 	app := fxtest.New(t,
 		config.Module,
 		bilibili.Module,
+		metrics.Module,
 		fx.Provide(room.NewService),
 		fx.Provide(subscribe.NewService),
 		fx.Provide(notify.NewService),

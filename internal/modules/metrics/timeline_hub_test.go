@@ -6,9 +6,9 @@ import (
 	"time"
 )
 
-func TestStreamSession_RecordTimelineGap(t *testing.T) {
+func TestStreamObservation_RecordTimelineGap(t *testing.T) {
 	e := newExporter(t, true)
-	sess := e.StreamSession(42, StreamSessionMeta{})
+	sess := e.StreamObservation(42, StreamObservationMeta{})
 	sess.RecordTimelineGap(2 * time.Second)
 	sess.RecordTimelineGap(3 * time.Second)
 	sess.RecordTimelineGap(1500 * time.Millisecond)
@@ -22,9 +22,9 @@ func TestStreamSession_RecordTimelineGap(t *testing.T) {
 	}
 }
 
-func TestStreamSession_RecordFlushThreshold(t *testing.T) {
+func TestStreamObservation_RecordFlushThreshold(t *testing.T) {
 	e := newExporter(t, true)
-	sess := e.StreamSession(5, StreamSessionMeta{})
+	sess := e.StreamObservation(5, StreamObservationMeta{})
 	sess.RecordFlush(2 * time.Second)
 	sess.RecordFlush(4 * time.Second)
 	out := e.scrape()

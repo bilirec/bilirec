@@ -14,7 +14,7 @@ import (
 // ConnectRequest parameters for TryConnect.
 type ConnectRequest struct {
 	RoomID      int
-	SessionMeta metrics.StreamSessionMeta
+	SessionMeta metrics.StreamObservationMeta
 	StreamInfo  bilibili.StreamURLInfo
 	Log         logger.Logger
 	Attempt     int

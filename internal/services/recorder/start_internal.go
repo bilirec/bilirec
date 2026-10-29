@@ -113,7 +113,7 @@ func (r *Service) internalStart(p internalStartParams) error {
 			urlPreview,
 			idx+1,
 			len(streams),
-			metrics.StreamSessionMeta{Streamer: roomInfo.Uname, RoomTitle: roomInfo.Title},
+			metrics.StreamObservationMeta{Streamer: roomInfo.Uname, RoomTitle: roomInfo.Title},
 		)
 		if err != nil {
 			return err
@@ -257,7 +257,7 @@ func (r *Service) tryConnectStream(
 	streamInfo bilibili.StreamURLInfo,
 	urlPreview string,
 	attempt, total int,
-	sessionMeta metrics.StreamSessionMeta,
+	sessionMeta metrics.StreamObservationMeta,
 ) (<-chan []byte, rs.RecordStrategy, *pool.BucketedBytesPool, bool, error) {
 	res, err := r.st.TryConnect(ctx, stream.ConnectRequest{
 		RoomID:      roomId,
