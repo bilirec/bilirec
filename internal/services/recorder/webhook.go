@@ -7,7 +7,7 @@ import (
 )
 
 func (r *Service) emitSessionStarted(info *Info) {
-	if r.cfg == nil || !r.cfg.WebhookConfigured() || r.wh == nil || info == nil || info.room == nil || info.sessionID == "" {
+	if !r.cfg.WebhookConfigured() || r.wh == nil || info == nil || info.room == nil || info.sessionID == "" {
 		return
 	}
 	dm := info.startOptions.recordDanmaku && r.dm.IsSessionActive(int(info.room.RoomID))
@@ -15,7 +15,7 @@ func (r *Service) emitSessionStarted(info *Info) {
 }
 
 func (r *Service) emitSessionEnded(info *Info) {
-	if r.cfg == nil || !r.cfg.WebhookConfigured() || r.wh == nil || info == nil || info.room == nil || info.sessionID == "" {
+	if !r.cfg.WebhookConfigured() || r.wh == nil || info == nil || info.room == nil || info.sessionID == "" {
 		return
 	}
 	dm := info.startOptions.recordDanmaku && r.dm.IsSessionActive(int(info.room.RoomID))
@@ -23,7 +23,7 @@ func (r *Service) emitSessionEnded(info *Info) {
 }
 
 func (r *Service) emitFileOpening(roomID int, info *Info, absPath string) {
-	if r.cfg == nil || !r.cfg.WebhookConfigured() || r.wh == nil || info == nil || info.room == nil || info.sessionID == "" || absPath == "" {
+	if !r.cfg.WebhookConfigured() || r.wh == nil || info == nil || info.room == nil || info.sessionID == "" || absPath == "" {
 		return
 	}
 	fileOpen := info.segmentOpenTime
@@ -36,7 +36,7 @@ func (r *Service) emitFileOpening(roomID int, info *Info, absPath string) {
 }
 
 func (r *Service) emitFileClosed(roomID int, info *Info, absPath string) {
-	if r.cfg == nil || !r.cfg.WebhookConfigured() || r.wh == nil || info == nil || info.room == nil || info.sessionID == "" || absPath == "" {
+	if !r.cfg.WebhookConfigured() || r.wh == nil || info == nil || info.room == nil || info.sessionID == "" || absPath == "" {
 		return
 	}
 	fileOpen := info.segmentOpenTime
@@ -50,7 +50,7 @@ func (r *Service) emitFileClosed(roomID int, info *Info, absPath string) {
 }
 
 func (r *Service) registerConvertSegmentMeta(outputPath string, info *Info) {
-	if r.cfg == nil || !r.cfg.WebhookConfigured() || r.wh == nil || info == nil {
+	if !r.cfg.WebhookConfigured() || r.wh == nil || info == nil {
 		return
 	}
 	meta := r.segmentWebhookMeta(info)
