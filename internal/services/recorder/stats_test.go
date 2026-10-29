@@ -5,6 +5,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bilirec/bilirec/internal/modules/config"
+	"github.com/bilirec/bilirec/internal/modules/metrics"
+	"github.com/bilirec/bilirec/internal/services/danmaku"
 	"github.com/bilirec/bilirec/pkg/ds"
 	"github.com/puzpuzpuz/xsync/v4"
 )
@@ -46,6 +49,7 @@ func TestRecordingFileStem(t *testing.T) {
 func TestGetStatsSeparatesReadAndWritten(t *testing.T) {
 	svc := &Service{
 		recording: xsync.NewMap[int, *Info](),
+		dm:        danmaku.New(&config.Config{}, nil, &metrics.Exporter{}, nil),
 	}
 	info := &Info{}
 	info.startTime = time.Now()
@@ -70,6 +74,7 @@ func TestGetStatsSeparatesReadAndWritten(t *testing.T) {
 func TestGetStatsPipelineIoSums(t *testing.T) {
 	svc := &Service{
 		recording: xsync.NewMap[int, *Info](),
+		dm:        danmaku.New(&config.Config{}, nil, &metrics.Exporter{}, nil),
 	}
 	info := &Info{}
 	info.startTime = time.Now()
