@@ -10,7 +10,21 @@ import (
 	"github.com/bilirec/bilirec/internal/services/danmaku"
 	"github.com/bilirec/bilirec/pkg/ds"
 	"github.com/puzpuzpuz/xsync/v4"
+	"go.uber.org/fx/fxtest"
 )
+
+// newTestDanmaku builds the service the same way bootstrap does, minus sessions.
+// Tests use it so recorder.dm is a real dependency instead of a nil the
+// production code would have to guard against.
+func newTestDanmaku() *danmaku.Service {
+	return danmaku.NewService(
+		fxtest.NewLifecycle(nil),
+		&config.Config{DanmakuOutputFormat: "xml"},
+		nil,
+		&metrics.Exporter{},
+		nil,
+	)
+}
 
 func TestIsRecording_DanmakuSidecarStem(t *testing.T) {
 	svc := &Service{writingFiles: ds.NewSyncedSet[string]()}
@@ -49,7 +63,7 @@ func TestRecordingFileStem(t *testing.T) {
 func TestGetStatsSeparatesReadAndWritten(t *testing.T) {
 	svc := &Service{
 		recording: xsync.NewMap[int, *Info](),
-		dm:        danmaku.New(&config.Config{}, nil, &metrics.Exporter{}, nil),
+		dm:        newTestDanmaku(),
 	}
 	info := &Info{}
 	info.startTime = time.Now()
@@ -74,7 +88,7 @@ func TestGetStatsSeparatesReadAndWritten(t *testing.T) {
 func TestGetStatsPipelineIoSums(t *testing.T) {
 	svc := &Service{
 		recording: xsync.NewMap[int, *Info](),
-		dm:        danmaku.New(&config.Config{}, nil, &metrics.Exporter{}, nil),
+		dm:        newTestDanmaku(),
 	}
 	info := &Info{}
 	info.startTime = time.Now()

@@ -12,7 +12,6 @@ import (
 	"github.com/bilirec/bilirec/internal/modules/bilibili"
 	"github.com/bilirec/bilirec/internal/modules/config"
 	"github.com/bilirec/bilirec/internal/modules/metrics"
-	"github.com/bilirec/bilirec/internal/services/danmaku"
 	"github.com/bilirec/bilirec/internal/services/notify"
 	"github.com/bilirec/bilirec/pkg/backoff"
 	"github.com/bilirec/bilirec/pkg/ds"
@@ -30,7 +29,7 @@ func newTestRecorderService(t *testing.T) *Service {
 	r := &Service{
 		m:         &metrics.Exporter{},
 		nt:        &notify.Service{},
-		dm:        danmaku.New(cfg, nil, &metrics.Exporter{}, nil),
+		dm:        newTestDanmaku(),
 		recording: xsync.NewMap[int, *Info](),
 		cfg:       cfg,
 		ctx:       context.Background(),
