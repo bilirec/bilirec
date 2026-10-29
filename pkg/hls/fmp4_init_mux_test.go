@@ -106,10 +106,36 @@ func buildTkhdBox(trackID, width, height uint32) []byte {
 	binary.BigEndian.PutUint32(b[0:4], tkhdLen)
 	copy(b[4:8], "tkhd")
 	b[8] = 0
-	binary.BigEndian.PutUint32(b[12:16], trackID)
-	binary.BigEndian.PutUint32(b[76:80], width)
-	binary.BigEndian.PutUint32(b[80:84], height)
+	binary.BigEndian.PutUint32(b[12:16], 0x01020304) // creation_time; must not be read as track_ID
+	binary.BigEndian.PutUint32(b[20:24], trackID)
+	binary.BigEndian.PutUint32(b[84:88], width)
+	binary.BigEndian.PutUint32(b[88:92], height)
 	return b
+}
+
+func TestTkhdMuxFieldsV0(t *testing.T) {
+	b := buildTkhdBox(7, 320<<16, 240<<16)
+	id, w, h, ok := tkhdMuxFields(b, 0, len(b))
+	if !ok || id != 7 || w != 320<<16 || h != 240<<16 {
+		t.Fatalf("v0 tkhd: id=%d width=%#x height=%#x ok=%v", id, w, h, ok)
+	}
+}
+
+func TestTkhdMuxFieldsV1(t *testing.T) {
+	const n = 104
+	b := make([]byte, n)
+	binary.BigEndian.PutUint32(b[0:4], n)
+	copy(b[4:8], "tkhd")
+	b[8] = 1
+	binary.BigEndian.PutUint32(b[12:16], 0x11111111)
+	binary.BigEndian.PutUint32(b[20:24], 0x22222222)
+	binary.BigEndian.PutUint32(b[28:32], 3)
+	binary.BigEndian.PutUint32(b[96:100], 320<<16)
+	binary.BigEndian.PutUint32(b[100:104], 240<<16)
+	id, w, h, ok := tkhdMuxFields(b, 0, len(b))
+	if !ok || id != 3 || w != 320<<16 || h != 240<<16 {
+		t.Fatalf("v1 tkhd: id=%d width=%#x height=%#x ok=%v", id, w, h, ok)
+	}
 }
 
 func buildMdiaVideo(avcC []byte) []byte {

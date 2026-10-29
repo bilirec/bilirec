@@ -17,9 +17,10 @@ const (
 	fmp4TimelineForwardThreshold  = 10 * time.Second
 )
 
-// TimescaleFromInit reads the largest track timescale from an fMP4 init segment.
-func TimescaleFromInit(init []byte) uint32 {
-	var best uint32
+// TrackTimescalesFromInit maps each trak track_ID to that trak's mdhd timescale.
+// A missing or truncated trak is omitted. The result is nil when no trak yields both fields.
+func TrackTimescalesFromInit(init []byte) map[uint32]uint32 {
+	out := make(map[uint32]uint32)
 	for off := 0; off < len(init); {
 		size, typ, _, ok := readBoxHeaderCode(init, off)
 		if !ok {
@@ -27,17 +28,17 @@ func TimescaleFromInit(init []byte) uint32 {
 		}
 		boxEnd := off + size
 		if typ == boxTypeMoov {
-			if ts := timescaleFromMoov(init, off+8, boxEnd); ts > best {
-				best = ts
-			}
+			collectTrackTimescales(init, off+8, boxEnd, out)
 		}
 		off = boxEnd
 	}
-	return best
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
-func timescaleFromMoov(data []byte, start, end int) uint32 {
-	var best uint32
+func collectTrackTimescales(data []byte, start, end int, out map[uint32]uint32) {
 	for off := start; off < end; {
 		size, typ, _, ok := readBoxHeaderCode(data, off)
 		if !ok {
@@ -45,40 +46,58 @@ func timescaleFromMoov(data []byte, start, end int) uint32 {
 		}
 		boxEnd := off + size
 		if typ == boxTypeTrak {
-			if ts := timescaleFromTrak(data, off+8, boxEnd); ts > best {
-				best = ts
+			if id, ts, okTrak := trakIDAndTimescale(data, off+8, boxEnd); okTrak {
+				out[id] = ts
 			}
 		}
 		off = boxEnd
 	}
-	return best
 }
 
-func timescaleFromTrak(data []byte, start, end int) uint32 {
+func trakIDAndTimescale(data []byte, start, end int) (trackID, timescale uint32, ok bool) {
+	var haveID, haveTS bool
+	for off := start; off < end; {
+		size, typ, _, okBox := readBoxHeaderCode(data, off)
+		if !okBox {
+			break
+		}
+		boxEnd := off + size
+		switch typ {
+		case boxTypeTkhd:
+			id, _, _, okID := tkhdMuxFields(data, off, boxEnd)
+			if okID {
+				trackID = id
+				haveID = true
+			}
+		case boxTypeMdia:
+			if ts, okTS := mdhdTimescaleIn(data, off+8, boxEnd); okTS {
+				timescale = ts
+				haveTS = true
+			}
+		}
+		off = boxEnd
+	}
+	if !haveID || !haveTS || timescale == 0 {
+		return 0, 0, false
+	}
+	return trackID, timescale, true
+}
+
+func mdhdTimescaleIn(data []byte, start, end int) (uint32, bool) {
 	for off := start; off < end; {
 		size, typ, _, ok := readBoxHeaderCode(data, off)
 		if !ok {
 			break
 		}
 		boxEnd := off + size
-		if typ == boxTypeMdia {
-			for child := off + 8; child < boxEnd; {
-				childSize, childType, _, childOK := readBoxHeaderCode(data, child)
-				if !childOK {
-					break
-				}
-				childEnd := child + childSize
-				if childType == boxTypeMdhd {
-					if ts, ok := mdhdTimescale(data, child, childEnd); ok {
-						return ts
-					}
-				}
-				child = childEnd
+		if typ == boxTypeMdhd {
+			if ts, okTS := mdhdTimescale(data, off, boxEnd); okTS {
+				return ts, true
 			}
 		}
 		off = boxEnd
 	}
-	return 0
+	return 0, false
 }
 
 func mdhdTimescale(data []byte, start, end int) (uint32, bool) {
@@ -95,9 +114,10 @@ func mdhdTimescale(data []byte, start, end int) (uint32, bool) {
 }
 
 // NoteFragmentTimeline compares raw tfdt decode times against last per track.
+// timescales is track_ID → mdhd timescale. A track missing from the map is skipped.
 // It updates last in place and returns the largest positive gap duration to report.
-func NoteFragmentTimeline(data []byte, timescale uint32, last map[uint32]uint64) time.Duration {
-	if timescale == 0 {
+func NoteFragmentTimeline(data []byte, timescales map[uint32]uint32, last map[uint32]uint64) time.Duration {
+	if len(timescales) == 0 {
 		return 0
 	}
 
@@ -109,7 +129,7 @@ func NoteFragmentTimeline(data []byte, timescale uint32, last map[uint32]uint64)
 		}
 		boxEnd := off + size
 		if typ == boxTypeMoof {
-			gap := noteMoofTimeline(data, off+8, boxEnd, timescale, last)
+			gap := noteMoofTimeline(data, off+8, boxEnd, timescales, last)
 			if gap > maxGap {
 				maxGap = gap
 			}
@@ -119,7 +139,7 @@ func NoteFragmentTimeline(data []byte, timescale uint32, last map[uint32]uint64)
 	return maxGap
 }
 
-func noteMoofTimeline(data []byte, start, end int, timescale uint32, last map[uint32]uint64) time.Duration {
+func noteMoofTimeline(data []byte, start, end int, timescales map[uint32]uint32, last map[uint32]uint64) time.Duration {
 	var maxGap time.Duration
 	for off := start; off < end; {
 		size, typ, _, ok := readBoxHeaderCode(data, off)
@@ -128,7 +148,7 @@ func noteMoofTimeline(data []byte, start, end int, timescale uint32, last map[ui
 		}
 		boxEnd := off + size
 		if typ == boxTypeTraf {
-			gap := noteTrafTimeline(data, off, boxEnd, timescale, last)
+			gap := noteTrafTimeline(data, off, boxEnd, timescales, last)
 			if gap > maxGap {
 				maxGap = gap
 			}
@@ -138,7 +158,7 @@ func noteMoofTimeline(data []byte, start, end int, timescale uint32, last map[ui
 	return maxGap
 }
 
-func noteTrafTimeline(data []byte, trafStart, trafEnd int, timescale uint32, last map[uint32]uint64) time.Duration {
+func noteTrafTimeline(data []byte, trafStart, trafEnd int, timescales map[uint32]uint32, last map[uint32]uint64) time.Duration {
 	trackID := uint32(0)
 	for off := trafStart + 8; off < trafEnd; {
 		size, typ, _, ok := readBoxHeaderCode(data, off)
@@ -154,7 +174,8 @@ func noteTrafTimeline(data []byte, trafStart, trafEnd int, timescale uint32, las
 		}
 		off = boxEnd
 	}
-	if trackID == 0 {
+	timescale := timescales[trackID]
+	if trackID == 0 || timescale == 0 {
 		return 0
 	}
 

@@ -23,10 +23,9 @@ func TestFmp4TimestampNormalizer_OnGap(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	const timescale = 1000
 	last := map[uint32]uint64{1: 0}
 	moof := buildNormalizerTestMoof(1, 11000)
-	proc.timescale = timescale
+	proc.timescales = map[uint32]uint32{1: 1000}
 	proc.lastRawTfdt = last
 
 	if _, err := proc.Process(ctx, log, moof); err != nil {

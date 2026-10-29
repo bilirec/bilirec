@@ -20,7 +20,7 @@ type TimelineGap struct {
 type Fmp4TimestampNormalizerProcessor struct {
 	bases                  *map[uint32]uint64
 	lastRawTfdt            map[uint32]uint64
-	timescale              uint32
+	timescales             map[uint32]uint32
 	onGap                  func(TimelineGap)
 	segmentCount           uint64
 	normalizedSegmentCount uint64
@@ -39,6 +39,7 @@ func (p *Fmp4TimestampNormalizerProcessor) Open(_ context.Context, _ logger.Logg
 	p.normalizedSegmentCount = 0
 	p.normalizedTfdtTotal = 0
 	p.lastRawTfdt = make(map[uint32]uint64)
+	p.timescales = nil
 	return nil
 }
 
@@ -57,13 +58,11 @@ func (p *Fmp4TimestampNormalizerProcessor) Process(_ context.Context, log logger
 		}
 	}
 
-	if p.timescale == 0 {
-		if ts := hls.TimescaleFromInit(data); ts > 0 {
-			p.timescale = ts
-		}
+	if ts := hls.TrackTimescalesFromInit(data); len(ts) > 0 {
+		p.timescales = ts
 	}
 
-	if gap := hls.NoteFragmentTimeline(data, p.timescale, p.lastRawTfdt); gap > 0 {
+	if gap := hls.NoteFragmentTimeline(data, p.timescales, p.lastRawTfdt); gap > 0 {
 		log.Warnf("fmp4：检测到媒体时间轴跳变（delta=%v，seg=%d）", gap, segmentNo)
 		if p.onGap != nil {
 			p.onGap(TimelineGap{Delta: gap})

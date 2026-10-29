@@ -215,26 +215,13 @@ func trakInfo(data []byte, start, end int) (uint32, uint32, flv.VideoKind, bool)
 			}
 			isVideo = v
 		case "tkhd":
-			if id, ok := tkhdTrackID(data, off, boxEnd); ok {
+			if id, ok := hls.TkhdTrackID(data, off, boxEnd); ok {
 				trackID = id
 			}
 		}
 		off = boxEnd
 	}
 	return trackID, timescale, codec, isVideo
-}
-
-func tkhdTrackID(data []byte, start, end int) (uint32, bool) {
-	if end-start < 20 {
-		return 0, false
-	}
-	if data[start+8] == 1 {
-		if end-start < 28 {
-			return 0, false
-		}
-		return binary.BigEndian.Uint32(data[start+20 : start+24]), true
-	}
-	return binary.BigEndian.Uint32(data[start+12 : start+16]), true
 }
 
 func mdiaInfo(data []byte, start, end int) (uint32, flv.VideoKind, bool) {

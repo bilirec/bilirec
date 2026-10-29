@@ -52,6 +52,13 @@ func InitMuxCompatible(a, b []byte) bool {
 	return ia.equal(ib)
 }
 
+// TkhdTrackID reads track_ID from a tkhd box. ok is false when the box is
+// truncated or track_ID is 0.
+func TkhdTrackID(data []byte, start, end int) (uint32, bool) {
+	id, _, _, ok := tkhdMuxFields(data, start, end)
+	return id, ok
+}
+
 func (id initMuxIdentity) equal(other initMuxIdentity) bool {
 	if len(id.tracks) != len(other.tracks) || len(id.trex) != len(other.trex) {
 		return false
@@ -196,21 +203,23 @@ func tkhdMuxFields(data []byte, start, end int) (trackID, width, height uint32, 
 	if end-start < 20 {
 		return 0, 0, 0, false
 	}
+	// ISO BMFF tkhd: header is 8 bytes, then version/flags. v1 uses 64-bit times,
+	// which shifts track_ID and the width/height that follow the 9-entry matrix.
 	if data[start+8] == 1 {
-		if end-start < 84 {
+		if end-start < 104 {
 			return 0, 0, 0, false
 		}
-		trackID = binary.BigEndian.Uint32(data[start+20 : start+24])
-		width = binary.BigEndian.Uint32(data[start+76 : start+80])
-		height = binary.BigEndian.Uint32(data[start+80 : start+84])
+		trackID = binary.BigEndian.Uint32(data[start+28 : start+32])
+		width = binary.BigEndian.Uint32(data[start+96 : start+100])
+		height = binary.BigEndian.Uint32(data[start+100 : start+104])
 		return trackID, width, height, trackID != 0
 	}
-	if end-start < 84 {
+	if end-start < 92 {
 		return 0, 0, 0, false
 	}
-	trackID = binary.BigEndian.Uint32(data[start+12 : start+16])
-	width = binary.BigEndian.Uint32(data[start+76 : start+80])
-	height = binary.BigEndian.Uint32(data[start+80 : start+84])
+	trackID = binary.BigEndian.Uint32(data[start+20 : start+24])
+	width = binary.BigEndian.Uint32(data[start+84 : start+88])
+	height = binary.BigEndian.Uint32(data[start+88 : start+92])
 	return trackID, width, height, trackID != 0
 }
 

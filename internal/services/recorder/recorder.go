@@ -182,6 +182,9 @@ func (r *Service) Start(roomId int, options ...RecordStartOption) error {
 }
 
 func (r *Service) Stop(roomId int) bool {
+	if r.nt != nil {
+		r.nt.ClearRecordingMetricsAlerts(roomId)
+	}
 
 	info, hasRecording := r.recording.LoadAndDelete(roomId)
 	pipe, hasPipe := r.pipes.LoadAndDelete(roomId)
@@ -553,7 +556,6 @@ func (r *Service) finalize(roomId int, info *Info, outputPath string, audioOnly 
 
 func (r *Service) stopAndPublish(roomId int, info *Info) {
 	r.Stop(roomId)
-	r.nt.ClearRecordingMetricsAlerts(roomId)
 	r.nt.PublishLiveState(roomId, info.room.Uname, info.room.Title, notify.LiveStateRecordStopped)
 }
 
