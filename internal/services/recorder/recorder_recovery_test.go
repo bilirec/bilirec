@@ -12,7 +12,6 @@ import (
 	"github.com/bilirec/bilirec/internal/modules/bilibili"
 	"github.com/bilirec/bilirec/internal/modules/config"
 	"github.com/bilirec/bilirec/internal/modules/metrics"
-	"github.com/bilirec/bilirec/internal/services/danmaku"
 	"github.com/bilirec/bilirec/internal/services/notify"
 	"github.com/bilirec/bilirec/pkg/backoff"
 	"github.com/bilirec/bilirec/pkg/ds"
@@ -31,13 +30,14 @@ func newTestRecorderService(t *testing.T) *Service {
 	r := &Service{
 		m:            &metrics.Exporter{},
 		nt:           &notify.Service{},
-		dm:           danmaku.New(cfg, nil, &metrics.Exporter{}, nil),
+		dm:           newTestDanmaku(),
 		recording:    xsync.NewMap[int, *Info](),
 		writingFiles: ds.NewSyncedSet[string](),
 		pipes:        xsync.NewMap[int, *pipeline.Pipe[[]byte]](),
 		cfg:          cfg,
 		ctx:          context.Background(),
-	}	r.reser = tx.NewPending(
+	}
+	r.reser = tx.NewPending(
 		func(roomId int, pending ds.Set[int]) error {
 			if status := r.GetStatus(roomId); status == Recording {
 				return ErrRecordingStarted

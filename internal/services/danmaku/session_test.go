@@ -18,6 +18,7 @@ import (
 	"github.com/bilirec/bilirec/pkg/pool"
 	"github.com/bilirec/bilirec/utils"
 	"go.uber.org/fx"
+	"go.uber.org/fx/fxtest"
 )
 
 const testDanmakuJSON = `{"cmd":"DANMU_MSG","info":[[0,1,25,16777215,1754668800000,0],"测试<弹幕>&\"'",[123456,"测试用户"],0,0,0,0,0]}`
@@ -34,7 +35,13 @@ func TestMain(m *testing.M) {
 }
 
 func newTestService() *Service {
-	s := New(&config.Config{DanmakuOutputFormat: "jsonl"}, nil, &metrics.Exporter{}, preview.NewService(nil))
+	s := NewService(
+		fxtest.NewLifecycle(nil),
+		&config.Config{DanmakuOutputFormat: "jsonl"},
+		nil,
+		&metrics.Exporter{},
+		preview.NewService(nil),
+	)
 	s.pool = pool.NewBytesPool(4096)
 	return s
 }
