@@ -81,11 +81,8 @@ func NewService(lc fx.Lifecycle, cfg *config.Config, m *metrics.Exporter) (*Serv
 		sseToken:   cfg.NotifySSEToken,
 		sseClients: make(map[uint64]chan []byte),
 	}
-	s.metricsAlerts.onFire = func(roomID int, kind metricsAlertKind, sum float64, streamer, roomTitle string) {
-		s.fireMetricsAlert(roomID, kind, sum, streamer, roomTitle)
-	}
-
 	if cfg.NotifyMetricsAlerts {
+		s.metricsAlerts.onFire = s.fireMetricsAlert
 		m.Register(&streamNotifyObserver{svc: s})
 	}
 

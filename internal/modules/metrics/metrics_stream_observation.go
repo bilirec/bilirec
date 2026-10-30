@@ -15,6 +15,12 @@ type StreamObservationMeta struct {
 }
 
 // StreamObserver receives recording pipeline events for one room.
+//
+// Callbacks run synchronously on the goroutine that is reading the live stream
+// or writing the segment. Implementations must return quickly: an atomic add
+// or another O(1) update. They must not do I/O or network calls, take a lock
+// that spans rooms, or run a long computation. Queue that work inside the
+// implementation instead of doing it in the callback.
 type StreamObserver interface {
 	OnBytesRead(roomID int, meta StreamObservationMeta, n int)
 	OnBytesWritten(roomID int, meta StreamObservationMeta, n int)
