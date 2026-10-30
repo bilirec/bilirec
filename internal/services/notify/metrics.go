@@ -74,7 +74,7 @@ func (s *Service) fireMetricsAlert(roomID int, kind metricsAlertKind, sum float6
 		RoomTitle:    roomTitle,
 		Message:      message,
 		Timestamp:    time.Now().Unix(),
-		AlertSeconds: alertValue,
+		AlertValue: alertValue,
 	})
 }
 
@@ -82,16 +82,16 @@ func metricsAlertEventPayload(kind metricsAlertKind, sum float64) (eventType, me
 	switch kind {
 	case metricsAlertEnqueue:
 		return metricsEventEnqueueWait,
-			fmt.Sprintf("本场写入队列累计等待 %.1f 秒，磁盘可能跟不上码率，录制可能卡顿。", sum),
+			fmt.Sprintf("由于写入速度低于直播码率的缘故，本次录制的数据写入已累计等待 %.1f 秒，录播可能出现卡顿或分段延迟。", sum),
 			sum
 	case metricsAlertSlowIO:
 		count := int(math.Round(sum))
 		return metricsEventSlowIO,
-			fmt.Sprintf("本场慢速 flush / fsync 共 %d 次，可能是磁盘或手机存储繁忙。", count),
+			fmt.Sprintf("由于存储设备响应过慢的缘故，本次录制的数据写入曾受阻 %d 次，录播可能出现卡顿，严重时会影响分段完整性。", count),
 			sum
 	case metricsAlertTimeline:
 		return metricsEventTimelineGap,
-			fmt.Sprintf("本场约 %s 被跳过。下载没跟上直播，跳过的片段无法补回；录制时少做占带宽的事，或下一场调低画质。", formatTimelineGapAmount(sum)),
+			fmt.Sprintf("由于网络不稳定的缘故，从上游源接收到的直播流不连续，导致本次录制内容已缺失 %s，录播极大概率已出现跳帧现象。", formatTimelineGapAmount(sum)),
 			sum
 	default:
 		return "", "", 0
