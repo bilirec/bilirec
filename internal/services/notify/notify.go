@@ -25,8 +25,11 @@ type Event struct {
 	Streamer     string  `json:"streamer_name"`
 	RoomTitle    string  `json:"room_title"`
 	Message      string  `json:"message"`
-	Timestamp    int64   `json:"timestamp"`
-	AlertSeconds float64 `json:"alert_seconds,omitempty"`
+	Timestamp int64 `json:"timestamp"`
+	// AlertValue carries the alert magnitude. Its unit depends on Type: seconds
+	// for metrics_timeline_gap and metrics_enqueue_wait, event count for
+	// metrics_slow_io.
+	AlertValue float64 `json:"alert_value,omitempty"`
 }
 
 type Service struct {
