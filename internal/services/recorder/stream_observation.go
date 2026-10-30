@@ -7,6 +7,8 @@ import (
 	"github.com/bilirec/bilirec/internal/modules/metrics"
 )
 
+// statsObserver keeps per-session totals. Each callback is an atomic add and
+// returns immediately. See metrics.StreamObserver.
 type statsObserver struct {
 	BytesRead     atomic.Uint64
 	BytesWritten  atomic.Uint64
