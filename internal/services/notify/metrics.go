@@ -26,7 +26,7 @@ func (s *Service) ClearRecordingMetricsAlerts(roomID int) {
 	s.metricsAlerts.clearRoom(roomID)
 }
 
-// ObserveRecordingTimelineGap accumulates collapsed media time; notifies when aligned with BilirecTimestampJump.
+// ObserveRecordingTimelineGap accumulates collapsed media time and notifies each time another 30s is crossed.
 func (s *Service) ObserveRecordingTimelineGap(ctx RecordingAlertContext, delta time.Duration) {
 	if delta <= 0 || ctx.RoomID <= 0 {
 		return
@@ -34,7 +34,8 @@ func (s *Service) ObserveRecordingTimelineGap(ctx RecordingAlertContext, delta t
 	s.metricsAlerts.observe(ctx, metricsAlertTimeline, delta.Seconds())
 }
 
-// ObserveRecordingSlowFlush counts slow flush events toward BilirecSlowDiskIO.
+// ObserveRecordingSlowFlush counts slow flush events toward the shared slow-I/O
+// total. The third combined flush/sync crossing fires, then every further third crossing.
 func (s *Service) ObserveRecordingSlowFlush(ctx RecordingAlertContext) {
 	if ctx.RoomID <= 0 {
 		return
@@ -42,7 +43,7 @@ func (s *Service) ObserveRecordingSlowFlush(ctx RecordingAlertContext) {
 	s.metricsAlerts.observe(ctx, metricsAlertSlowIO, 1)
 }
 
-// ObserveRecordingSlowSync counts slow fsync events toward BilirecSlowDiskIO.
+// ObserveRecordingSlowSync counts slow fsync events toward the same slow-I/O total as flushes.
 func (s *Service) ObserveRecordingSlowSync(ctx RecordingAlertContext) {
 	if ctx.RoomID <= 0 {
 		return
@@ -50,7 +51,7 @@ func (s *Service) ObserveRecordingSlowSync(ctx RecordingAlertContext) {
 	s.metricsAlerts.observe(ctx, metricsAlertSlowIO, 1)
 }
 
-// ObserveRecordingEnqueueWait accumulates queue wait time toward BilirecWriterBackpressure.
+// ObserveRecordingEnqueueWait accumulates queue wait and notifies each time another 2s is crossed.
 func (s *Service) ObserveRecordingEnqueueWait(ctx RecordingAlertContext, wait time.Duration) {
 	if wait <= 0 || ctx.RoomID <= 0 {
 		return
@@ -64,7 +65,7 @@ func (s *Service) fireMetricsAlert(roomID int, kind metricsAlertKind, sum float6
 		return
 	}
 
-	log.Infof("指标告警 room=%d：%s（窗口累计 %.2f）", roomID, message, sum)
+	log.Infof("指标告警 room=%d：%s（本场累计 %.2f）", roomID, message, sum)
 
 	s.publishJSON(Event{
 		Type:         eventType,
@@ -81,16 +82,16 @@ func metricsAlertEventPayload(kind metricsAlertKind, sum float64) (eventType, me
 	switch kind {
 	case metricsAlertEnqueue:
 		return metricsEventEnqueueWait,
-			fmt.Sprintf("近 5 分钟写入队列累计等待 %.1f 秒，磁盘可能跟不上码率，录制可能卡顿。", sum),
+			fmt.Sprintf("本场写入队列累计等待 %.1f 秒，磁盘可能跟不上码率，录制可能卡顿。", sum),
 			sum
 	case metricsAlertSlowIO:
 		count := int(math.Round(sum))
 		return metricsEventSlowIO,
-			fmt.Sprintf("近 15 分钟慢速 flush / fsync 共 %d 次，可能是磁盘或手机存储繁忙。", count),
+			fmt.Sprintf("本场慢速 flush / fsync 共 %d 次，可能是磁盘或手机存储繁忙。", count),
 			sum
 	case metricsAlertTimeline:
 		return metricsEventTimelineGap,
-			fmt.Sprintf("近 15 分钟画面时间轴被跳过约 %s。下载没跟上直播，跳过的片段无法补回；录制时少做占带宽的事，或下一场调低画质。", formatTimelineGapAmount(sum)),
+			fmt.Sprintf("本场约 %s 被跳过。下载没跟上直播，跳过的片段无法补回；录制时少做占带宽的事，或下一场调低画质。", formatTimelineGapAmount(sum)),
 			sum
 	default:
 		return "", "", 0
@@ -108,6 +109,10 @@ func formatTimelineGapAmount(seconds float64) string {
 	return fmt.Sprintf("%.0f 分钟", math.Round(minutes))
 }
 
+// streamNotifyObserver forwards threshold crossings to metrics alerts.
+// Byte callbacks return immediately. Alert updates take the metricsAlerts mutex
+// only for an O(1) bucket change; publishPayload sends the push on its own
+// goroutines. See metrics.StreamObserver.
 type streamNotifyObserver struct {
 	svc *Service
 }
