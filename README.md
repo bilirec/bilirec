@@ -23,6 +23,7 @@
 - ✅ **灵活录制时长** — 指定时长上限、定时停止或无限时长
 - ✅ **开播即时通知** — Web Push / SSE 推送开播动态
 - ✅ **弹幕与互动记录** — 可在手动录制或房间自动录制时同时保存弹幕与礼物等互动记录
+- ✅ **AI 字幕录制** — 从视频码流提取 B 站直播 AI 字幕，按分段保存同名 `.vtt`，回放时可开关字幕
 - ✅ **自动分段轮转** — PK 或分辨率变更时自动切文件，减少花屏与损坏
 - ✅ **多路并发录制** — 低配硬件上也能稳定多路同时录
 - ✅ **故障自动恢复** — FLV 时间戳修复与断流重连，连接波动时尽量不中断
@@ -31,7 +32,8 @@
 - ✅ **监控与日志** — 可选独立 Prometheus 指标端口、VictoriaLogs/本地日志与 Grafana 仪表盘
 - ✅ **多端运行与接入** — RESTful API、[bilirec-web](https://github.com/bilirec/bilirec-web)（PWA）、[bilirec-mobile](https://github.com/bilirec/bilirec-mobile)（Android 内嵌后端）
 - ✅ **FRP 内网穿透** — 无公网 IP 也可外网访问管理界面与文件
-- ✅ **文件管理与播放** — 列表浏览、删除、内置播放器支持礼物特效与弹幕滚动回放；空间不足时可选自动删旧文件再录
+- ✅ **文件管理与播放** — 列表浏览（支持排序与筛选）、下载、限时分享链接、内置播放器支持礼物特效与弹幕滚动回放；空间不足时可选自动删旧文件再录
+- ✅ **录制中实时预览** — 管理员可在录制进行时观看实时画面与弹幕，支持回看缓冲与回到直播
 - ✅ **账号登录与刷新** — 匿名 / 扫码 / Controller 模式，Cookie 自动刷新
 - ✅ **低配与 microSD 优化** — 大块缓冲、序列化写入、跳过极短直播写盘；默认开启录制中定期清理旧文件缓存，压低容器监控内存
 
@@ -122,10 +124,14 @@ docker run -d --name bilirec -p 8080:8080 \
 | 快速开始 | [guides/quick-start](https://www.bilirec.org/zh-cn/guides/quick-start/) |
 | Docker | [guides/docker](https://www.bilirec.org/zh-cn/guides/docker/) |
 | 录制直播间 | [guides/recording](https://www.bilirec.org/zh-cn/guides/recording/) |
+| 文件管理 | [guides/file-management](https://www.bilirec.org/zh-cn/guides/file-management/) |
 | 配置与调优 | [configuration/overview](https://www.bilirec.org/zh-cn/configuration/overview/) |
+| AI 字幕录制 | [configuration/subtitle](https://www.bilirec.org/zh-cn/configuration/subtitle/) |
+| 通知配置 | [configuration/notifications](https://www.bilirec.org/zh-cn/configuration/notifications/) |
 | 树莓派 / microSD 默认 | [configuration/pi5-defaults](https://www.bilirec.org/zh-cn/configuration/pi5-defaults/) |
 | 内存占用估算 | [configuration/memory-estimation](https://www.bilirec.org/zh-cn/configuration/memory-estimation/) |
 | REST API | [api/overview](https://www.bilirec.org/zh-cn/api/overview/)（运行时根路径 `/` 另有 Swagger UI） |
+| 录制中预览 API | [api/preview](https://www.bilirec.org/zh-cn/api/preview/) |
 | Webhook 对接 | [guides/webhook-integration](https://www.bilirec.org/zh-cn/guides/webhook-integration/) |
 | 监控指标 | [configuration/metrics](https://www.bilirec.org/zh-cn/configuration/metrics/) |
 | Grafana 仪表盘 | [configuration/grafana-dashboards](https://www.bilirec.org/zh-cn/configuration/grafana-dashboards/) |
