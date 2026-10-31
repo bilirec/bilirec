@@ -204,6 +204,7 @@ func defaultAndroidEnv(basePath string) map[string]string {
 		"SILENT_ACCESS_LOG":                          "true",
 		"SEQUENTIAL_WRITE":                           "false",
 		"CHECK_UPDATE":                               "false",
+		"NOTIFY_METRICS_ALERTS":                      "true",
 	}
 }
 
