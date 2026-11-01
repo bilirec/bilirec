@@ -36,6 +36,8 @@ type Service struct {
 	sseClients map[uint64]chan []byte
 	sseMu      sync.RWMutex
 	sseSeq     atomic.Uint64
+
+	metricsAlerts metricsAlerts
 }
 
 type ServiceState struct {
@@ -77,6 +79,7 @@ func NewService(lc fx.Lifecycle, cfg *config.Config) (*Service, error) {
 		sseToken:   cfg.NotifySSEToken,
 		sseClients: make(map[uint64]chan []byte),
 	}
+	s.metricsAlerts.onFire = s.fireMetricsAlert
 
 	lc.Append(fx.StartStopHook(
 		func() error {

@@ -9,19 +9,18 @@ import (
 	"github.com/bilirec/bilirec/internal/modules/bilibili"
 	"github.com/bilirec/bilirec/internal/modules/config"
 	"github.com/bilirec/bilirec/internal/processors"
-	"github.com/bilirec/bilirec/pkg/flv"
 	"github.com/bilirec/bilirec/pkg/pipeline"
 	"github.com/bilirec/bilirec/pkg/pool"
 )
 
 // PipelineHooks are session-level observers applied when a segment pipeline is built.
-// Writer callbacks apply to every format. OnTimestampJump is used by FLV only.
+// Writer callbacks apply to every format. OnTimelineGap is used by FLV and fMP4.
 type PipelineHooks struct {
-	OnBytesWritten  func(n int)
-	OnFlush         func(processors.FlushEvent)
-	OnSync          func(processors.SyncEvent)
-	OnEnqueueWait   func(processors.EnqueueWaitEvent)
-	OnTimestampJump flv.TimestampJumpReporter
+	OnBytesWritten func(n int)
+	OnFlush        func(processors.FlushEvent)
+	OnSync         func(processors.SyncEvent)
+	OnEnqueueWait  func(processors.EnqueueWaitEvent)
+	OnTimelineGap  func(processors.TimelineGap)
 }
 
 // RotationState carries format-specific state across segment rotations.

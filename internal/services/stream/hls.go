@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/bilirec/bilirec/pkg/hls"
 	"github.com/bilirec/bilirec/pkg/pool"
@@ -23,6 +24,7 @@ var (
 // Assembly lives here: PlaylistSession + InitSettle + StreamRunner.
 // Protocol pieces are in pkg/hls; this method wires bilirec pool/logger/qn.
 func (r *Service) ReadHlsStream(
+	roomID int,
 	fetchM3u8URL func() (string, error),
 	playlistClient, segmentClient *resty.Client,
 	ctx context.Context,
@@ -87,6 +89,11 @@ func (r *Service) ReadHlsStream(
 		nextSeq = mediaSeq
 	}
 
+	sess := r.metrics.StreamSession(roomID)
+	onSegmentGap := func(d time.Duration) {
+		sess.RecordTimelineGap(d)
+	}
+
 	return hls.Start(ctx, hls.StreamRunnerOptions{
 		Session:         session,
 		Settle:          settle,
@@ -100,5 +107,6 @@ func (r *Service) ReadHlsStream(
 		PollInterval:    pollInterval,
 		NextSeq:         nextSeq,
 		PrevBaseSeq:     mediaSeq,
+		OnSegmentGap:    onSegmentGap,
 	})
 }

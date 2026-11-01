@@ -5,6 +5,7 @@ import (
 
 	"github.com/bilirec/bilirec/internal/modules/bilibili"
 	"github.com/bilirec/bilirec/internal/modules/config"
+	"github.com/bilirec/bilirec/internal/modules/metrics"
 	"github.com/bilirec/bilirec/pkg/logger"
 	"github.com/bilirec/bilirec/pkg/pool"
 )
@@ -17,9 +18,10 @@ type Service struct {
 	chanBufferSize     int
 	highChanBufferSize int
 	streamIdleTimeout  time.Duration
+	metrics            *metrics.Exporter
 }
 
-func NewService(cfg *config.Config, bilic *bilibili.Client) *Service {
+func NewService(cfg *config.Config, bilic *bilibili.Client, m *metrics.Exporter) *Service {
 	highChanBufferSize := config.ReadOnly.ReadStreamChanBufferSizeHigh()
 	boundedHigh := config.ReadStreamBytesPoolBoundedCapacity(highChanBufferSize)
 	bounded := config.ReadStreamBytesPoolBoundedCapacity(cfg.ReadStreamChanBufferSize)
@@ -40,6 +42,7 @@ func NewService(cfg *config.Config, bilic *bilibili.Client) *Service {
 		chanBufferSize:     cfg.ReadStreamChanBufferSize,
 		highChanBufferSize: highChanBufferSize,
 		streamIdleTimeout:  time.Duration(cfg.StreamIdleTimeoutSecs) * time.Second,
+		metrics:            m,
 	}
 }
 

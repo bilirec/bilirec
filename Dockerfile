@@ -158,6 +158,7 @@ ENV BILIBILI_LOGIN_MODE=controller \
     PUBLIC_BASE_URL= \
     WEBPUSH_SUBSCRIBER=mailto:webpush@example.com \
     NOTIFY_SSE_TOKEN= \
+    NOTIFY_METRICS_ALERTS=false \
     WEBHOOK_URLS= \
     JWT_SECRET=bilirec_secret \
     DEBUG=false \
