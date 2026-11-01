@@ -14,6 +14,7 @@ import (
 
 	"github.com/bilirec/bilirec/internal/modules/config"
 	"github.com/bilirec/bilirec/internal/modules/metrics"
+	"github.com/bilirec/bilirec/internal/services/notify"
 	"github.com/bilirec/bilirec/internal/services/path"
 	"github.com/bilirec/bilirec/internal/services/webhook"
 	"github.com/bilirec/bilirec/pkg/ffmpeg"
@@ -54,6 +55,7 @@ func startFFmpegConvertApp(t *testing.T, intervalSecs string) (*Service, *metric
 		metrics.Module,
 		fx.Provide(path.NewService),
 		fx.Provide(webhook.NewService),
+		fx.Provide(notify.NewService),
 		fx.Provide(NewService),
 		fx.Populate(&svc, &exporter),
 	)
