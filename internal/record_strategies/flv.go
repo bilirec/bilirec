@@ -51,7 +51,7 @@ func (s *FlvStrategy) BuildPipeline(ctx context.Context, outputPath string, stat
 
 	return pipeline.New(
 		processors.NewFlvStreamFixerWithFixer(s.sharedFixer),
-		processors.NewFlvHeaderSplitDetectorSeeded(videoHdr),
+		processors.NewFlvHeaderSplitDetectorSeeded(videoHdr, audioHdr),
 		processors.NewFlvHeaderWriter(videoHdr, audioHdr),
 		processors.NewBufferedStreamWriter(
 			outputPath,

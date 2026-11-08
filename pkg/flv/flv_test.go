@@ -591,6 +591,158 @@ func TestHeaderChangeDetector_SeedVideoHeaderIgnoresNALU(t *testing.T) {
 	}
 }
 
+func TestHeaderChangeDetector_SeedAudioHeaderSetsBaseline(t *testing.T) {
+	d := flv.NewHeaderChangeDetector()
+	defer d.Close()
+
+	if d.LastAudioTag() != nil {
+		t.Fatal("fresh detector must have no audio sequence header")
+	}
+
+	// AudioSpecificConfig tag: soundFormat 10 (AAC), AACPacketType 0.
+	aSeq := buildFLVAudioTag([]byte{0xaf, 0x00, 0x12, 0x10})
+	d.SeedAudioHeader(aSeq)
+
+	got := d.LastAudioTag()
+	if !bytes.Equal(got, aSeq) {
+		t.Fatalf("LastAudioTag = %x, want seeded header %x", got, aSeq)
+	}
+	if got := d.LastAudioHeader(); !bytes.Equal(got, aSeq[11:len(aSeq)-4]) {
+		t.Fatalf("LastAudioHeader = %x, want tag data %x", got, aSeq[11:len(aSeq)-4])
+	}
+}
+
+func TestHeaderChangeDetector_SeedAudioHeaderIgnoresRawFrame(t *testing.T) {
+	d := flv.NewHeaderChangeDetector()
+	defer d.Close()
+
+	// AACPacketType 1 is a raw AAC frame, not a sequence header.
+	rawTag := buildFLVAudioTag([]byte{0xaf, 0x01, 0x11, 0x22})
+	d.SeedAudioHeader(rawTag)
+	if d.LastAudioTag() != nil {
+		t.Fatal("seeded raw AAC frame must not become the audio sequence header")
+	}
+
+	// Non-AAC formats (e.g. MP3, soundFormat 2) are ignored too.
+	mp3Tag := buildFLVAudioTag([]byte{0x2f, 0x00, 0x11})
+	d.SeedAudioHeader(mp3Tag)
+	if d.LastAudioTag() != nil {
+		t.Fatal("seeded non-AAC tag must not become the audio sequence header")
+	}
+
+	// Oversized guard: a too-short tag must not panic or seed.
+	d.SeedAudioHeader([]byte{0x08, 0x00})
+	if d.LastAudioTag() != nil {
+		t.Fatal("too-short tag must not become the audio sequence header")
+	}
+}
+
+// setFLVTagTimestamp patches the 32-bit extended timestamp of a full tag
+// (TagHeader + Data + PrevTagSize) built by buildFLVAudioTag/buildFLVVideoTag.
+func setFLVTagTimestamp(tag []byte, ts uint32) {
+	tag[4] = byte(ts >> 16)
+	tag[5] = byte(ts >> 8)
+	tag[6] = byte(ts)
+	tag[7] = byte(ts >> 24)
+}
+
+// TestHeaderChangeDetector_UpstreamAudioHeaderOverridesSeed proves that a
+// header resent by upstream replaces the seeded one as the rotation baseline.
+// Real capture (room 5090, 2026-11-08): upstream resends the identical
+// AudioSpecificConfig at reconnect points mid-segment (ts != 0). The detector
+// must adopt upstream's tag bytes and never treat the resend as a rotation.
+func TestHeaderChangeDetector_UpstreamAudioHeaderOverridesSeed(t *testing.T) {
+	d := flv.NewHeaderChangeDetector()
+	defer d.Close()
+
+	seeded := buildFLVAudioTag([]byte{0xaf, 0x00, 0x12, 0x10})
+	d.SeedAudioHeader(seeded)
+	// The pipeline always seeds the video header too; a rotation only fires
+	// when the video header differs from this baseline.
+	d.SeedVideoHeader(buildFLVVideoTag([]byte{0x17, 0x00, 0x00, 0x00, 0x00, 0x01, 0x64}))
+
+	// 1. Upstream resends the identical config with its own timestamp.
+	resent := buildFLVAudioTag([]byte{0xaf, 0x00, 0x12, 0x10})
+	setFLVTagTimestamp(resent, 48639)
+	if err := d.DetectChange(resent); err != nil {
+		t.Fatalf("resent identical audio header must not trigger rotation, got %v", err)
+	}
+	if got := d.LastAudioTag(); !bytes.Equal(got, resent) {
+		t.Fatalf("LastAudioTag = %x, want upstream bytes %x (seed was %x)", got, resent, seeded)
+	}
+
+	// 2. A genuinely different upstream config also takes over.
+	changed := buildFLVAudioTag([]byte{0xaf, 0x00, 0x11, 0x90})
+	setFLVTagTimestamp(changed, 50000)
+	if err := d.DetectChange(changed); err != nil {
+		t.Fatalf("changed audio header must not trigger rotation, got %v", err)
+	}
+	if got := d.LastAudioTag(); !bytes.Equal(got, changed) {
+		t.Fatalf("LastAudioTag = %x, want new upstream config %x", got, changed)
+	}
+
+	// 3. Next rotation must carry the latest upstream header, not the seed.
+	newVHdr := buildFLVVideoTag([]byte{0x17, 0x00, 0x00, 0x00, 0x00, 0x01, 0xc8})
+	err := d.DetectChange(newVHdr)
+	var headerChanged *flv.FlvHeaderChangedError
+	if !errors.As(err, &headerChanged) {
+		t.Fatalf("changed video header must trigger rotation, got err=%v", err)
+	}
+	if !bytes.Equal(headerChanged.AudioHeaderTag, changed) {
+		t.Fatalf("AudioHeaderTag = %x, want latest upstream %x", headerChanged.AudioHeaderTag, changed)
+	}
+}
+
+func TestHeaderChangeDetector_SeededAudioHeaderCarriedThroughRotation(t *testing.T) {
+	d := flv.NewHeaderChangeDetector()
+	defer d.Close()
+
+	// Seed both headers as a rotated segment pipeline would.
+	vHdr := buildFLVVideoTag([]byte{0x17, 0x00, 0x00, 0x00, 0x00, 0x01, 0x64})
+	aSeq := buildFLVAudioTag([]byte{0xaf, 0x00, 0x12, 0x10})
+	d.SeedVideoHeader(vHdr)
+	d.SeedAudioHeader(aSeq)
+
+	// A new video header (resolution change) triggers rotation.
+	// The detector must report the seeded audio header even though no
+	// audio sequence header was observed in this segment's stream.
+	newVHdr := buildFLVVideoTag([]byte{0x17, 0x00, 0x00, 0x00, 0x00, 0x01, 0xc8})
+	err := d.DetectChange(newVHdr)
+	var headerChanged *flv.FlvHeaderChangedError
+	if !errors.As(err, &headerChanged) {
+		t.Fatalf("changed video header must trigger rotation, got err=%v", err)
+	}
+	if !bytes.Equal(headerChanged.VideoHeaderTag, newVHdr) {
+		t.Fatalf("VideoHeaderTag = %x, want %x", headerChanged.VideoHeaderTag, newVHdr)
+	}
+	if !bytes.Equal(headerChanged.AudioHeaderTag, aSeq) {
+		t.Fatalf("AudioHeaderTag = %x, want seeded %x — rotation 2 must inherit the audio header",
+			headerChanged.AudioHeaderTag, aSeq)
+	}
+}
+
+func buildFLVAudioTag(payload []byte) []byte {
+	dataSize := len(payload)
+	tagHeader := make([]byte, 11)
+	tagHeader[0] = flv.TagTypeAudio
+	tagHeader[1] = byte(dataSize >> 16)
+	tagHeader[2] = byte(dataSize >> 8)
+	tagHeader[3] = byte(dataSize)
+
+	out := make([]byte, 0, 11+dataSize+4)
+	out = append(out, tagHeader...)
+	out = append(out, payload...)
+
+	prevTagSize := uint32(11 + dataSize)
+	out = append(out,
+		byte(prevTagSize>>24),
+		byte(prevTagSize>>16),
+		byte(prevTagSize>>8),
+		byte(prevTagSize),
+	)
+	return out
+}
+
 func buildFLVVideoTag(payload []byte) []byte {
 	dataSize := len(payload)
 	tagHeader := make([]byte, 11)

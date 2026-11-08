@@ -210,6 +210,9 @@ func (s mediaSoakStats) ok(format string) error {
 		if s.flv.tags < 8 {
 			return fmt.Errorf("FLV stream too few tags: %d", s.flv.tags)
 		}
+		if s.flv.audioRaw > 0 && s.flv.audioSeq == 0 {
+			return fmt.Errorf("FLV stream has %d AAC frames but no sequence header", s.flv.audioRaw)
+		}
 	case "ts":
 		if s.ts.packets < 50 {
 			return fmt.Errorf("TS stream too few packets: %d", s.ts.packets)

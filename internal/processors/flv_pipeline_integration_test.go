@@ -448,7 +448,7 @@ func TestFlvPipeline_ResolutionChangeRotation_RealFixtures(t *testing.T) {
 	openPipe := func(videoHdr, audioHdr []byte, outPath string) *pipeline.Pipe[[]byte] {
 		var splitDetector *pipeline.ProcessorInfo[[]byte]
 		if len(videoHdr) > 0 {
-			splitDetector = processors.NewFlvHeaderSplitDetectorSeeded(videoHdr)
+			splitDetector = processors.NewFlvHeaderSplitDetectorSeeded(videoHdr, audioHdr)
 		} else {
 			splitDetector = processors.NewFlvHeaderSplitDetector()
 		}
@@ -629,7 +629,7 @@ func TestFlvPipeline_GenerateBeforeAfterArtifacts(t *testing.T) {
 	openPipe := func(videoHdr, audioHdr []byte, outPath string) *pipeline.Pipe[[]byte] {
 		var splitDetector *pipeline.ProcessorInfo[[]byte]
 		if len(videoHdr) > 0 {
-			splitDetector = processors.NewFlvHeaderSplitDetectorSeeded(videoHdr)
+			splitDetector = processors.NewFlvHeaderSplitDetectorSeeded(videoHdr, audioHdr)
 		} else {
 			splitDetector = processors.NewFlvHeaderSplitDetector()
 		}
