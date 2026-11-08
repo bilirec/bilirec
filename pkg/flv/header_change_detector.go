@@ -114,6 +114,24 @@ func (d *HeaderChangeDetector) SeedVideoHeader(fullTagBytes []byte) {
 	d.lastVideoTag = append([]byte(nil), fullTagBytes...)
 }
 
+// SeedAudioHeader pre-seeds the detector with a known AAC sequence header so a
+// rotated segment keeps injecting AudioSpecificConfig even though upstream
+// never resends it. Pass the full FLV tag bytes as stored in
+// FlvHeaderChangedError.AudioHeaderTag. Non-sequence-header payloads are ignored.
+// Must be called after Reset().
+func (d *HeaderChangeDetector) SeedAudioHeader(fullTagBytes []byte) {
+	if len(fullTagBytes) <= TagHeaderSize+PrevTagSizeBytes {
+		return
+	}
+	tagData := fullTagBytes[TagHeaderSize : len(fullTagBytes)-PrevTagSizeBytes]
+	_, isSequenceHeader := ClassifyAudioTag(tagData)
+	if !isSequenceHeader {
+		return
+	}
+	d.lastAudioHeader = append([]byte(nil), tagData...)
+	d.lastAudioTag = append([]byte(nil), fullTagBytes...)
+}
+
 // LastVideoHeader returns a copy of the most recently seen video sequence
 // header tag data, or nil if none has been seen yet.
 // Callers can inject this into a new file on pipe rotation.

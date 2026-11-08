@@ -20,6 +20,7 @@ type flvHeaderSplitDetectorProcessor struct {
 	detector        *flv.HeaderChangeDetector
 	log             logger.Logger
 	seedVideoHeader []byte // pre-seeded initial video header tag bytes
+	seedAudioHeader []byte // pre-seeded initial AAC sequence header tag bytes
 }
 
 // NewFlvHeaderSplitDetector returns a ProcessorInfo that signals pipe rotation
@@ -35,17 +36,21 @@ func NewFlvHeaderSplitDetector() *pipeline.ProcessorInfo[[]byte] {
 }
 
 // NewFlvHeaderSplitDetectorSeeded returns a ProcessorInfo pre-seeded with the
-// video sequence header from the prior segment. This ensures the detector can
-// detect changes from the very first sequence header it sees in the new segment
-// rather than treating it as the baseline "first" header.
-// videoHeaderTag must be the full FLV tag bytes as returned in
-// FlvHeaderChangedError.VideoHeaderTag.
-func NewFlvHeaderSplitDetectorSeeded(videoHeaderTag []byte) *pipeline.ProcessorInfo[[]byte] {
+// video sequence header and optional AAC sequence header from the prior
+// segment. This ensures the detector can detect changes from the very first
+// sequence header it sees in the new segment rather than treating it as the
+// baseline "first" header, and keeps the inherited audio sequence header so
+// the next rotation still carries FlvHeaderChangedError.AudioHeaderTag
+// (upstream never resends the AAC AudioSpecificConfig mid-stream).
+// videoHeaderTag and audioHeaderTag must be the full FLV tag bytes as returned
+// in FlvHeaderChangedError.VideoHeaderTag / .AudioHeaderTag; either may be nil.
+func NewFlvHeaderSplitDetectorSeeded(videoHeaderTag, audioHeaderTag []byte) *pipeline.ProcessorInfo[[]byte] {
 	return pipeline.NewProcessorInfo(
 		"flv-header-split-detector",
 		&flvHeaderSplitDetectorProcessor{
 			detector:        flv.NewHeaderChangeDetector(),
 			seedVideoHeader: videoHeaderTag,
+			seedAudioHeader: audioHeaderTag,
 		},
 		pipeline.WithErrorStrategy[[]byte](pipeline.ReturnNextOnError),
 	)
@@ -56,6 +61,9 @@ func (p *flvHeaderSplitDetectorProcessor) Open(ctx context.Context, log logger.L
 	p.detector.Reset()
 	if len(p.seedVideoHeader) > 0 {
 		p.detector.SeedVideoHeader(p.seedVideoHeader)
+	}
+	if len(p.seedAudioHeader) > 0 {
+		p.detector.SeedAudioHeader(p.seedAudioHeader)
 	}
 	return nil
 }
