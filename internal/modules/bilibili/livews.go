@@ -300,11 +300,7 @@ func (c *LiveMessageClient) dispatchMessage(body []byte) {
 }
 
 func (c *LiveMessageClient) callHandler(cmd string, fn LiveMessageHandler, body []byte) {
-	defer func() {
-		if r := recover(); r != nil {
-			c.log.Errorf("弹幕消息处理器 panic（cmd=%s）：%v", cmd, r)
-		}
-	}()
+	defer c.log.RecoverPanic(fmt.Sprintf("弹幕消息处理器（cmd=%s）", cmd))
 	fn(body)
 }
 

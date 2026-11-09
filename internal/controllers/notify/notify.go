@@ -142,8 +142,11 @@ func (c *Controller) sseHandle(ctx fiber.Ctx) error {
 		c.sseHandler = sse.New(sse.Config{
 			HeartbeatInterval: 25 * time.Second,
 			Handler: func(ctx fiber.Ctx, stream *sse.Stream) error {
-				clientID := ctx.Locals("sseClientID").(uint64)
-				ch := ctx.Locals("sseChan").(<-chan []byte)
+				clientID, ok1 := ctx.Locals("sseClientID").(uint64)
+				ch, ok2 := ctx.Locals("sseChan").(<-chan []byte)
+				if !ok1 || !ok2 {
+					return fiber.ErrInternalServerError
+				}
 
 				defer c.notifySvc.UnsubscribeSSE(clientID)
 				_ = stream.Comment("connected")

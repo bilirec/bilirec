@@ -3,7 +3,10 @@ package logger
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -134,5 +137,165 @@ func TestJSONEncodersPreserveNanosecondTime(t *testing.T) {
 				t.Fatalf("%s: got %v want %v (raw=%q)", tc.key, got, want, raw)
 			}
 		})
+	}
+}
+
+func TestRecoverPanicLogsStackAndCallsCallback(t *testing.T) {
+	buf := capture(t)
+	called := make(chan any, 1)
+	func() {
+		defer L().RecoverPanic("测试协程", func(p any) {
+			called <- p
+		})
+		panic("boom")
+	}()
+	Sync()
+	got := buf.String()
+	if !strings.Contains(got, "测试协程 panic：boom") {
+		t.Fatalf("panic message missing: %q", got)
+	}
+	if !strings.Contains(got, "TestRecoverPanicLogsStackAndCallsCallback") {
+		t.Fatalf("stack trace missing test frame: %q", got)
+	}
+	select {
+	case p := <-called:
+		if p != "boom" {
+			t.Fatalf("callback got %v, want boom", p)
+		}
+	default:
+		t.Fatal("callback not invoked")
+	}
+}
+
+func TestRecoverPanicMultipleCallbacksRunInOrder(t *testing.T) {
+	capture(t)
+	var order []string
+	func() {
+		defer L().RecoverPanic("多回调", func(any) { order = append(order, "first") },
+			func(any) { order = append(order, "second") })
+		panic("x")
+	}()
+	Sync()
+	if len(order) != 2 || order[0] != "first" || order[1] != "second" {
+		t.Fatalf("callback order: %v", order)
+	}
+}
+
+func TestRecoverPanicNoPanicNoCallback(t *testing.T) {
+	called := false
+	func() {
+		defer L().RecoverPanic("无 panic", func(any) { called = true })
+	}()
+	if called {
+		t.Fatal("callback should not fire without panic")
+	}
+}
+
+func TestRecoverPanicLogErrorBeforeCallbackPanics(t *testing.T) {
+	buf := capture(t)
+	func() {
+		// RecoverPanic runs first (registered later = LIFO), logs the origin
+		// panic, then the callback's own panic propagates to this guard.
+		defer func() {
+			if p := recover(); p != "callback boom" {
+				t.Fatalf("callback panic should propagate, got %v", p)
+			}
+		}()
+		defer L().RecoverPanic("回调炸", func(any) { panic("callback boom") })
+		panic("origin")
+	}()
+	Sync()
+	got := buf.String()
+	if !strings.Contains(got, "回调炸 panic：origin") {
+		t.Fatalf("origin panic evidence lost when callback panics: %q", got)
+	}
+}
+
+func TestEnableCrashCaptureSamePathNoopDifferentPathSwitches(t *testing.T) {
+	dir := t.TempDir()
+	first := filepath.Join(dir, "first.log")
+	second := filepath.Join(dir, "second.log")
+	if err := EnableCrashCapture(first); err != nil {
+		t.Fatalf("first enable: %v", err)
+	}
+	// Same path while enabled is a no-op: the registered file stays the same inode.
+	before := crashFile
+	if err := EnableCrashCapture(first); err != nil {
+		t.Fatalf("same-path enable: %v", err)
+	}
+	if crashFile != before {
+		t.Fatal("same-path enable should not swap the crash file")
+	}
+	// A different path switches the target.
+	if err := EnableCrashCapture(second); err != nil {
+		t.Fatalf("different-path enable: %v", err)
+	}
+	if crashPath != second {
+		t.Fatalf("crashPath = %q, want %q", crashPath, second)
+	}
+	onDisk, err := os.Stat(second)
+	if err != nil {
+		t.Fatalf("second crash file should exist: %v", err)
+	}
+	prev, err := crashFile.Stat()
+	if err != nil || !os.SameFile(prev, onDisk) {
+		t.Fatalf("crashFile should point at second.log")
+	}
+
+	DisableCrashCapture()
+	DisableCrashCapture() // double disable is safe
+	if err := EnableCrashCapture(first); err != nil {
+		t.Fatalf("re-enable after disable: %v", err)
+	}
+	DisableCrashCapture()
+	if _, err := os.Stat(first); err != nil {
+		t.Fatalf("crash file should exist: %v", err)
+	}
+}
+
+func TestNoteCrashLogWriteFollowsRotatedFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "app.log")
+	if err := EnableCrashCapture(path); err != nil {
+		t.Fatalf("enable: %v", err)
+	}
+	defer DisableCrashCapture()
+
+	// Rotate: move the registered file away and let lumberjack create a new one.
+	if err := os.Rename(path, path+".1"); err != nil {
+		t.Fatalf("rename: %v", err)
+	}
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	if err != nil {
+		t.Fatalf("recreate: %v", err)
+	}
+	_ = f.Close()
+
+	// A different path must not switch the target.
+	NoteCrashLogWrite(filepath.Join(dir, "elsewhere.log"))
+	if crashPath != path {
+		t.Fatalf("crashPath changed to %q", crashPath)
+	}
+
+	NoteCrashLogWrite(path)
+	onDisk, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat new file: %v", err)
+	}
+	prev, err := crashFile.Stat()
+	if err != nil || !os.SameFile(prev, onDisk) {
+		t.Fatalf("NoteCrashLogWrite should re-register the rotated file")
+	}
+}
+
+func TestEnableCrashCaptureBadPathFails(t *testing.T) {
+	err := EnableCrashCapture(filepath.Join(t.TempDir(), "no-such-dir", "x.log"))
+	if err == nil {
+		DisableCrashCapture()
+		t.Fatal("expected error for bad path")
+	}
+	if !strings.Contains(err.Error(), "no-such-dir") && !os.IsNotExist(err) &&
+		!strings.Contains(fmt.Sprintf("%v", err), "system cannot find") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }

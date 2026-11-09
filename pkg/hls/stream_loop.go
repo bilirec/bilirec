@@ -167,6 +167,7 @@ func (r *StreamRunner) applyAcceptResult(res AcceptMapResult) bool {
 }
 
 func (r *StreamRunner) run() {
+	defer r.log.RecoverPanic("HLS 拉流循环")
 	// close before onClose so consumers see EOF before the pool lease is released.
 	// Abandon unconsumed prefetches so pooled segment bodies return before the lease drops.
 	defer func() {

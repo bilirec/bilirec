@@ -81,6 +81,7 @@ func Stop() C.int {
 		logger.L().Info("-------------- STOP at " + time.Now().Format("2006-01-02 15:04:05") + " ---------------")
 	}
 
+	logger.DisableCrashCapture()
 	closeBootstrapLog(bootstrapLog)
 	androidApp = nil
 	bootstrapLog = nil
@@ -98,6 +99,9 @@ func start(config StartConfig) C.int {
 	}
 
 	log := initBootstrapLog(config.BasePath)
+	if err := logger.EnableCrashCapture(filepath.Join(config.BasePath, "bootstrap.log")); err != nil {
+		logger.L().Warnf("启用崩溃输出到 bootstrap.log 失败：%v", err)
+	}
 	loadAndroidTimeZone()
 
 	for key, value := range defaultAndroidEnv(config.BasePath) {

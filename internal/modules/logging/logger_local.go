@@ -2,6 +2,7 @@ package logging
 
 import (
 	"context"
+	"io"
 	"path/filepath"
 	"strings"
 
@@ -40,7 +41,7 @@ func wireLocalLogger(lc fx.Lifecycle, cfg *config.Config) {
 		Compress:   cfg.LocalLogsCompress,
 	}
 
-	tr := logsink.NewFileTransport(fileWriter)
+	tr := logsink.NewFileTransport(crashFollowWriter{path: logPath, w: fileWriter})
 	overflow := logsink.OverflowDrop
 	if strings.ToLower(strings.TrimSpace(cfg.LocalLogsOverflow)) == "block" {
 		overflow = logsink.OverflowBlock
@@ -68,9 +69,30 @@ func wireLocalLogger(lc fx.Lifecycle, cfg *config.Config) {
 	localCore := zapcore.NewCore(enc, bufferedSink, levelEnabler{})
 	logger.SetLocalCore(localCore)
 
+	if err := logger.EnableCrashCapture(logPath); err != nil {
+		log.Warnf("启用崩溃输出到本地日志失败：%v", err)
+	}
+
 	lc.Append(fx.StopHook(func(ctx context.Context) error {
+		logger.DisableCrashCapture()
 		return shutdownSink(logger.ClearLocalCore, bufferedSink, ctx)
 	}))
 
 	log.Infof("本地日志已启用：%s format=%s", logPath, cfg.LocalLogsFormat)
 }
+
+// crashFollowWriter 在每次批次写入后让崩溃转储跟随当前日志文件。
+// lumberjack 按大小换档后，runtime 仍持有旧 inode 的 fd；这里发现路径指向
+// 新文件时重新注册（同一文件时是廉价的 SameFile 检查）。
+type crashFollowWriter struct {
+	path string
+	w    io.WriteCloser
+}
+
+func (f crashFollowWriter) Write(p []byte) (int, error) {
+	n, err := f.w.Write(p)
+	logger.NoteCrashLogWrite(f.path)
+	return n, err
+}
+
+func (f crashFollowWriter) Close() error { return f.w.Close() }

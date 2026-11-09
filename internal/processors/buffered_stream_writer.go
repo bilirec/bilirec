@@ -335,6 +335,10 @@ func (w *BufferedStreamWriterProcessor) Close() error {
 // When dataCh is closed by Close(), it drains any remaining queued data before returning
 // so Close can perform a final flush+sync safely.
 func (w *BufferedStreamWriterProcessor) writePeriodically() {
+	defer w.logger.RecoverPanic("周期写入协程", func(p any) {
+		w.setFatal(fmt.Errorf("周期写入协程 panic：%v", p))
+		w.drainAfterPanic()
+	})
 	if w.sequentialWrite && w.periodicSignalCh != nil {
 		w.writePeriodicallyCoordinated()
 		return
@@ -522,6 +526,9 @@ func (w *BufferedStreamWriterProcessor) createFileAndWriter() error {
 // periodicIOWorker handles periodic fsync or cold page-cache release in a separate
 // goroutine to avoid blocking the main writer loop on slow I/O.
 func (w *BufferedStreamWriterProcessor) periodicIOWorker(mode periodicIOMode, period time.Duration) {
+	defer w.logger.RecoverPanic("周期 I/O 协程", func(p any) {
+		w.setFatal(fmt.Errorf("周期 I/O 协程 panic：%v", p))
+	})
 	ticker := time.NewTicker(period)
 	defer ticker.Stop()
 
@@ -687,11 +694,75 @@ func WithBytesPool(bp pool.SizedBytesPool) BufferedStreamWriterOptions {
 	}
 }
 
+// WithSequentialWrite enables global flush locking to serialize all flush/write
+// operations across multiple BufferedStreamWriterProcessor instances. This is useful
+// when multiple streams write to the same physical disk and you want to prevent
+// simultaneous flush bursts from causing I/O peaks. Default is disabled (no locking).
+func WithSequentialWrite(enabled bool) BufferedStreamWriterOptions {
+	return func(p *BufferedStreamWriterProcessor) {
+		p.sequentialWrite = enabled
+	}
+}
+
+// WithMinPeriodicFlushBytes sets the minimum buffered bytes required before a
+// coordinated periodic flush runs. Defaults to bufferSize/4 (minimum 64KB).
+func WithMinPeriodicFlushBytes(n int) BufferedStreamWriterOptions {
+	return func(p *BufferedStreamWriterProcessor) {
+		if n > 0 {
+			p.minPeriodicFlushBytes = n
+		}
+	}
+}
+
+func WithOnBytesWritten(fn func(n int)) BufferedStreamWriterOptions {
+	return func(p *BufferedStreamWriterProcessor) {
+		p.onBytesWritten = fn
+	}
+}
+
+func WithOnFlush(fn func(FlushEvent)) BufferedStreamWriterOptions {
+	return func(p *BufferedStreamWriterProcessor) {
+		p.onFlush = fn
+	}
+}
+
+func WithOnSync(fn func(SyncEvent)) BufferedStreamWriterOptions {
+	return func(p *BufferedStreamWriterProcessor) {
+		p.onSync = fn
+	}
+}
+
+func WithOnEnqueueWait(fn func(EnqueueWaitEvent)) BufferedStreamWriterOptions {
+	return func(p *BufferedStreamWriterProcessor) {
+		p.onEnqueueWait = fn
+	}
+}
+
+// --- private: fatal marking and chunk-buffer helpers ---
+
 func (w *BufferedStreamWriterProcessor) setFatal(err error) {
 	if err == nil || w.fatal.Load() != nil {
 		return
 	}
 	w.fatal.Store(&writerFatalErr{err: err})
+}
+
+// drainAfterPanic non-blockingly drains already-buffered chunks from dataCh
+// (returning them to the pool) so that a Process blocked on sending unblocks;
+// subsequent Process calls return via the fatalErr() check with the panic
+// converted into a normal error, letting the recorder rotate into a new file.
+func (w *BufferedStreamWriterProcessor) drainAfterPanic() {
+	for {
+		select {
+		case data, ok := <-w.dataCh:
+			if !ok {
+				return
+			}
+			w.bytesPool.Put(data)
+		default:
+			return
+		}
+	}
 }
 
 func (w *BufferedStreamWriterProcessor) fatalErr() error {
@@ -748,48 +819,4 @@ func (w *BufferedStreamWriterProcessor) shouldLogCreateFileFailure() bool {
 		return true
 	}
 	return false
-}
-
-// WithSequentialWrite enables global flush locking to serialize all flush/write
-// operations across multiple BufferedStreamWriterProcessor instances. This is useful
-// when multiple streams write to the same physical disk and you want to prevent
-// simultaneous flush bursts from causing I/O peaks. Default is disabled (no locking).
-func WithSequentialWrite(enabled bool) BufferedStreamWriterOptions {
-	return func(p *BufferedStreamWriterProcessor) {
-		p.sequentialWrite = enabled
-	}
-}
-
-// WithMinPeriodicFlushBytes sets the minimum buffered bytes required before a
-// coordinated periodic flush runs. Defaults to bufferSize/4 (minimum 64KB).
-func WithMinPeriodicFlushBytes(n int) BufferedStreamWriterOptions {
-	return func(p *BufferedStreamWriterProcessor) {
-		if n > 0 {
-			p.minPeriodicFlushBytes = n
-		}
-	}
-}
-
-func WithOnBytesWritten(fn func(n int)) BufferedStreamWriterOptions {
-	return func(p *BufferedStreamWriterProcessor) {
-		p.onBytesWritten = fn
-	}
-}
-
-func WithOnFlush(fn func(FlushEvent)) BufferedStreamWriterOptions {
-	return func(p *BufferedStreamWriterProcessor) {
-		p.onFlush = fn
-	}
-}
-
-func WithOnSync(fn func(SyncEvent)) BufferedStreamWriterOptions {
-	return func(p *BufferedStreamWriterProcessor) {
-		p.onSync = fn
-	}
-}
-
-func WithOnEnqueueWait(fn func(EnqueueWaitEvent)) BufferedStreamWriterOptions {
-	return func(p *BufferedStreamWriterProcessor) {
-		p.onEnqueueWait = fn
-	}
 }

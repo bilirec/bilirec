@@ -3,6 +3,7 @@ package logger
 import (
 	"fmt"
 	"io"
+	"runtime/debug"
 
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -86,6 +87,31 @@ func (l Logger) Warnf(format string, args ...any)  { l.logf(WarnLevel, format, a
 func (l Logger) Errorf(format string, args ...any) { l.logf(ErrorLevel, format, args...) }
 
 func (l Logger) Tracef(format string, args ...any) { l.logf(TraceLevel, format, args...) }
+
+// RecoverPanic captures and logs a panic with the full stack; meant for defer:
+//
+//	defer log.RecoverPanic("录制循环")
+//
+// The optional onPanic callbacks run after the log entry is written, for
+// extra recovery actions (marking fatal, unblocking producers, ...):
+//
+//	defer w.logger.RecoverPanic("周期写入协程", func(p any) { w.setFatal(...) })
+//
+// Order is log-first-then-callback: even if a callback itself panics, the
+// original panic's stack evidence is already on disk. Note: after recover,
+// the current goroutine exits normally — the panicking function does NOT
+// resume; and defer evaluates its arguments (including callback closures)
+// at registration time, so callbacks see the values captured then.
+func (l Logger) RecoverPanic(name string, onPanic ...func(p any)) {
+	p := recover()
+	if p == nil {
+		return
+	}
+	l.Errorf("%s panic：%v\n%s", name, p, debug.Stack())
+	for _, fn := range onPanic {
+		fn(p)
+	}
+}
 
 func (l Logger) logf(lvl zapcore.Level, format string, args ...any) {
 	z := l.zap()

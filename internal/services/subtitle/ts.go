@@ -187,9 +187,15 @@ func pmtVideoStream(seg []byte) (uint16, flv.VideoKind) {
 
 // tsPayload 跳过 TS 头与 adaptation field，返回有效负载切片（仍指向原 pkt）。
 func tsPayload(pkt []byte) []byte {
+	if len(pkt) < 4 {
+		return nil
+	}
 	idx := 4
 	adapt := pkt[3] & 0x30
 	if adapt == 0x30 || adapt == 0x20 {
+		if idx >= len(pkt) {
+			return nil
+		}
 		adaptLen := int(pkt[idx])
 		idx++
 		idx += adaptLen
