@@ -6,16 +6,28 @@ import (
 
 // accessUnitsFromFLVChunk 把录制管道里的一段 FLV 字节（可能含多个 tag）拆成 accessUnit。
 // 只处理视频 tag；sequence header 与音频 tag 跳过。
+//
+// 每个分段的首个 chunk 带 13 字节 FLV 文件前导（flv-header-writer 在字幕扫描
+// 之前拼上，见 record_strategies/flv.go 的管线顺序），其余位置也可能遇到非 tag
+// 字节。NextTag 对这类字节返回 skip=true 并给出 buf[1:]，这里据此逐字节重同步；
+// 之前遇 !ok 直接 break，会导致含前导的首个 chunk 被整体丢弃。
 func accessUnitsFromFLVChunk(data []byte) []accessUnit {
 	var out []accessUnit
 	rest := data
 	for len(rest) > 0 {
 		tag, next, ok, skip := flv.NextTag(rest)
 		if !ok {
+			if skip {
+				// 非 tag 字节（文件前导、垃圾前缀）：跳过 1 字节重同步。
+				rest = next
+				continue
+			}
+			// 剩余字节不足以构成完整 tag：管线 chunk 均为完整 tag 对齐
+			//（上游 fixer 按 tag 解析重组），正常不会发生，防御性收尾。
 			break
 		}
 		rest = next
-		if skip || len(tag) == 0 || tag[0] != flv.TagTypeVideo {
+		if len(tag) == 0 || tag[0] != flv.TagTypeVideo {
 			continue
 		}
 		body := flv.TagData(tag)
