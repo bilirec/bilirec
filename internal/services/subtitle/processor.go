@@ -18,7 +18,11 @@ const subtitleQueueMaxBytes = 4 << 20
 // NALs 的封装格式因来源而异，后续 SEI 扫描会先判断 AVCC 还是 Annex-B。
 type accessUnit struct {
 	PTSMs int64
-	Codec flv.VideoKind
+	// ptsKnown 標示 PTSMs 是否來自真實解析（目前只有 .ts 會是 false：PES 頭尚未到達，
+	// 或嵌入式字幕 chunk 還沒有可依附的 PTS）。FLV/fMP4 的時間戳總是由 tag/trun 給出，
+	// 維持 false 不影響它們的 baseMs=0 行為。
+	ptsKnown bool
+	Codec    flv.VideoKind
 	// AVCC：4 字节大端长度 + NAL 体，可连续多个 NAL。
 	// Annex-B：0x000001 / 0x00000001 起始码分隔的 NAL（HLS TS 的 PES 负载常见）。
 	NALs []byte
@@ -57,6 +61,7 @@ type tsScratch struct {
 	codec    flv.VideoKind
 	pesBuf   []byte
 	pesPTS   uint64
+	ptsKnown bool
 	havePES  bool
 }
 
@@ -67,6 +72,8 @@ type queuedChunk struct {
 
 func applyChunkGap(sc *tsScratch) {
 	sc.pesBuf = nil
+	sc.pesPTS = 0
+	sc.ptsKnown = false
 	sc.havePES = false
 }
 

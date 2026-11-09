@@ -84,6 +84,66 @@ func TestAccessUnitsFromTSChunk_subtitleSEI(t *testing.T) {
 	}
 }
 
+func TestAccessUnitsFromTSChunk_pesHeaderSplitAcrossPackets(t *testing.T) {
+	seiPayload := mustSubtitleJSON(t, "split-header", 12)
+	nals := annexBAVCSEINAL(seiPayload)
+	pes := buildVideoPES(nals, 90_000) // 1000 ms；PES 頭 14 字節（含 PTS）
+
+	// 第一包只放 8 字節負載，PES 頭因此跨到第二包。
+	const firstPayload = 8
+	first := tsPacketWithAdaptation(testVideoPID, true, pes[:firstPayload])
+	packets := [][]byte{
+		tsPATPacket(testPMTPID, 0, false),
+		tsPMTPacket(testPMTPID, testVideoPID, flv.VideoKindAVC, 0, false),
+		first,
+	}
+	for off := firstPayload; off < len(pes); off += tsPacketSize - 4 {
+		end := min(off+tsPacketSize-4, len(pes))
+		packets = append(packets, tsVideoPESPacket(testVideoPID, pes[off:end], false))
+	}
+	seg := tsSegment(packets...)
+
+	var sc tsScratch
+	aus := accessUnitsFromTSChunk(seg, &sc)
+	if au, ok := flushTSPES(&sc); ok {
+		aus = append(aus, au)
+	}
+	if len(aus) != 1 {
+		t.Fatalf("expected 1 access unit, got %d", len(aus))
+	}
+	if !aus[0].ptsKnown {
+		t.Fatal("PTS should be parsed after the header arrives in the next packet")
+	}
+	if aus[0].PTSMs != 1000 {
+		t.Fatalf("PTS ms=%d want 1000", aus[0].PTSMs)
+	}
+	cues := cuesFromSEI(aus[0])
+	if len(cues) != 1 || cues[0].Text != "split-header" {
+		t.Fatalf("unexpected cues %+v", cues)
+	}
+}
+
+// tsPacketWithAdaptation 构造带 adaptation field 的 TS 包，把 payload 貼到包尾，
+// 中間用 0xFF 填充，讓 PES 頭可以跨包。
+func tsPacketWithAdaptation(pid uint16, pusi bool, payload []byte) []byte {
+	pkt := make([]byte, tsPacketSize)
+	pkt[0] = 0x47
+	pkt[1] = byte((pid >> 8) & 0x1F)
+	pkt[2] = byte(pid & 0xFF)
+	if pusi {
+		pkt[1] |= 0x40
+	}
+	pkt[3] = 0x30 // adaptation field + payload
+	// 4 字節 TS 頭 + 1 字節 adaptation_field_length + adaptLen + payload = 188
+	adaptLen := tsPacketSize - 4 - 1 - len(payload)
+	pkt[4] = byte(adaptLen)
+	for i := 5; i < 5+adaptLen; i++ {
+		pkt[i] = 0xFF
+	}
+	copy(pkt[5+adaptLen:], payload)
+	return pkt
+}
+
 func tsSegment(packets ...[]byte) []byte {
 	var seg []byte
 	for _, p := range packets {
@@ -111,15 +171,22 @@ func tsPMTPacket(pmtPID uint16, videoPID uint16, kind flv.VideoKind, pointer byt
 	if kind == flv.VideoKindHEVCEnhanced {
 		streamType = 0x24
 	}
+	// 規範 PMT 佈局：table_id + section_length + program_number +
+	// version/flags + section_number + last_section_number + PCR_PID +
+	// program_info_length + 節目環（一個視訊 ES）+ CRC。
+	sectionLen := 12 - 3 + 5 + 4 // program_number 之後的 header + 一個 ES 環 + CRC
 	section := []byte{
-		0x02, 0xB0, 0x0F,
-		0x00, 0x01,
-		byte(0xE0 | ((videoPID >> 8) & 0x1F)), byte(videoPID & 0xFF),
-		0xF0, 0x00,
+		0x02, 0xB0 | byte((sectionLen>>8)&0x0F), byte(sectionLen),
+		0x00, 0x01, // program_number
+		0xC1, // version 0, current_next_indicator 1
+		0x00, // section_number
+		0x00, // last_section_number
+		byte(0xE0 | ((videoPID >> 8) & 0x1F)), byte(videoPID & 0xFF), // PCR_PID
+		0xF0, 0x00, // program_info_length = 0
 		streamType,
 		byte(0xE0 | ((videoPID >> 8) & 0x1F)), byte(videoPID & 0xFF),
-		0xF0, 0x00,
-		0, 0, 0, 0,
+		0xF0, 0x00, // ES_info_length = 0
+		0, 0, 0, 0, // CRC32 placeholder
 	}
 	payload := wrapPSIPayload(section, pointer, omitPointer)
 	return tsPacket(pmtPID, true, payload)
