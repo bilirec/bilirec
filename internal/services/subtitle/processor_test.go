@@ -1,8 +1,10 @@
 package subtitle
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -101,6 +103,79 @@ func TestSegmentProcessor_closeReturnsBeforeDone(t *testing.T) {
 	case <-waitDone:
 	case <-time.After(5 * time.Second):
 		t.Fatal("consumer did not finish")
+	}
+}
+
+// TestSegmentProcessor_panicStillRunsCleanup 是回归测试：RecoverPanic 必须由
+// 被 defer 的函数直接调用（不能包进 cleanup closure 内层），否则 recover()
+// 取不到 panic，panic 会炸穿 consume goroutine 使整个进程崩溃。
+// 用未初始化的 index map（writeCue 对 nil map 赋值必 panic）作确定性注入点。
+func TestSegmentProcessor_panicStillRunsCleanup(t *testing.T) {
+	dir := t.TempDir()
+	videoPath := filepath.Join(dir, "seg.flv")
+	svc := testSubtitleService()
+
+	buf := &bytes.Buffer{}
+	logger.Init(logger.Options{Output: buf})
+	t.Cleanup(func() {
+		logger.SetOutput(io.Discard)
+		logger.SetLevel(logger.InfoLevel)
+	})
+
+	p := &segmentProcessor{svc: svc, videoPath: videoPath, ext: ".flv"}
+	if err := p.Open(context.Background(), logger.Named("test")); err != nil {
+		t.Fatal(err)
+	}
+
+	// 注入 panic：把 seg 的 index 换成 nil map（白盒）。必须在 Push 之前改——
+	// Push→Pop 自带 happens-before，consume 读到时不会与本写入竞争。
+	// 下一个带 cue 的 chunk 会在 writeCue 里对 nil map 赋值而 panic。
+	p.seg.index = nil
+	seg := flvVideoChunkWithSEI(mustSubtitleJSON(t, "boom", 1))
+	_, _ = p.Process(context.Background(), logger.Named("test"), seg)
+
+	waitDone := make(chan struct{})
+	go func() {
+		svc.Wait(videoPath)
+		close(waitDone)
+	}()
+	select {
+	case <-waitDone:
+	case <-time.After(5 * time.Second):
+		t.Fatal("panic 后 cleanup 未执行：svc.Wait 卡住（done 未 close），说明 RecoverPanic 未生效")
+	}
+
+	// panic 后 idle 计数应归零：WaitIdle 不卡（等价于原计数归零断言）。
+	idleDone := make(chan struct{})
+	go func() {
+		svc.WaitIdle()
+		close(idleDone)
+	}()
+	select {
+	case <-idleDone:
+	case <-time.After(5 * time.Second):
+		t.Fatalf("panic 后 idle 计数未归零，WaitIdle 永久阻塞")
+	}
+	// 白盒确认 untrack 已执行（done 注册表已清空该 path）。
+	svc.mu.Lock()
+	_, stillTracked := svc.done[videoPath]
+	svc.mu.Unlock()
+	if stillTracked {
+		t.Fatalf("panic 后未 untrack：%s 残留在注册表", videoPath)
+	}
+
+	// panic 已被 RecoverPanic 接住并记录（含调用栈），而不是炸穿 goroutine。
+	p.q.Close()
+	p.Close()
+	deadline := time.Now().Add(2 * time.Second)
+	for !strings.Contains(buf.String(), "subtitle scan（path=") {
+		if time.Now().After(deadline) {
+			t.Fatalf("未见到 RecoverPanic 日志（panic 可能炸穿了进程）：buf=%q", buf.String())
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if !strings.Contains(buf.String(), "TestSegmentProcessor_panicStillRunsCleanup") {
+		t.Fatalf("panic 日志缺堆栈帧：%q", buf.String())
 	}
 }
 

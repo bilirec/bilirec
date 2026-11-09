@@ -63,8 +63,11 @@ func (c *Controller) sseHandle(ctx fiber.Ctx) error {
 		c.sseOnce = sse.New(sse.Config{
 			HeartbeatInterval: 25 * time.Second,
 			Handler: func(ctx fiber.Ctx, stream *sse.Stream) error {
-				sub := ctx.Locals("previewSub").(pvs.EventSub)
-				roomID := ctx.Locals("previewRoom").(int)
+				sub, ok1 := ctx.Locals("previewSub").(pvs.EventSub)
+				roomID, ok2 := ctx.Locals("previewRoom").(int)
+				if !ok1 || !ok2 {
+					return fiber.ErrInternalServerError
+				}
 				defer sub.Leave()
 
 				_ = stream.Comment("connected")

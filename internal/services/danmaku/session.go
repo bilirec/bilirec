@@ -2,6 +2,7 @@ package danmaku
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sync/atomic"
@@ -99,11 +100,7 @@ func (s *session) segmentStart() time.Time {
 // supervise runs the reconnect loop until the recording context is canceled.
 // Danmaku loss is acceptable; the loop never gives up on its own.
 func (s *session) supervise() {
-	defer func() {
-		if r := recover(); r != nil {
-			log.Errorf("房间 %d 弹幕连接监督 panic：%v", s.roomID, r)
-		}
-	}()
+	defer log.RecoverPanic(fmt.Sprintf("房间 %d 弹幕连接监督", s.roomID))
 	defer close(s.supervisorDone)
 	defer close(s.msgCh)
 
@@ -267,11 +264,7 @@ func (s *session) enqueue(build fragmentBuilder, eventType string) {
 // writeLoop owns the danmaku writer pipeline: it consumes fragments, handles
 // segment rotation and finalizes the file on shutdown.
 func (s *session) writeLoop(videoPath string, segmentStart time.Time) {
-	defer func() {
-		if r := recover(); r != nil {
-			log.Errorf("房间 %d 弹幕写入 panic：%v", s.roomID, r)
-		}
-	}()
+	defer log.RecoverPanic(fmt.Sprintf("房间 %d 弹幕写入", s.roomID))
 	defer close(s.done)
 	defer s.svc.removeSession(s.roomID, s)
 

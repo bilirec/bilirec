@@ -206,6 +206,7 @@ func (r *Service) Stop(roomId int) bool {
 
 func (r *Service) prepare(roomId int, ch <-chan []byte, strategy rs.RecordStrategy, ctx context.Context, info *Info, scheduleDurationCheck bool) error {
 	r.wg.Go(func() {
+		defer log.RecoverPanic(fmt.Sprintf("房间 %d 录制循环", roomId))
 		defer r.recover(roomId)
 		err := r.rotate(roomId, ch, strategy, info, ctx, scheduleDurationCheck)
 		if err != nil {

@@ -2,6 +2,7 @@ package subtitle
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
 	"sync/atomic"
 
@@ -111,10 +112,11 @@ func (p *segmentProcessor) Close() error {
 func (p *segmentProcessor) consume(q *ds.ChunkQueue[queuedChunk]) {
 	var fmp4 fmp4Scratch
 	var ts tsScratch
+	// cleanup 每次退出（正常/panic）都要执行；defer LIFO：RecoverPanic 先于
+	// cleanup 运行，先接住 panic 记录堆栈，再让 cleanup 在已恢复状态下执行。
+	// 注意 RecoverPanic 必须是“被 defer 的函数”直接调用，不能包进下面的
+	// closure 里，否则 recover() 取不到 panic。
 	defer func() {
-		if rec := recover(); rec != nil {
-			log.Errorf("subtitle scan panicked path=%s err=%v", p.videoPath, rec)
-		}
 		if p.ext == ".ts" {
 			if au, ok := flushTSPES(&ts); ok {
 				p.seg.enqueueFromAccessUnit(au)
@@ -128,6 +130,7 @@ func (p *segmentProcessor) consume(q *ds.ChunkQueue[queuedChunk]) {
 		p.svc.untrack(p.videoPath, p.done)
 		p.svc.idle.Done()
 	}()
+	defer log.RecoverPanic(fmt.Sprintf("subtitle scan（path=%s）", p.videoPath))
 	for {
 		item, ok := q.Pop()
 		if !ok {

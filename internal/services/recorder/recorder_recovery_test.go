@@ -15,6 +15,7 @@ import (
 	"github.com/bilirec/bilirec/internal/services/notify"
 	"github.com/bilirec/bilirec/pkg/backoff"
 	"github.com/bilirec/bilirec/pkg/ds"
+	"github.com/bilirec/bilirec/pkg/pipeline"
 	"github.com/bilirec/bilirec/pkg/tx"
 	"github.com/puzpuzpuz/xsync/v4"
 )
@@ -27,12 +28,14 @@ func newTestRecorderService(t *testing.T) *Service {
 		MaxRecordingHours:       24,
 	}
 	r := &Service{
-		m:         &metrics.Exporter{},
-		nt:        &notify.Service{},
-		dm:        newTestDanmaku(),
-		recording: xsync.NewMap[int, *Info](),
-		cfg:       cfg,
-		ctx:       context.Background(),
+		m:            &metrics.Exporter{},
+		nt:           &notify.Service{},
+		dm:           newTestDanmaku(),
+		recording:    xsync.NewMap[int, *Info](),
+		writingFiles: ds.NewSyncedSet[string](),
+		pipes:        xsync.NewMap[int, *pipeline.Pipe[[]byte]](),
+		cfg:          cfg,
+		ctx:          context.Background(),
 	}
 	r.reser = tx.NewPending(
 		func(roomId int, pending ds.Set[int]) error {

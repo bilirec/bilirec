@@ -3,6 +3,7 @@ package subcheck
 import (
 	"context"
 	"errors"
+	"fmt"
 	"maps"
 	"math/rand"
 	"os"
@@ -165,8 +166,8 @@ func (s *Service) stop() error {
 func (s *Service) loop() {
 	defer s.wg.Done()
 
-	// Run one full check cycle at startup so behavior matches previous implementation.
-	s.tryStartAllAutoRecordRooms()
+	// 起始掃描 panic 只丟掉這一輪；分片註冊與等待 ctx 必須照常進行。
+	s.initialScan()
 
 	maxShards := s.scheduleParams.maxShards
 	s.shardStops = make([]func(), 0, maxShards)
@@ -184,28 +185,39 @@ func (s *Service) loop() {
 	s.shardStops = nil
 }
 
+func (s *Service) initialScan() {
+	defer log.RecoverPanic("subcheck initial scan")
+	// Run one full check cycle at startup so behavior matches previous implementation.
+	s.tryStartAllAutoRecordRooms()
+}
+
 func (s *Service) shardLoop(shard int, ch <-chan struct{}) {
 	defer s.wg.Done()
 	for {
 		select {
 		case <-ch:
-			if s.jitterSecs > 0 {
-				time.Sleep(time.Duration(rand.Intn(s.jitterSecs)) * time.Second)
-			}
-			if shard == 0 {
-				s.maybeRescale()
-			}
-			s.scheduleMu.Lock()
-			activeShards := s.shardCount
-			s.scheduleMu.Unlock()
-			if shard >= activeShards {
-				continue
-			}
-			s.tryStartShardAutoRecordRooms(shard, activeShards)
+			s.shardTick(shard)
 		case <-s.ctx.Done():
 			return
 		}
 	}
+}
+
+func (s *Service) shardTick(shard int) {
+	defer log.RecoverPanic(fmt.Sprintf("subcheck shardLoop(%d)", shard))
+	if s.jitterSecs > 0 {
+		time.Sleep(time.Duration(rand.Intn(s.jitterSecs)) * time.Second)
+	}
+	if shard == 0 {
+		s.maybeRescale()
+	}
+	s.scheduleMu.Lock()
+	activeShards := s.shardCount
+	s.scheduleMu.Unlock()
+	if shard >= activeShards {
+		return
+	}
+	s.tryStartShardAutoRecordRooms(shard, activeShards)
 }
 
 func (s *Service) tryStartAllAutoRecordRooms() {
@@ -375,11 +387,16 @@ func (s *Service) retryLoop() {
 	for {
 		select {
 		case <-ticker.C:
-			s.retryDueRooms()
+			s.retryTick()
 		case <-s.ctx.Done():
 			return
 		}
 	}
+}
+
+func (s *Service) retryTick() {
+	defer log.RecoverPanic("subcheck retryLoop")
+	s.retryDueRooms()
 }
 
 func (s *Service) retryDueRooms() {
