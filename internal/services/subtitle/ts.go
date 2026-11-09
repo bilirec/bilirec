@@ -53,21 +53,35 @@ func accessUnitsFromTSChunk(seg []byte, sc *tsScratch) []accessUnit {
 		if payloadStart {
 			// 新 PES 开始：先把上一包 PES 收成 accessUnit。
 			if sc.havePES && len(sc.pesBuf) > 0 {
-				if au, ok := pesToAccessUnit(sc.pesBuf, sc.pesPTS, sc.codec); ok {
+				if au, ok := pesToAccessUnit(sc.pesBuf, sc.pesPTS, sc.ptsKnown, sc.codec); ok {
 					out = append(out, au)
 				}
 			}
 			sc.pesBuf = append([]byte(nil), payload...)
 			sc.pesPTS = 0
+			sc.ptsKnown = false
 			sc.havePES = true
-			if pts, ok := pesHeaderPTS(sc.pesBuf); ok {
-				sc.pesPTS = pts
-			}
+			sc.notePESHeaderPTS()
 		} else if sc.havePES {
 			sc.pesBuf = append(sc.pesBuf, payload...)
+			// PES 头可能跨 TS 包：头还没凑齐时每包重试，解析到即停。
+			if !sc.ptsKnown {
+				sc.notePESHeaderPTS()
+			}
 		}
 	}
 	return appendEmbeddedTSAccessUnitIfNeeded(seg, sc, out)
+}
+
+// notePESHeaderPTS 在 PES 头完整时记下 PTS。头不完整时保持 ptsKnown=false，
+// 由后续 TS 包继续补齐后重试。
+func (sc *tsScratch) notePESHeaderPTS() {
+	pts, ok := pesHeaderPTS(sc.pesBuf)
+	if !ok {
+		return
+	}
+	sc.pesPTS = pts
+	sc.ptsKnown = true
 }
 
 // B 站 hls-ts 常在分片内直接携带 BILILIVESUBTITLE JSON（不在视频 PES 的 H.264 SEI 里）。
@@ -75,11 +89,17 @@ func appendEmbeddedTSAccessUnitIfNeeded(seg []byte, sc *tsScratch, out []accessU
 	if !bytes.Contains(seg, subtitleUUID) || tsChunkAlreadyHasSubtitleCues(out, sc) {
 		return out
 	}
-	pts := int64(0)
-	if len(out) > 0 {
-		pts = out[len(out)-1].PTSMs
-	} else if sc.pesPTS > 0 {
+	// 嵌入式 chunk 自己没有 PTS，向前借：優先沿用同一分批裡已知 PTS 的 AU，
+	// 其次用當前 PES 已解析到的 PTS。兩者都沒有時仍送出（讓 cue 先暫存），
+	// 但標 ptsKnown=false，避免它搶先成為 timeline 錨點。
+	var pts int64
+	var known bool
+	if n := len(out); n > 0 && out[n-1].ptsKnown {
+		pts = out[n-1].PTSMs
+		known = true
+	} else if sc.ptsKnown {
 		pts = int64(sc.pesPTS / 90)
+		known = true
 	}
 	if len(cuesFromEmbeddedUUID(seg, pts)) == 0 {
 		return out
@@ -88,7 +108,7 @@ func appendEmbeddedTSAccessUnitIfNeeded(seg []byte, sc *tsScratch, out []accessU
 	if codec == flv.VideoKindNone {
 		codec = flv.VideoKindAVC
 	}
-	return append(out, accessUnit{PTSMs: pts, Codec: codec, NALs: seg})
+	return append(out, accessUnit{PTSMs: pts, ptsKnown: known, Codec: codec, NALs: seg})
 }
 
 func tsChunkAlreadyHasSubtitleCues(out []accessUnit, sc *tsScratch) bool {
@@ -96,7 +116,7 @@ func tsChunkAlreadyHasSubtitleCues(out []accessUnit, sc *tsScratch) bool {
 		return true
 	}
 	if sc.havePES && len(sc.pesBuf) > 0 {
-		if au, ok := pesToAccessUnit(sc.pesBuf, sc.pesPTS, sc.codec); ok {
+		if au, ok := pesToAccessUnit(sc.pesBuf, sc.pesPTS, sc.ptsKnown, sc.codec); ok {
 			return len(cuesFromSEI(au)) > 0
 		}
 	}
@@ -110,7 +130,7 @@ func flushTSPES(sc *tsScratch) (accessUnit, bool) {
 		sc.pesBuf = nil
 		return accessUnit{}, false
 	}
-	au, ok := pesToAccessUnit(sc.pesBuf, sc.pesPTS, sc.codec)
+	au, ok := pesToAccessUnit(sc.pesBuf, sc.pesPTS, sc.ptsKnown, sc.codec)
 	sc.havePES = false
 	sc.pesBuf = nil
 	return au, ok
@@ -165,8 +185,11 @@ func pmtVideoStream(seg []byte) (uint16, flv.VideoKind) {
 			continue
 		}
 		sectionLen := int(section[1]&0x0f)<<8 | int(section[2])
-		progInfoLen := int(section[7]&0x0f)<<8 | int(section[8])
-		i := 9 + progInfoLen
+		// PMT 佈局：table_id[0]、section_length[1:3]、program_number[3:5]、
+		// version/flags[5]、section_number[6]、last_section_number[7]、
+		// PCR_PID[8:10]、program_info_length[10:12]、節目環自 12 起。
+		progInfoLen := int(section[10]&0x0f)<<8 | int(section[11])
+		i := 12 + progInfoLen
 		end := sectionLen + 3 - 4
 		for i+5 <= end && i+5 <= len(section) {
 			streamType := section[i]
@@ -235,7 +258,7 @@ func pesHeaderPTS(pes []byte) (uint64, bool) {
 }
 
 // pesToAccessUnit 跳过 PES 头，剩余负载作为 Annex-B NAL；PTS 从 90kHz 换算为毫秒。
-func pesToAccessUnit(pes []byte, pts90k uint64, codec flv.VideoKind) (accessUnit, bool) {
+func pesToAccessUnit(pes []byte, pts90k uint64, ptsKnown bool, codec flv.VideoKind) (accessUnit, bool) {
 	if len(pes) < 9 {
 		return accessUnit{}, false
 	}
@@ -248,7 +271,7 @@ func pesToAccessUnit(pes []byte, pts90k uint64, codec flv.VideoKind) (accessUnit
 		return accessUnit{}, false
 	}
 	ptsMs := int64(pts90k / 90)
-	return accessUnit{PTSMs: ptsMs, Codec: codec, NALs: nals}, true
+	return accessUnit{PTSMs: ptsMs, ptsKnown: ptsKnown, Codec: codec, NALs: nals}, true
 }
 
 // psiSection 从 PUSI 负载取出 PSI section（跳过 pointer_field）。部分源站省略 pointer，payload 直接以 table_id 开头。
