@@ -3,8 +3,8 @@
 package danmaku_test
 
 import (
-	"github.com/bilirec/bilirec/internal/testutil/recording"
 	"fmt"
+	"github.com/bilirec/bilirec/internal/testutil/recording"
 	"os"
 	"sort"
 	"strconv"
@@ -160,17 +160,17 @@ func runDanmakuProfiledRecordTest(t *testing.T, format string, recordDuration ti
 	recording.AssertRecordingMemoryReleased(t, baseline, afterCleanup, recording.MemoryBudgetForSessions(1, "danmaku_"+format))
 
 	logDanmakuRecorderMetric(t, "danmaku_profiled_record", map[string]any{
-		"format":            format,
-		"duration":          recordDuration.String(),
-		"start_util_pct":    fmt.Sprintf("%.1f", startReport.UtilPercent),
-		"record_util_pct":   fmt.Sprintf("%.1f", recordReport.UtilPercent),
-		"during_alloc_mb":   fmt.Sprintf("%.2f", during.AllocMB),
-		"retained_alloc_mb": fmt.Sprintf("%.2f", recording.MemAllocDiffMB(afterCleanup, baseline)),
-		"retained_sys_mb":   fmt.Sprintf("%.2f", recording.MemSysDiffMB(afterCleanup, baseline)),
-		"goroutine_during":  duringG - baselineG,
-		"goroutine_after":   afterG - baselineG,
-		"danmaku_bytes":     bytesWritten,
-		"active_after_stop": sess.Danmaku.ActiveSessions(),
+		"format":                format,
+		"duration":              recordDuration.String(),
+		"start_util_pct":        fmt.Sprintf("%.1f", startReport.UtilPercent),
+		"record_util_pct":       fmt.Sprintf("%.1f", recordReport.UtilPercent),
+		"during_alloc_mb":       fmt.Sprintf("%.2f", during.AllocMB),
+		"retained_alloc_mb":     fmt.Sprintf("%.2f", recording.MemAllocDiffMB(afterCleanup, baseline)),
+		"retained_heap_held_mb": fmt.Sprintf("%.2f", recording.MemHeapHeldDiffMB(afterCleanup, baseline)),
+		"goroutine_during":      duringG - baselineG,
+		"goroutine_after":       afterG - baselineG,
+		"danmaku_bytes":         bytesWritten,
+		"active_after_stop":     sess.Danmaku.ActiveSessions(),
 	})
 
 	switch format {
@@ -593,19 +593,19 @@ func runDanmakuConcurrentRecordTest(t *testing.T, concurrent int, recordDuration
 	}
 
 	logDanmakuRecorderMetric(t, "danmaku_concurrent_record", map[string]any{
-		"rooms":             concurrent,
-		"duration":          recordDuration.String(),
-		"start_util_pct":    fmt.Sprintf("%.1f", startReport.UtilPercent),
-		"record_util_pct":   fmt.Sprintf("%.1f", recordReport.UtilPercent),
-		"during_alloc_mb":   fmt.Sprintf("%.2f", during.AllocMB),
-		"retained_alloc_mb": fmt.Sprintf("%.2f", recording.MemAllocDiffMB(afterCleanup, baseline)),
-		"retained_sys_mb":   fmt.Sprintf("%.2f", recording.MemSysDiffMB(afterCleanup, baseline)),
-		"goroutine_during":  duringG - baselineG,
-		"goroutine_after":   afterG - baselineG,
-		"danmaku_bytes":     totalBytes,
-		"danmaku_dropped":   totalDropped,
-		"danmaku_count":     totalDanmaku,
-		"active_after_stop": sess.Danmaku.ActiveSessions(),
+		"rooms":                 concurrent,
+		"duration":              recordDuration.String(),
+		"start_util_pct":        fmt.Sprintf("%.1f", startReport.UtilPercent),
+		"record_util_pct":       fmt.Sprintf("%.1f", recordReport.UtilPercent),
+		"during_alloc_mb":       fmt.Sprintf("%.2f", during.AllocMB),
+		"retained_alloc_mb":     fmt.Sprintf("%.2f", recording.MemAllocDiffMB(afterCleanup, baseline)),
+		"retained_heap_held_mb": fmt.Sprintf("%.2f", recording.MemHeapHeldDiffMB(afterCleanup, baseline)),
+		"goroutine_during":      duringG - baselineG,
+		"goroutine_after":       afterG - baselineG,
+		"danmaku_bytes":         totalBytes,
+		"danmaku_dropped":       totalDropped,
+		"danmaku_count":         totalDanmaku,
+		"active_after_stop":     sess.Danmaku.ActiveSessions(),
 	})
 
 	if afterG-baselineG > 10 {
