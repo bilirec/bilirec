@@ -30,8 +30,8 @@ import (
 	"github.com/bilirec/bilirec/internal/services/preview"
 	"github.com/bilirec/bilirec/internal/services/recorder"
 	"github.com/bilirec/bilirec/internal/services/room"
-	"github.com/bilirec/bilirec/internal/services/subtitle"
 	"github.com/bilirec/bilirec/internal/services/stream"
+	"github.com/bilirec/bilirec/internal/services/subtitle"
 	"github.com/bilirec/bilirec/internal/services/webhook"
 	"github.com/shirou/gopsutil/v4/cpu"
 	"github.com/shirou/gopsutil/v4/process"
@@ -40,17 +40,17 @@ import (
 )
 
 const (
-	recorderTestProfileDirEnv              = "RECORDER_TEST_PROFILE_DIR"
-	recorderCPUSteadySampleEnv             = "RECORDER_CPU_STEADY_SAMPLE_SECS"
-	recorderCPUSteadySampleMin             = 1 * time.Second
-	SettleAfterStop                        = 5 * time.Second
-	pprofLogTopN                           = 10
-	recorderRecordProfileIntervalEnv       = "RECORDER_RECORD_PROFILE_INTERVAL_SECS"
-	recorderProfileLogTopEnv               = "RECORDER_PROFILE_LOG_TOP" // default false: save only during test
-	recorderTestMaxRetainedAllocMBEnv      = "RECORDER_TEST_MAX_RETAINED_ALLOC_MB"
-	recorderTestMaxRetainedSysMBEnv        = "RECORDER_TEST_MAX_RETAINED_SYS_MB"
-	recorderTestMaxRetainedAllocPerRoomEnv = "RECORDER_TEST_MAX_RETAINED_ALLOC_MB_PER_ROOM"
-	recorderTestMaxRetainedSysPerRoomEnv   = "RECORDER_TEST_MAX_RETAINED_SYS_MB_PER_ROOM"
+	recorderTestProfileDirEnv                 = "RECORDER_TEST_PROFILE_DIR"
+	recorderCPUSteadySampleEnv                = "RECORDER_CPU_STEADY_SAMPLE_SECS"
+	recorderCPUSteadySampleMin                = 1 * time.Second
+	SettleAfterStop                           = 5 * time.Second
+	pprofLogTopN                              = 10
+	recorderRecordProfileIntervalEnv          = "RECORDER_RECORD_PROFILE_INTERVAL_SECS"
+	recorderProfileLogTopEnv                  = "RECORDER_PROFILE_LOG_TOP" // default false: save only during test
+	recorderTestMaxRetainedAllocMBEnv         = "RECORDER_TEST_MAX_RETAINED_ALLOC_MB"
+	recorderTestMaxRetainedHeapHeldMBEnv      = "RECORDER_TEST_MAX_RETAINED_HEAP_HELD_MB"
+	recorderTestMaxRetainedAllocPerRoomEnv    = "RECORDER_TEST_MAX_RETAINED_ALLOC_MB_PER_ROOM"
+	recorderTestMaxRetainedHeapHeldPerRoomEnv = "RECORDER_TEST_MAX_RETAINED_HEAP_HELD_MB_PER_ROOM"
 )
 
 // Session wires fx app lifecycle with cross-platform profiling:
@@ -185,6 +185,7 @@ type MemorySnapshot struct {
 	HeapInuseMB  float64
 	StackInuseMB float64
 	SysMB        float64
+	HeapHeldMB   float64
 	HeapPath     string
 	Goroutines   int
 }
@@ -204,11 +205,12 @@ func (m *Monitor) SnapshotMemory(t *testing.T, label string, runGC bool) MemoryS
 		HeapInuseMB:  float64(ms.HeapInuse) / (1024 * 1024),
 		StackInuseMB: float64(ms.StackInuse) / (1024 * 1024),
 		SysMB:        float64(ms.Sys) / (1024 * 1024),
+		HeapHeldMB:   float64(heapHeldBytes(&ms)) / (1024 * 1024),
 		HeapPath:     heapPath,
 		Goroutines:   runtime.NumGoroutine(),
 	}
-	t.Logf("mem %s: alloc=%.2f MB heap_inuse=%.2f MB stack_inuse=%.2f MB sys=%.2f MB goroutines=%d heap=%s",
-		label, snap.AllocMB, snap.HeapInuseMB, snap.StackInuseMB, snap.SysMB, snap.Goroutines, heapPath)
+	t.Logf("mem %s: alloc=%.2f MB heap_inuse=%.2f MB heap_held=%.2f MB stack_inuse=%.2f MB sys=%.2f MB goroutines=%d heap=%s",
+		label, snap.AllocMB, snap.HeapInuseMB, snap.HeapHeldMB, snap.StackInuseMB, snap.SysMB, snap.Goroutines, heapPath)
 	maybeLogHeapPprofTop(t, label, heapPath)
 	return snap
 }
@@ -656,30 +658,32 @@ func MemAllocDiffMB(after, before MemorySnapshot) float64 {
 	return after.AllocMB - before.AllocMB
 }
 
-func MemSysDiffMB(after, before MemorySnapshot) float64 {
-	return after.SysMB - before.SysMB
+func MemHeapHeldDiffMB(after, before MemorySnapshot) float64 {
+	return after.HeapHeldMB - before.HeapHeldMB
 }
 
-// MemoryBudget caps heap and runtime Sys growth retained after a full
-// record/stop/cleanup cycle relative to the pre-record baseline.
+// MemoryBudget caps heap growth retained after a full record/stop/cleanup cycle
+// relative to the pre-record baseline. HeapHeld is HeapSys-HeapReleased: heap the
+// runtime has not returned to the OS. MemStats.Sys is deliberately not used; it is
+// a high-water mark that never falls when an extra heap arena is mapped.
 type MemoryBudget struct {
-	label              string
-	maxRetainedAllocMB float64
-	maxRetainedSysMB   float64
+	label                 string
+	maxRetainedAllocMB    float64
+	maxRetainedHeapHeldMB float64
 }
 
 func MemoryBudgetForSessions(concurrentSessions int, label string) MemoryBudget {
 	const (
 		baseAllocMB     = 18.0
 		perSessionAlloc = 12.0
-		baseSysMB       = 50.0
-		perSessionSys   = 20.0
+		baseHeapHeldMB  = 24.0
+		perSessionHeld  = 16.0
 	)
 
 	budget := MemoryBudget{
-		label:              label,
-		maxRetainedAllocMB: baseAllocMB + float64(concurrentSessions)*perSessionAlloc,
-		maxRetainedSysMB:   baseSysMB + float64(concurrentSessions)*perSessionSys,
+		label:                 label,
+		maxRetainedAllocMB:    baseAllocMB + float64(concurrentSessions)*perSessionAlloc,
+		maxRetainedHeapHeldMB: baseHeapHeldMB + float64(concurrentSessions)*perSessionHeld,
 	}
 
 	if v := strings.TrimSpace(os.Getenv(recorderTestMaxRetainedAllocMBEnv)); v != "" {
@@ -687,9 +691,9 @@ func MemoryBudgetForSessions(concurrentSessions int, label string) MemoryBudget 
 			budget.maxRetainedAllocMB = f
 		}
 	}
-	if v := strings.TrimSpace(os.Getenv(recorderTestMaxRetainedSysMBEnv)); v != "" {
+	if v := strings.TrimSpace(os.Getenv(recorderTestMaxRetainedHeapHeldMBEnv)); v != "" {
 		if f, err := strconv.ParseFloat(v, 64); err == nil {
-			budget.maxRetainedSysMB = f
+			budget.maxRetainedHeapHeldMB = f
 		}
 	}
 	if v := strings.TrimSpace(os.Getenv(recorderTestMaxRetainedAllocPerRoomEnv)); v != "" {
@@ -697,9 +701,9 @@ func MemoryBudgetForSessions(concurrentSessions int, label string) MemoryBudget 
 			budget.maxRetainedAllocMB = baseAllocMB + float64(concurrentSessions)*f
 		}
 	}
-	if v := strings.TrimSpace(os.Getenv(recorderTestMaxRetainedSysPerRoomEnv)); v != "" {
+	if v := strings.TrimSpace(os.Getenv(recorderTestMaxRetainedHeapHeldPerRoomEnv)); v != "" {
 		if f, err := strconv.ParseFloat(v, 64); err == nil {
-			budget.maxRetainedSysMB = baseSysMB + float64(concurrentSessions)*f
+			budget.maxRetainedHeapHeldMB = baseHeapHeldMB + float64(concurrentSessions)*f
 		}
 	}
 	return budget
@@ -720,23 +724,19 @@ func AssertRecordingMemoryReleased(t *testing.T, baseline, after MemorySnapshot,
 	t.Helper()
 
 	retainedAlloc := MemAllocDiffMB(after, baseline)
-	retainedSys := MemSysDiffMB(after, baseline)
+	retainedHeld := MemHeapHeldDiffMB(after, baseline)
 
-	t.Logf("memory retention [%s]: alloc %+.2f MB (limit %.2f) heap_inuse %+.2f MB sys %+.2f MB (limit %.2f) goroutines %+d",
+	t.Logf("memory retention [%s]: alloc %+.2f MB (limit %.2f) heap_held %+.2f MB (limit %.2f) heap_inuse %+.2f MB sys %+.2f MB goroutines %+d",
 		budget.label,
 		retainedAlloc, budget.maxRetainedAllocMB,
+		retainedHeld, budget.maxRetainedHeapHeldMB,
 		after.HeapInuseMB-baseline.HeapInuseMB,
-		retainedSys, budget.maxRetainedSysMB,
+		after.SysMB-baseline.SysMB,
 		after.Goroutines-baseline.Goroutines,
 	)
 
-	if retainedAlloc > budget.maxRetainedAllocMB {
-		t.Errorf("memory not released after %s: alloc retained %+.2f MB exceeds %.2f MB (baseline=%.2f after=%.2f)",
-			budget.label, retainedAlloc, budget.maxRetainedAllocMB, baseline.AllocMB, after.AllocMB)
-	}
-	if retainedSys > budget.maxRetainedSysMB {
-		t.Errorf("runtime Sys not released after %s: sys retained %+.2f MB exceeds %.2f MB (baseline=%.2f after=%.2f)",
-			budget.label, retainedSys, budget.maxRetainedSysMB, baseline.SysMB, after.SysMB)
+	for _, msg := range memoryRetentionViolations(baseline, after, budget) {
+		t.Error(msg)
 	}
 }
 
@@ -1007,4 +1007,27 @@ func RunZZZFinalConcurrentRecordTest(t *testing.T, profile bilibili.StreamProfil
 			VerifyAllRecordingsInRoomDir(t, filepath.Dir(outputPaths[rid]), format)
 		}
 	}
+}
+
+func heapHeldBytes(ms *runtime.MemStats) uint64 {
+	if ms.HeapReleased >= ms.HeapSys {
+		return 0
+	}
+	return ms.HeapSys - ms.HeapReleased
+}
+
+func memoryRetentionViolations(baseline, after MemorySnapshot, budget MemoryBudget) []string {
+	var violations []string
+
+	if retained := MemAllocDiffMB(after, baseline); retained > budget.maxRetainedAllocMB {
+		violations = append(violations, fmt.Sprintf(
+			"memory not released after %s: alloc retained %+.2f MB exceeds %.2f MB (baseline=%.2f after=%.2f)",
+			budget.label, retained, budget.maxRetainedAllocMB, baseline.AllocMB, after.AllocMB))
+	}
+	if retained := MemHeapHeldDiffMB(after, baseline); retained > budget.maxRetainedHeapHeldMB {
+		violations = append(violations, fmt.Sprintf(
+			"heap not released after %s: heap held %+.2f MB exceeds %.2f MB (baseline=%.2f after=%.2f)",
+			budget.label, retained, budget.maxRetainedHeapHeldMB, baseline.HeapHeldMB, after.HeapHeldMB))
+	}
+	return violations
 }
