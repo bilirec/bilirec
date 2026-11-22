@@ -764,3 +764,161 @@ func buildFLVVideoTag(payload []byte) []byte {
 	)
 	return out
 }
+
+// collectJumpWarnings runs tags through a fresh fixer (after the FLV file header)
+// and returns every reported timestamp jump plus the output tag timestamps.
+func collectJumpWarnings(t *testing.T, tags ...[]byte) ([]flv.TimestampJumpWarning, []int32) {
+	t.Helper()
+	fixer := flv.NewRealtimeFixer()
+	defer fixer.Close()
+
+	var warnings []flv.TimestampJumpWarning
+	fixer.SetTimestampJumpReporter(func(w flv.TimestampJumpWarning) {
+		warnings = append(warnings, w)
+	})
+
+	out, err := fixer.Fix(flv.FlvHeader)
+	if err != nil {
+		t.Fatalf("header: %v", err)
+	}
+
+	in := make([]byte, 0, flv.PrevTagSizeBytes)
+	in = append(in, 0, 0, 0, 0)
+	for _, tag := range tags {
+		in = append(in, tag...)
+	}
+	body, err := fixer.Fix(in)
+	if err != nil {
+		t.Fatalf("fix: %v", err)
+	}
+	out = append(out, body...)
+
+	return warnings, parseTagTimestamps(t, out)
+}
+
+func parseTagTimestamps(t *testing.T, data []byte) []int32 {
+	t.Helper()
+	var stamps []int32
+	for len(data) >= flv.TagHeaderSize+flv.PrevTagSizeBytes {
+		dataSize := int(data[1])<<16 | int(data[2])<<8 | int(data[3])
+		total := flv.TagHeaderSize + dataSize + flv.PrevTagSizeBytes
+		if len(data) < total {
+			break
+		}
+		stamps = append(stamps, int32(data[7])<<24|int32(data[4])<<16|int32(data[5])<<8|int32(data[6]))
+		data = data[total:]
+	}
+	return stamps
+}
+
+func TestRealtimeFixer_IgnoresZeroTimestampSequenceHeaderMidStream(t *testing.T) {
+	media1 := flv.NewTagBytes(flv.TagTypeAudio, []byte{0xaf, 0x01, 0x11})
+	setTimestamp(media1, 1779586)
+	seqHdr := flv.NewTagBytes(flv.TagTypeAudio, []byte{0xaf, 0x00, 0x12, 0x10})
+	setTimestamp(seqHdr, 0)
+	media2 := flv.NewTagBytes(flv.TagTypeAudio, []byte{0xaf, 0x01, 0x22})
+	setTimestamp(media2, 1779599)
+
+	warnings, _ := collectJumpWarnings(t, media1, seqHdr, media2)
+	for _, w := range warnings {
+		if w.Delta > flv.JumpThreshold {
+			t.Fatalf("unexpected forward jump reported: %+v", w)
+		}
+	}
+
+	// Second reset later in the same session (the 07:24 event in the log).
+	media3 := flv.NewTagBytes(flv.TagTypeVideo, []byte{0x27, 0x01, 0x33})
+	setTimestamp(media3, 2724399)
+	seqHdr2 := flv.NewTagBytes(flv.TagTypeVideo, []byte{0x17, 0x00, 0x00, 0x00, 0x00, 0x44})
+	setTimestamp(seqHdr2, 0)
+	media4 := flv.NewTagBytes(flv.TagTypeAudio, []byte{0xaf, 0x01, 0x55})
+	setTimestamp(media4, 2724418)
+
+	warnings, _ = collectJumpWarnings(t, media3, seqHdr2, media4)
+	for _, w := range warnings {
+		if w.Delta > flv.JumpThreshold {
+			t.Fatalf("unexpected forward jump reported: %+v", w)
+		}
+	}
+}
+
+func TestRealtimeFixer_IgnoresZeroTimestampScriptTagMidStream(t *testing.T) {
+	media1 := flv.NewTagBytes(flv.TagTypeAudio, []byte{0xaf, 0x01, 0x11})
+	setTimestamp(media1, 16787099)
+	script := flv.NewTagBytes(flv.TagTypeScript, []byte{0x02, 0x00, 0x07, 'o', 'n', 'M', 'e', 't', 'a'})
+	setTimestamp(script, 0)
+	media2 := flv.NewTagBytes(flv.TagTypeAudio, []byte{0xaf, 0x01, 0x22})
+	setTimestamp(media2, 16787117)
+
+	warnings, _ := collectJumpWarnings(t, media1, script, media2)
+	for _, w := range warnings {
+		if w.Delta > flv.JumpThreshold {
+			t.Fatalf("unexpected forward jump reported: %+v", w)
+		}
+	}
+}
+
+func TestRealtimeFixer_StartupHeadersDoNotOwnFirstChunk(t *testing.T) {
+	script := flv.NewTagBytes(flv.TagTypeScript, []byte{0x02, 0x00, 0x0a, 'o', 'n', 'M', 'e', 't', 'a', 'D', 'a', 't', 'a'})
+	setTimestamp(script, 0)
+	audioHdr := flv.NewTagBytes(flv.TagTypeAudio, []byte{0xaf, 0x00, 0x12, 0x10})
+	setTimestamp(audioHdr, 0)
+	videoHdr := flv.NewTagBytes(flv.TagTypeVideo, []byte{0x17, 0x00, 0x00, 0x00, 0x00, 0x99})
+	setTimestamp(videoHdr, 0)
+	media := flv.NewTagBytes(flv.TagTypeAudio, []byte{0xaf, 0x01, 0x11})
+	setTimestamp(media, 13999)
+
+	warnings, stamps := collectJumpWarnings(t, script, audioHdr, videoHdr, media)
+	if len(warnings) != 0 {
+		t.Fatalf("expected no warnings at startup, got %d: %+v", len(warnings), warnings)
+	}
+	if len(stamps) != 4 {
+		t.Fatalf("expected 4 output tags, got %d", len(stamps))
+	}
+	if stamps[3] != 0 {
+		t.Fatalf("first media tag should start the output timeline at 0, got %d", stamps[3])
+	}
+}
+
+func TestRealtimeFixer_SuppressesReboundAfterBackwardJump(t *testing.T) {
+	media1 := flv.NewTagBytes(flv.TagTypeAudio, []byte{0xaf, 0x01, 0x11})
+	setTimestamp(media1, 5000)
+	zeroFrame := flv.NewTagBytes(flv.TagTypeAudio, []byte{0xaf, 0x01, 0x22})
+	setTimestamp(zeroFrame, 0)
+	media2 := flv.NewTagBytes(flv.TagTypeAudio, []byte{0xaf, 0x01, 0x33})
+	setTimestamp(media2, 5022)
+
+	warnings, _ := collectJumpWarnings(t, media1, zeroFrame, media2)
+	for _, w := range warnings {
+		if w.Delta > flv.JumpThreshold {
+			t.Fatalf("rebound after backward jump must not be reported: %+v", w)
+		}
+	}
+}
+
+func TestRealtimeFixer_ReportsRealForwardGapAfterClockEstablished(t *testing.T) {
+	media1 := flv.NewTagBytes(flv.TagTypeAudio, []byte{0xaf, 0x01, 0x11})
+	setTimestamp(media1, 5000)
+	media2 := flv.NewTagBytes(flv.TagTypeAudio, []byte{0xaf, 0x01, 0x22})
+	setTimestamp(media2, 65000)
+
+	warnings, _ := collectJumpWarnings(t, media1, media2)
+	if len(warnings) != 1 || warnings[0].Delta != 60000 {
+		t.Fatalf("expected one 60000ms gap warning, got %+v", warnings)
+	}
+}
+
+func TestRealtimeFixer_AlignedSequenceHeaderUsesMediaFormula(t *testing.T) {
+	media := flv.NewTagBytes(flv.TagTypeAudio, []byte{0xaf, 0x01, 0x11})
+	setTimestamp(media, 5000)
+	alignedHdr := flv.NewTagBytes(flv.TagTypeAudio, []byte{0xaf, 0x00, 0x12, 0x10})
+	setTimestamp(alignedHdr, 5040)
+
+	warnings, stamps := collectJumpWarnings(t, media, alignedHdr)
+	if len(warnings) != 0 {
+		t.Fatalf("expected no warnings, got %+v", warnings)
+	}
+	if stamps[1] != 40 {
+		t.Fatalf("aligned sequence header should keep 原始时间戳 - CurrentOffset = 40, got %d", stamps[1])
+	}
+}

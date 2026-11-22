@@ -353,6 +353,15 @@ func (rf *RealtimeFixer) emitPendingJumps() {
 func (rf *RealtimeFixer) fixTimestamp(tag *Tag) {
 	ts := rf.tsStore
 	currentTimestamp := tag.Timestamp
+	// Sequence headers and script tags that disagree with the media clock are
+	// rewind artifacts (stream restart, onMetaData, 0 ms header). Letting them
+	// own LastOriginal turns the next media tag into a bogus full-clock gap.
+	if (tag.IsHeader || tag.Type == TagTypeScript) &&
+		(ts.FirstChunk || abs32(currentTimestamp-ts.LastOriginal) > JumpThreshold) {
+		rf.pinNonMediaTimestamp(tag)
+		return
+	}
+
 	previousTimestamp := ts.LastOriginal
 	previousOffset := ts.CurrentOffset
 	wasFirstChunk := ts.FirstChunk
@@ -377,6 +386,8 @@ func (rf *RealtimeFixer) fixTimestamp(tag *Tag) {
 		}
 		hasJump = true
 		ts.CurrentOffset = currentTimestamp - ts.NextTimestampTarget
+		ts.clockBeforeReset = previousTimestamp
+		ts.sawBackwardJump = true
 	} else if diff > JumpThreshold {
 		jumpWarning = TimestampJumpWarning{
 			CurrentTimestamp:  currentTimestamp,
@@ -394,9 +405,14 @@ func (rf *RealtimeFixer) fixTimestamp(tag *Tag) {
 	if hasJump {
 		jumpWarning.AppliedOffset = ts.CurrentOffset
 		skipTransientResetJump := rf.isRotationSegment && jumpWarning.PreviousTimestamp == 0 && ts.NextTimestampTarget > 0
-		if !wasFirstChunk && !skipTransientResetJump {
+		rebound := ts.sawBackwardJump &&
+			abs32(currentTimestamp-ts.clockBeforeReset) <= JumpThreshold
+		if !wasFirstChunk && !skipTransientResetJump && !rebound {
 			rf.pendingJumps = append(rf.pendingJumps, jumpWarning)
 		}
+	}
+	if diff >= -JumpThreshold {
+		ts.sawBackwardJump = false
 	}
 
 	tag.Timestamp -= ts.CurrentOffset
@@ -405,4 +421,27 @@ func (rf *RealtimeFixer) fixTimestamp(tag *Tag) {
 	}
 
 	ts.NextTimestampTarget = CalculateNextTarget(tag)
+}
+
+// pinNonMediaTimestamp places a non-media tag on the current output timeline
+// without advancing the media clock, so a 0 ms sequence header or script tag
+// cannot poison LastOriginal.
+func (rf *RealtimeFixer) pinNonMediaTimestamp(tag *Tag) {
+	ts := rf.tsStore
+	if ts.FirstChunk || ts.NextTimestampTarget == 0 {
+		tag.Timestamp = 0
+		return
+	}
+	out := ts.NextTimestampTarget - AudioDurationFallback
+	if out < 0 {
+		out = 0
+	}
+	tag.Timestamp = out
+}
+
+func abs32(v int32) int32 {
+	if v < 0 {
+		return -v
+	}
+	return v
 }

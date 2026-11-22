@@ -114,6 +114,10 @@ type TimestampStore struct {
 	LastOriginal        int32
 	CurrentOffset       int32
 	NextTimestampTarget int32
+	// clockBeforeReset is the media clock captured just before a backward jump.
+	// A forward jump back into that clock is a rewind artifact, not lost media.
+	clockBeforeReset int32
+	sawBackwardJump  bool
 }
 
 type TimestampJumpWarning struct {
@@ -133,6 +137,8 @@ func (ts *TimestampStore) Reset() {
 	ts.LastOriginal = 0
 	ts.CurrentOffset = 0
 	ts.NextTimestampTarget = 0
+	ts.clockBeforeReset = 0
+	ts.sawBackwardJump = false
 }
 
 // 🔥 新增: 去重記錄結構
