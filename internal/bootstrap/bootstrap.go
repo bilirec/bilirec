@@ -1,10 +1,6 @@
 package bootstrap
 
 import (
-	"os"
-	"strings"
-	"time"
-
 	"github.com/bilirec/bilirec/internal/controllers/auth"
 	"github.com/bilirec/bilirec/internal/controllers/convert"
 	"github.com/bilirec/bilirec/internal/controllers/file"
@@ -19,7 +15,6 @@ import (
 	"github.com/bilirec/bilirec/internal/modules/rest"
 	co "github.com/bilirec/bilirec/internal/services/convert"
 	dm "github.com/bilirec/bilirec/internal/services/danmaku"
-	ex "github.com/bilirec/bilirec/internal/services/expose"
 	fi "github.com/bilirec/bilirec/internal/services/file"
 	ja "github.com/bilirec/bilirec/internal/services/janitor"
 	me "github.com/bilirec/bilirec/internal/services/media"
@@ -30,12 +25,12 @@ import (
 	ro "github.com/bilirec/bilirec/internal/services/room"
 	st "github.com/bilirec/bilirec/internal/services/stream"
 	sc "github.com/bilirec/bilirec/internal/services/subcheck"
-	sub "github.com/bilirec/bilirec/internal/services/subtitle"
 	su "github.com/bilirec/bilirec/internal/services/subscribe"
+	sub "github.com/bilirec/bilirec/internal/services/subtitle"
 	wh "github.com/bilirec/bilirec/internal/services/webhook"
 	"github.com/bilirec/bilirec/pkg/logger"
 	"github.com/bilirec/bilirec/pkg/updatecheck"
-	"github.com/bilirec/bilirec/utils"
+
 	"go.uber.org/fx"
 	"go.uber.org/fx/fxevent"
 	"go.uber.org/zap"
@@ -64,7 +59,6 @@ func MainModule() fx.Option {
 		fx.Provide(fi.NewService),
 
 		fx.Invoke(ja.NewService),
-		fx.Invoke(ex.NewService),
 		fx.Invoke(sc.NewService),
 
 		fx.Invoke(updatecheck.InvokeCheck),
@@ -76,35 +70,6 @@ func MainModule() fx.Option {
 		fx.Invoke(pc.NewController),
 		fx.Invoke(auth.NewController),
 		fx.Invoke(convert.NewController),
-	)
-}
-
-func noQrCodePrompt() bool {
-	loginMode := strings.ToLower(strings.TrimSpace(utils.EmptyOrElse(os.Getenv("BILIBILI_LOGIN_MODE"), "controller")))
-	return loginMode == "controller" || loginMode == "anonymous"
-}
-
-func NewApp() *fx.App {
-	return fx.New(
-		MainModule(),
-		fx.StartTimeout(
-			utils.Ternary(
-				noQrCodePrompt(),
-				15*time.Second,
-				1*time.Minute,
-			),
-		),
-		fx.StopTimeout(1*time.Minute),
-		fx.WithLogger(fxZapLogger),
-	)
-}
-
-func NewAndroidApp() *fx.App {
-	return fx.New(
-		MainModule(),
-		fx.StartTimeout(10*time.Second),
-		fx.StopTimeout(10*time.Second),
-		fx.WithLogger(fxZapLogger),
 	)
 }
 
