@@ -47,6 +47,7 @@ type jsonlSuperChatLine struct {
 	Type                  string  `json:"type"`
 	TS                    float64 `json:"ts"`
 	User                  string  `json:"user"`
+	UID                   int64   `json:"uid"`
 	Message               string  `json:"message"`
 	Price                 int64   `json:"price"`
 	Time                  int64   `json:"time"`
@@ -64,6 +65,7 @@ type jsonlGiftLine struct {
 	Type      string  `json:"type"`
 	TS        float64 `json:"ts"`
 	User      string  `json:"user"`
+	UID       int64   `json:"uid"`
 	GiftName  string  `json:"gift_name"`
 	GiftCount int64   `json:"gift_count"`
 	Face      string  `json:"face,omitempty"`
@@ -75,6 +77,7 @@ type jsonlGuardLine struct {
 	Type  string  `json:"type"`
 	TS    float64 `json:"ts"`
 	User  string  `json:"user"`
+	UID   int64   `json:"uid"`
 	Level int64   `json:"level"`
 	Count int64   `json:"count"`
 }
@@ -106,7 +109,7 @@ func (jsonlEncoder) AppendDanmaku(buf []byte, e Danmaku, ts string) []byte {
 
 func (jsonlEncoder) AppendSuperChat(buf []byte, e SuperChat, ts string) []byte {
 	return appendJSONLine(buf, jsonlSuperChatLine{
-		Type: "super_chat", TS: parseTS(ts), User: e.Uname(),
+		Type: "super_chat", TS: parseTS(ts), User: e.Uname(), UID: e.UID,
 		Message: e.Message, Price: e.Price, Time: e.Time,
 		BackgroundColor: e.BackgroundColor, BackgroundBottomColor: e.BackgroundBottomColor,
 		BackgroundPriceColor: e.BackgroundPriceColor, MessageFontColor: e.MessageFontColor,
@@ -116,7 +119,7 @@ func (jsonlEncoder) AppendSuperChat(buf []byte, e SuperChat, ts string) []byte {
 
 func (jsonlEncoder) AppendGift(buf []byte, e Gift, ts string) []byte {
 	return appendJSONLine(buf, jsonlGiftLine{
-		Type: "gift", TS: parseTS(ts), User: e.Uname,
+		Type: "gift", TS: parseTS(ts), User: e.Uname, UID: e.UID,
 		GiftName: e.GiftName, GiftCount: e.Num,
 		Face: e.Face, NameColor: e.NameColor,
 	})
@@ -124,7 +127,7 @@ func (jsonlEncoder) AppendGift(buf []byte, e Gift, ts string) []byte {
 
 func (jsonlEncoder) AppendGuard(buf []byte, e Guard, ts string) []byte {
 	return appendJSONLine(buf, jsonlGuardLine{
-		Type: "guard", TS: parseTS(ts), User: e.Username,
+		Type: "guard", TS: parseTS(ts), User: e.Username, UID: e.UID,
 		Level: e.GuardLevel, Count: e.Num,
 	})
 }

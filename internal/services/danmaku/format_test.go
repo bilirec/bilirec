@@ -115,15 +115,18 @@ func TestJSONLEncoderLines(t *testing.T) {
 	if scMap["user"] != "sc" || scMap["face"] != "https://example.com/face.jpg" || scMap["name_color"] != "#2C3B4A" {
 		t.Errorf("sc user/face/name = %v", scMap)
 	}
+	if scMap["uid"].(float64) != 1 {
+		t.Errorf("sc uid = %v", scMap["uid"])
+	}
 	// Full blivedm payload keys must not leak into the wire line.
-	for _, banned := range []string{"user_info", "medal_info", "token", "dmscore", "uid"} {
+	for _, banned := range []string{"user_info", "medal_info", "token", "dmscore"} {
 		if _, ok := scMap[banned]; ok {
 			t.Errorf("sc should not write %q: %v", banned, scMap)
 		}
 	}
 
 	giftLine := string(enc.AppendGift(nil, Gift{
-		Uname: "g", GiftName: "小花花", Num: 2, Face: "f", NameColor: "#fff",
+		Uname: "g", UID: 456, GiftName: "小花花", Num: 2, Face: "f", NameColor: "#fff",
 		GiftID: 1, Price: 100, TotalCoin: 200, Action: "投喂",
 	}, "3.0"))
 	if !strings.HasPrefix(giftLine, `{"type":"gift"`) {
@@ -136,14 +139,17 @@ func TestJSONLEncoderLines(t *testing.T) {
 	if giftMap["gift_name"] != "小花花" || giftMap["gift_count"].(float64) != 2 {
 		t.Errorf("gift = %v", giftMap)
 	}
-	for _, banned := range []string{"giftId", "price", "total_coin", "action", "uid"} {
+	if giftMap["uid"].(float64) != 456 {
+		t.Errorf("gift uid = %v", giftMap["uid"])
+	}
+	for _, banned := range []string{"giftId", "price", "total_coin", "action"} {
 		if _, ok := giftMap[banned]; ok {
 			t.Errorf("gift should not write %q: %v", banned, giftMap)
 		}
 	}
 
 	guardLine := string(enc.AppendGuard(nil, Guard{
-		Username: "舰长", GuardLevel: 3, Num: 1, Price: 198000, GiftID: 1,
+		Username: "舰长", UID: 789, GuardLevel: 3, Num: 1, Price: 198000, GiftID: 1,
 	}, "4.0"))
 	if !strings.HasPrefix(guardLine, `{"type":"guard"`) {
 		t.Errorf("guard type first:\n%s", guardLine)
@@ -155,7 +161,10 @@ func TestJSONLEncoderLines(t *testing.T) {
 	if guardMap["level"].(float64) != 3 || guardMap["count"].(float64) != 1 || guardMap["user"] != "舰长" {
 		t.Errorf("guard = %v", guardMap)
 	}
-	for _, banned := range []string{"price", "gift_id", "gift_name", "uid", "guard_level"} {
+	if guardMap["uid"].(float64) != 789 {
+		t.Errorf("guard uid = %v", guardMap["uid"])
+	}
+	for _, banned := range []string{"price", "gift_id", "gift_name", "guard_level"} {
 		if _, ok := guardMap[banned]; ok {
 			t.Errorf("guard should not write %q: %v", banned, guardMap)
 		}
